@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-container-high": "#e8e8e8",
+                    "primary": "#005fac",
+                    "background": "#f9f9f9",
+                    "surface-container-low": "#f3f3f3",
+                    "primary-container": "#0078d7",
+                    "tertiary": "#2a5e93",
+                    "on-primary-fixed": "#001c39",
+                    "primary-fixed": "#d4e3ff",
+                    "inverse-on-surface": "#f1f1f1",
+                    "on-secondary-fixed-variant": "#464747",
+                    "inverse-primary": "#a4c9ff",
+                    "error-container": "#ffdad6",
+                    "surface-container": "#eeeeee",
+                    "on-secondary": "#ffffff",
+                    "on-tertiary-fixed-variant": "#08497c",
+                    "on-primary-fixed-variant": "#004884",
+                    "surface": "#f9f9f9",
+                    "on-error": "#ffffff",
+                    "surface-bright": "#f9f9f9",
+                    "outline": "#717784",
+                    "on-secondary-container": "#646464",
+                    "tertiary-container": "#4677ad",
+                    "error": "#ba1a1a",
+                    "on-primary-container": "#000510",
+                    "tertiary-fixed": "#d2e4ff",
+                    "surface-dim": "#dadada",
+                    "surface-tint": "#005fad",
+                    "on-surface": "#1a1c1c",
+                    "inverse-surface": "#2f3131",
+                    "surface-container-highest": "#e2e2e2",
+                    "secondary-container": "#e3e2e2",
+                    "on-background": "#1a1c1c",
+                    "secondary-fixed": "#e3e2e2",
+                    "on-error-container": "#93000a",
+                    "tertiary-fixed-dim": "#9fcaff",
+                    "on-tertiary-fixed": "#001d37",
+                    "on-surface-variant": "#414752",
+                    "on-secondary-fixed": "#1b1c1c",
+                    "surface-variant": "#e2e2e2",
+                    "on-tertiary": "#ffffff",
+                    "outline-variant": "#c0c7d4",
+                    "surface-container-lowest": "#ffffff",
+                    "secondary": "#5e5e5e",
+                    "on-tertiary-container": "#fdfcff",
+                    "primary-fixed-dim": "#a4c9ff",
+                    "on-primary": "#ffffff",
+                    "secondary-fixed-dim": "#c7c6c6"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0px",
+                    "lg": "0px",
+                    "xl": "0px",
+                    "full": "9999px"
+            },
+            "fontFamily": {
+                    "headline": ["Inter"],
+                    "body": ["Inter"],
+                    "label": ["Inter"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+            font-size: 1.25rem;
+        }
+        .acrylic-blur {
+            backdrop-filter: blur(20px);
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #555555; /* Desktop wallpaper-like background */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+    </style>
+</head>
+<body class="bg-slate-300">
+<!-- File Picker Dialog Window -->
+<div class="w-[900px] h-[600px] bg-surface flex flex-col shadow-2xl ring-1 ring-black/10 overflow-hidden">
+<!-- TopNavBar Structure -->
+<header class="bg-[#f9f9f9] dark:bg-slate-900 flex justify-between items-center w-full px-4 h-12 flex-none select-none">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-slate-600">auto_stories</span>
+<h1 class="text-sm font-bold text-slate-800 dark:text-slate-200 tracking-tighter">Import Books</h1>
+</div>
+<nav class="flex items-center gap-6">
+<div class="flex items-center gap-4">
+<button class="text-slate-600 dark:text-slate-400 font-['Inter'] text-[0.875rem] tracking-tighter hover:text-[#005fac]">File</button>
+<button class="text-[#005fac] border-b-2 border-[#005fac] pb-1 font-['Inter'] text-[0.875rem] tracking-tighter">Home</button>
+<button class="text-slate-600 dark:text-slate-400 font-['Inter'] text-[0.875rem] tracking-tighter hover:text-[#005fac]">Share</button>
+<button class="text-slate-600 dark:text-slate-400 font-['Inter'] text-[0.875rem] tracking-tighter hover:text-[#005fac]">View</button>
+</div>
+<div class="flex items-center gap-2 border-l border-outline-variant pl-4 ml-2">
+<span class="material-symbols-outlined text-slate-500 hover:text-primary cursor-pointer">help</span>
+<span class="material-symbols-outlined text-slate-500 hover:text-primary cursor-pointer">settings</span>
+</div>
+</nav>
+</header>
+<!-- Breadcrumb / Address Bar Area -->
+<div class="h-10 bg-surface flex items-center px-4 gap-2 border-b border-outline-variant/10">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-slate-400">arrow_back</span>
+<span class="material-symbols-outlined text-slate-400">arrow_forward</span>
+<span class="material-symbols-outlined text-slate-400">expand_more</span>
+<span class="material-symbols-outlined text-slate-400">arrow_upward</span>
+</div>
+<div class="flex-1 bg-white border border-outline-variant/30 h-7 flex items-center px-2 text-xs text-slate-600 gap-2">
+<span class="material-symbols-outlined text-[1rem]">desktop_windows</span>
+<span>此电脑</span>
+<span class="material-symbols-outlined text-[1rem]">chevron_right</span>
+<span>文档</span>
+<span class="material-symbols-outlined text-[1rem]">chevron_right</span>
+<span class="font-semibold text-slate-900">Books</span>
+</div>
+<div class="w-64 bg-white border border-outline-variant/30 h-7 flex items-center px-2 text-xs text-slate-400">
+<span class="material-symbols-outlined text-[1rem] mr-2">search</span>
+<span>搜索 Books</span>
+</div>
+</div>
+<!-- Main Window Content -->
+<div class="flex flex-1 overflow-hidden">
+<!-- SideNavBar (Nav Drawer) -->
+<aside class="w-64 h-full bg-[#eeeeee] dark:bg-slate-800/60 flex flex-col py-4 flex-none overflow-y-auto">
+<div class="px-4 mb-2">
+<h2 class="text-xs font-bold text-primary uppercase tracking-widest opacity-70">快速访问</h2>
+</div>
+<nav class="flex flex-col">
+<div class="flex items-center gap-3 px-4 py-1.5 border-l-4 border-[#005fac] bg-[#e2e2e2] dark:bg-slate-700 font-semibold text-[#005fac] cursor-pointer">
+<span class="material-symbols-outlined text-[1.2rem]">star</span>
+<span class="font-['Inter'] text-[0.875rem] leading-[1.5] tracking-tight">Quick access</span>
+</div>
+<div class="flex items-center gap-3 px-4 py-1.5 text-slate-700 dark:text-slate-300 pl-5 hover:bg-[#e2e2e2] dark:hover:bg-slate-700 transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-[1.2rem]">computer</span>
+<span class="font-['Inter'] text-[0.875rem] leading-[1.5] tracking-tight">This PC</span>
+</div>
+<div class="flex items-center gap-3 px-4 py-1.5 text-slate-700 dark:text-slate-300 pl-5 hover:bg-[#e2e2e2] dark:hover:bg-slate-700 transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-[1.2rem]">desktop_windows</span>
+<span class="font-['Inter'] text-[0.875rem] leading-[1.5] tracking-tight">Desktop</span>
+</div>
+<div class="flex items-center gap-3 px-4 py-1.5 text-slate-700 dark:text-slate-300 pl-5 hover:bg-[#e2e2e2] dark:hover:bg-slate-700 transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-[1.2rem]">description</span>
+<span class="font-['Inter'] text-[0.875rem] leading-[1.5] tracking-tight">Documents</span>
+</div>
+<div class="flex items-center gap-3 px-4 py-1.5 text-slate-700 dark:text-slate-300 pl-5 hover:bg-[#e2e2e2] dark:hover:bg-slate-700 transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-[1.2rem]">download</span>
+<span class="font-['Inter'] text-[0.875rem] leading-[1.5] tracking-tight">Downloads</span>
+</div>
+</nav>
+</aside>
+<!-- File Explorer View -->
+<main class="flex-1 bg-white p-4 overflow-y-auto">
+<div class="grid grid-cols-4 gap-4">
+<!-- File Item: Selected -->
+<div class="flex flex-col items-center p-2 bg-primary/10 border border-primary/30 group cursor-pointer">
+<div class="w-16 h-20 mb-2 relative">
+<img class="w-full h-full object-cover shadow-sm" data-alt="Modern book cover design for AI textbook with abstract neural network graphics and clean professional typography" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB3uuU_CJz4T2AgD7sxG7lKSy0DQg-vPEXxdcwbmkO_Z42wpEzUNuDkZEWpg8vQooiv5QEwQFboHDjCEZDKQVha0YIwH3kgcLbq1IfUIHG4Y1L56gZOATPNsAp0m_ZiAYRlSarVL_GOLPUUT0MC-_6cUw34xom6qsau9OrXJxAWcuJ1xiRuSepgFzFIOT4ow1y6rUMkTJQfQgyTPgWgBRwepmaNYM_VMlAV7sQJ3HZkWbTJ4buPVybqUzYRXt3CYEZUWAlJ4HiX6mM"/>
+<div class="absolute bottom-0 right-0 bg-red-600 text-[10px] text-white px-1 font-bold">PDF</div>
+</div>
+<span class="text-xs text-center text-slate-900 font-medium leading-tight break-all">Introduction_to_AI.pdf</span>
+</div>
+<!-- File Item -->
+<div class="flex flex-col items-center p-2 hover:bg-slate-100 border border-transparent hover:border-slate-200 group cursor-pointer transition-colors">
+<div class="w-16 h-20 mb-2 relative">
+<img class="w-full h-full object-cover shadow-sm" data-alt="Minimalist book cover for design patterns book featuring geometric shapes and architectural layout" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDcmD6xuUJUzMy7Z2u-uR7eg7C8WiinY1sFVlzanqlENlh8ts8VG6L0ZFruT89vO-Ia19tDMyK-xaGKgXk2vRo5tTqcEFzOTiAd9tFSjvJmsAArKuWo-2JK78-rlYj8k87BHMXJiTb5M5uAqre8FiXwGJW69b0vVNfPKTc6VQiZqX_TrgWYmVfdATa-hXIWS4crRF40AaWKCbODJSm9VlDuWSNZ2hYWYZ22ej2AwhR6kd4pf6lVHbVh-hh4oZ2rQGgOkIgGtomiAgE"/>
+<div class="absolute bottom-0 right-0 bg-emerald-600 text-[10px] text-white px-1 font-bold">EPUB</div>
+</div>
+<span class="text-xs text-center text-slate-700 leading-tight break-all">Design_Patterns.epub</span>
+</div>
+<!-- File Item -->
+<div class="flex flex-col items-center p-2 hover:bg-slate-100 border border-transparent hover:border-slate-200 group cursor-pointer transition-colors">
+<div class="w-16 h-20 mb-2 relative">
+<img class="w-full h-full object-cover shadow-sm" data-alt="Deep blue book cover with gold foil lettering for classic literature collection" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB_rMPnvfHtYelkD4LICz_5ZJUGdtTY9ig7lkQrAwJDckq62lrPWAAcV3BjnvSsytY694p2jwkjfldysvPhhPRS4aKp_Zq-n28NTgdSlJvx3mqGSqtcgqdD6RpK3MwC88UxA_fcsOAPHlxyY20v5AlgfrO-8M82IAoqnmKNJtAro4wzEk_zDfoqDDCztCPiH37SaZwsiR7euLDPW7Es6mP8X8z5P1KYqW0vzsjwtfpCcaq3nY7IKQfv_fkgJ4bsK2u5A3c3-p4cGOE"/>
+<div class="absolute bottom-0 right-0 bg-red-600 text-[10px] text-white px-1 font-bold">PDF</div>
+</div>
+<span class="text-xs text-center text-slate-700 leading-tight break-all">Advanced_Calculus.pdf</span>
+</div>
+<!-- File Item -->
+<div class="flex flex-col items-center p-2 hover:bg-slate-100 border border-transparent hover:border-slate-200 group cursor-pointer transition-colors">
+<div class="w-16 h-20 mb-2 relative">
+<div class="w-full h-full bg-slate-200 flex items-center justify-center">
+<span class="material-symbols-outlined text-slate-400 text-3xl">menu_book</span>
+</div>
+<div class="absolute bottom-0 right-0 bg-blue-600 text-[10px] text-white px-1 font-bold">MOBI</div>
+</div>
+<span class="text-xs text-center text-slate-700 leading-tight break-all">Cloud_Native_Apps.mobi</span>
+</div>
+<!-- File Item -->
+<div class="flex flex-col items-center p-2 hover:bg-slate-100 border border-transparent hover:border-slate-200 group cursor-pointer transition-colors">
+<div class="w-16 h-20 mb-2 relative">
+<img class="w-full h-full object-cover shadow-sm" data-alt="Graphic designer portfolio book cover with vibrant colors and bold typography" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDvIj-VQkNAUgCFLnNdMUqQfmLGuqzjPp4g3vMW6raHNjaRDbkmNqZlhQfy1JvacytyccAexMjLnB2rBhx3tJ1GSpjEvB6QMEckNiXj8YrBMnNRaZWBs_8xVDI7pvPJXz__Sw4VyyxuE3-ZPDAI8pDPJ597cTlFiqB4cEI3LtWjTVSkCavw2biB7teAcIsVA44bkOtmj6UyxNoShT8jSs721BX0W4vM1FJY4awXh0XzK7JF3gThlYWF3tJCkzZRqps16OocDPc4hUc"/>
+<div class="absolute bottom-0 right-0 bg-red-600 text-[10px] text-white px-1 font-bold">PDF</div>
+</div>
+<span class="text-xs text-center text-slate-700 leading-tight break-all">Typography_101.pdf</span>
+</div>
+</div>
+</main>
+</div>
+<!-- Footer / Action Area -->
+<footer class="h-28 bg-[#f3f3f3] p-4 flex flex-col gap-3 border-t border-outline-variant/10">
+<div class="flex items-center gap-4">
+<label class="text-xs text-slate-600 w-20 text-right">文件名 (N):</label>
+<div class="flex-1 relative">
+<input class="w-full h-7 border-0 bg-white px-2 text-xs focus:ring-1 focus:ring-primary shadow-inner" type="text" value="Introduction_to_AI.pdf"/>
+</div>
+<div class="w-32"></div> <!-- Spacer -->
+</div>
+<div class="flex items-center gap-4">
+<label class="text-xs text-slate-600 w-20 text-right">文件类型 (T):</label>
+<div class="flex-1 relative">
+<select class="w-full h-7 border-0 bg-white px-2 text-xs appearance-none focus:ring-1 focus:ring-primary shadow-inner cursor-pointer">
+<option>所有图书文件 (*.pdf, *.epub, *.mobi)</option>
+<option>PDF 文档 (*.pdf)</option>
+<option>EPUB 电子书 (*.epub)</option>
+<option>MOBI 电子书 (*.mobi)</option>
+</select>
+<div class="absolute right-2 top-1.5 pointer-events-none">
+<span class="material-symbols-outlined text-[1rem] text-slate-500">expand_more</span>
+</div>
+</div>
+<div class="flex gap-2 w-32 justify-end">
+<button class="px-6 py-1 bg-primary text-white text-xs font-medium border border-primary/20 hover:bg-primary-container transition-all shadow-sm">
+                        打开 (O)
+                    </button>
+<button class="px-6 py-1 bg-[#e2e2e2] text-slate-700 text-xs font-medium border border-slate-300 hover:bg-slate-200 transition-all shadow-sm">
+                        取消
+                    </button>
+</div>
+</div>
+</footer>
+</div>
+</body></html>
