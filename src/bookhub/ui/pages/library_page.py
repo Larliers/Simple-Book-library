@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from bookhub.i18n import tr
 from bookhub.ui.models.resource import ResourceItem
 from bookhub.ui.viewmodels.library_viewmodel import LibraryViewModel
 from bookhub.ui.widgets.book_card import BookCardWidget
@@ -33,13 +34,13 @@ class LibraryPage(QWidget):
         root.setContentsMargins(20, 18, 20, 20)
         root.setSpacing(12)
 
-        title = QLabel("Library")
-        title.setObjectName("PageTitle")
-        subtitle = QLabel("UI outline based on New UI references")
-        subtitle.setObjectName("PageSubtitle")
+        self.title = QLabel("Library")
+        self.title.setObjectName("PageTitle")
+        self.subtitle = QLabel("UI outline based on New UI references")
+        self.subtitle.setObjectName("PageSubtitle")
 
-        root.addWidget(title)
-        root.addWidget(subtitle)
+        root.addWidget(self.title)
+        root.addWidget(self.subtitle)
 
         toolbar = QHBoxLayout()
         toolbar.addStretch(1)
@@ -66,7 +67,6 @@ class LibraryPage(QWidget):
         self.view_stack.addWidget(self.grid_scroll)
 
         self.list_table = QTableWidget(0, 5)
-        self.list_table.setHorizontalHeaderLabels(["Cover", "Title", "Author", "Status", "Tags"])
         self.list_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.list_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.list_table.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -74,6 +74,23 @@ class LibraryPage(QWidget):
         self.list_table.horizontalHeader().setStretchLastSection(True)
         self.view_stack.addWidget(self.list_table)
 
+        self.retranslate_ui()
+        self.render()
+
+    def retranslate_ui(self) -> None:
+        self.title.setText(tr("library.title", "Library"))
+        self.subtitle.setText(tr("library.subtitle", "UI outline based on New UI references"))
+        self.grid_btn.setText(tr("library.grid", "Grid"))
+        self.list_btn.setText(tr("library.list", "List"))
+        self.list_table.setHorizontalHeaderLabels(
+            [
+                tr("library.table.cover", "Cover"),
+                tr("library.table.title", "Title"),
+                tr("library.table.author", "Author"),
+                tr("library.table.status", "Status"),
+                tr("library.table.tags", "Tags"),
+            ]
+        )
         self.render()
 
     def set_query(self, query: str) -> None:
@@ -118,7 +135,7 @@ class LibraryPage(QWidget):
             self.grid_layout.addWidget(card, row, col)
             self._card_widgets.append(card)
 
-        add_card = QLabel("+\nADD NEW BOOK")
+        add_card = QLabel(tr("library.add_new_book", "+\nADD NEW BOOK"))
         add_card.setObjectName("AddCard")
         add_card.setAlignment(Qt.AlignCenter)
         add_card.setMinimumSize(170, 240)
@@ -139,11 +156,11 @@ class LibraryPage(QWidget):
 
     def _show_card_menu(self, resource: ResourceItem, global_pos) -> None:
         menu = QMenu(self)
-        open_action = menu.addAction("Open External")
-        open_folder_action = menu.addAction("Open Folder")
+        open_action = menu.addAction(tr("library.menu.open_external", "Open External"))
+        open_folder_action = menu.addAction(tr("library.menu.open_folder", "Open Folder"))
         menu.addSeparator()
-        add_tag_action = menu.addAction("Add Tag")
-        remove_action = menu.addAction("Remove from Library")
+        add_tag_action = menu.addAction(tr("library.menu.add_tag", "Add Tag"))
+        remove_action = menu.addAction(tr("library.menu.remove_library", "Remove from Library"))
         chosen = menu.exec(global_pos)
         if chosen == open_action:
             self._track_event("open_external", resource.resource_id)
@@ -160,8 +177,8 @@ class LibraryPage(QWidget):
             return
         resource_id = self.list_table.item(row, 0).data(Qt.UserRole)
         menu = QMenu(self)
-        open_action = menu.addAction("Open External")
-        mark_action = menu.addAction("Mark as Reading")
+        open_action = menu.addAction(tr("library.menu.open_external", "Open External"))
+        mark_action = menu.addAction(tr("library.menu.mark_reading", "Mark as Reading"))
         chosen = menu.exec(self.list_table.viewport().mapToGlobal(pos))
         if chosen == open_action:
             self._track_event("open_external", resource_id)
@@ -176,4 +193,3 @@ class LibraryPage(QWidget):
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
         )
-

@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from bookhub.i18n import language_manager, tr
 from bookhub.ui.dialogs.import_dialog import ImportDialog
 from bookhub.ui.pages.library_page import LibraryPage
 from bookhub.ui.pages.placeholder_page import PlaceholderPage
@@ -22,7 +23,8 @@ from bookhub.ui.widgets.topbar import TopBarWidget
 class AppWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Simple Book Library - UI Outline")
+        language_manager.set_language("en")
+        self.setWindowTitle(tr("app.window_title", "Simple Book Library - UI Outline"))
         self.resize(1400, 860)
 
         self._library_vm = LibraryViewModel()
@@ -58,11 +60,15 @@ class AppWindow(QMainWindow):
         self._register_page("collections", PlaceholderPage("Collections", "Collections page skeleton."))
         self._register_page("reading_now", PlaceholderPage("Reading Now", "Reading queue page skeleton."))
         self._register_page("favorites", PlaceholderPage("Favorites", "Favorites page skeleton."))
-        self._register_page("tools", PluginsPage())
+        self.plugins_page = PluginsPage()
+        self._register_page("tools", self.plugins_page)
         self._register_page("trash", PlaceholderPage("Trash", "Trash page skeleton."))
-        self._register_page("settings", SettingsPage())
+        self.settings_page = SettingsPage()
+        self.settings_page.language_changed.connect(self._on_language_changed)
+        self._register_page("settings", self.settings_page)
 
         self.setStyleSheet(APP_STYLE)
+        self.retranslate_ui()
         self._show_page("library")
 
     def _register_page(self, page_name: str, widget: QWidget) -> None:
@@ -85,3 +91,14 @@ class AppWindow(QMainWindow):
         dialog = ImportDialog(self)
         dialog.exec()
 
+    def _on_language_changed(self, language_code: str) -> None:
+        language_manager.set_language(language_code)
+        self.retranslate_ui()
+
+    def retranslate_ui(self) -> None:
+        self.setWindowTitle(tr("app.window_title", "Simple Book Library - UI Outline"))
+        self.sidebar.retranslate_ui()
+        self.topbar.retranslate_ui()
+        self.library_page.retranslate_ui()
+        self.plugins_page.retranslate_ui()
+        self.settings_page.retranslate_ui()

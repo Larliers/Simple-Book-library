@@ -3,6 +3,8 @@ from __future__ import annotations
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QPushButton, QWidget
 
+from bookhub.i18n import tr
+
 
 class TopBarWidget(QWidget):
     query_changed = Signal(str)
@@ -16,7 +18,6 @@ class TopBarWidget(QWidget):
         layout.setSpacing(10)
 
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search library...")
         self.search_input.textChanged.connect(self.query_changed.emit)
         layout.addWidget(self.search_input, 1)
 
@@ -36,3 +37,9 @@ class TopBarWidget(QWidget):
         self.menu_button.setFixedWidth(36)
         layout.addWidget(self.menu_button)
 
+        self.retranslate_ui()
+
+    def retranslate_ui(self) -> None:
+        self.search_input.setPlaceholderText(tr("topbar.search_placeholder", "Search library..."))
+        self.import_button.setText(tr("topbar.import", "IMPORT"))
+        self.new_list_button.setText(tr("topbar.new_list", "NEW LIST"))
