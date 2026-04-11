@@ -14,6 +14,8 @@
   "topbar.new_list": "新建列表",
   "library.title": "图书馆",
   "library.subtitle": "基于新 UI 参考图的界面骨架",
+  "library.density.card_width": "卡片宽度",
+  "library.density.min_spacing": "最小间距",
   "library.grid": "网格",
   "library.list": "列表",
   "library.table.cover": "封面",
@@ -44,4 +46,3 @@
   "plugins.uninstall": "卸载插件",
   "plugins.description": "自动抓取并更新图书元数据。\n\n功能：\n- 同步高清封面\n- 支持多语言元数据\n- 可自定义字段映射"
 }
-

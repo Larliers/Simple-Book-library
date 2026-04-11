@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from bookhub.ui.models.resource import ResourceItem
+from bookhub.ui.resources.layout_config import GRID_DENSITY
 
 
 class BookCardWidget(QFrame):
@@ -13,16 +14,23 @@ class BookCardWidget(QFrame):
         self.setObjectName("BookCard")
         self.setFrameShape(QFrame.StyledPanel)
         self.setCursor(Qt.PointingHandCursor)
-        self.setMinimumWidth(170)
+        self.setFixedWidth(GRID_DENSITY.card_width)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setContentsMargins(
+            GRID_DENSITY.card_inner_padding,
+            GRID_DENSITY.card_inner_padding,
+            GRID_DENSITY.card_inner_padding,
+            GRID_DENSITY.card_inner_padding,
+        )
         layout.setSpacing(6)
 
+        cover_width, cover_height = GRID_DENSITY.cover_size()
         cover = QLabel("COVER")
-        cover.setFixedHeight(180)
+        cover.setFixedSize(cover_width, cover_height)
         cover.setAlignment(Qt.AlignCenter)
         cover.setObjectName("BookCover")
+        cover.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         layout.addWidget(cover)
 
         title = QLabel(resource.title)
@@ -38,4 +46,3 @@ class BookCardWidget(QFrame):
         status.setObjectName("BookStatus")
         status.setAlignment(Qt.AlignLeft)
         layout.addWidget(status)
-

@@ -4,12 +4,14 @@ from datetime import datetime, timezone
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QMenu,
     QPushButton,
     QScrollArea,
+    QSpinBox,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -19,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from bookhub.i18n import tr
 from bookhub.ui.models.resource import ResourceItem
+from bookhub.ui.resources.layout_config import GRID_DENSITY
 from bookhub.ui.viewmodels.library_viewmodel import LibraryViewModel
 from bookhub.ui.widgets.book_card import BookCardWidget
 
@@ -29,6 +32,7 @@ class LibraryPage(QWidget):
         self.view_model = view_model
         self.interaction_events: list[dict[str, str | None]] = []
         self._card_widgets: list[BookCardWidget] = []
+        self._last_grid_columns = 0
 
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 18, 20, 20)
@@ -43,7 +47,31 @@ class LibraryPage(QWidget):
         root.addWidget(self.subtitle)
 
         toolbar = QHBoxLayout()
-        toolbar.addStretch(1)
+        self.density_panel = QFrame()
+        self.density_panel.setObjectName("DensityPanel")
+        density_layout = QHBoxLayout(self.density_panel)
+        density_layout.setContentsMargins(10, 8, 10, 8)
+        density_layout.setSpacing(10)
+
+        self.card_width_label = QLabel("Card Width")
+        self.card_width_spin = QSpinBox()
+        self.card_width_spin.setRange(120, 360)
+        self.card_width_spin.setValue(GRID_DENSITY.card_width)
+        self.card_width_spin.valueChanged.connect(self._on_density_changed)
+
+        self.spacing_label = QLabel("Min Spacing")
+        self.spacing_spin = QSpinBox()
+        self.spacing_spin.setRange(4, 48)
+        self.spacing_spin.setValue(GRID_DENSITY.min_grid_spacing)
+        self.spacing_spin.valueChanged.connect(self._on_density_changed)
+
+        density_layout.addWidget(self.card_width_label)
+        density_layout.addWidget(self.card_width_spin)
+        density_layout.addWidget(self.spacing_label)
+        density_layout.addWidget(self.spacing_spin)
+        density_layout.addStretch(1)
+        toolbar.addWidget(self.density_panel, 1)
+
         self.grid_btn = QPushButton("Grid")
         self.grid_btn.clicked.connect(lambda: self.set_view_mode("waterfall"))
         self.list_btn = QPushButton("List")
@@ -57,8 +85,8 @@ class LibraryPage(QWidget):
 
         self.grid_container = QWidget()
         self.grid_layout = QGridLayout(self.grid_container)
-        self.grid_layout.setHorizontalSpacing(14)
-        self.grid_layout.setVerticalSpacing(14)
+        self.grid_layout.setHorizontalSpacing(GRID_DENSITY.min_grid_spacing)
+        self.grid_layout.setVerticalSpacing(GRID_DENSITY.min_grid_spacing)
         self.grid_layout.setContentsMargins(0, 0, 0, 0)
 
         self.grid_scroll = QScrollArea()
@@ -80,6 +108,8 @@ class LibraryPage(QWidget):
     def retranslate_ui(self) -> None:
         self.title.setText(tr("library.title", "Library"))
         self.subtitle.setText(tr("library.subtitle", "UI outline based on New UI references"))
+        self.card_width_label.setText(tr("library.density.card_width", "Card Width"))
+        self.spacing_label.setText(tr("library.density.min_spacing", "Min Spacing"))
         self.grid_btn.setText(tr("library.grid", "Grid"))
         self.list_btn.setText(tr("library.list", "List"))
         self.list_table.setHorizontalHeaderLabels(
@@ -118,6 +148,9 @@ class LibraryPage(QWidget):
         self.style().polish(self.list_btn)
 
     def _render_grid(self, items: list[ResourceItem]) -> None:
+        columns = self._calculate_grid_columns()
+        self._last_grid_columns = columns
+
         while self.grid_layout.count():
             child = self.grid_layout.takeAt(0)
             if child and child.widget():
@@ -125,21 +158,26 @@ class LibraryPage(QWidget):
         self._card_widgets.clear()
 
         for idx, item in enumerate(items):
-            row = idx // 5
-            col = idx % 5
+            row = idx // columns
+            col = idx % columns
             card = BookCardWidget(item)
             card.setContextMenuPolicy(Qt.CustomContextMenu)
             card.customContextMenuRequested.connect(
                 lambda pos, resource=item, widget=card: self._show_card_menu(resource, widget.mapToGlobal(pos))
             )
-            self.grid_layout.addWidget(card, row, col)
+            self.grid_layout.addWidget(card, row, col, alignment=Qt.AlignLeft | Qt.AlignTop)
             self._card_widgets.append(card)
 
         add_card = QLabel(tr("library.add_new_book", "+\nADD NEW BOOK"))
         add_card.setObjectName("AddCard")
         add_card.setAlignment(Qt.AlignCenter)
-        add_card.setMinimumSize(170, 240)
-        self.grid_layout.addWidget(add_card, (len(items)) // 5, (len(items)) % 5)
+        add_card.setFixedSize(GRID_DENSITY.card_width, GRID_DENSITY.add_card_height)
+        self.grid_layout.addWidget(
+            add_card,
+            (len(items)) // columns,
+            (len(items)) % columns,
+            alignment=Qt.AlignLeft | Qt.AlignTop,
+        )
 
     def _render_list(self, items: list[ResourceItem]) -> None:
         self.list_table.setRowCount(len(items))
@@ -193,3 +231,25 @@ class LibraryPage(QWidget):
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
         )
+
+    def _calculate_grid_columns(self) -> int:
+        available_width = max(1, self.grid_scroll.viewport().width())
+        cell_width = GRID_DENSITY.card_width + GRID_DENSITY.min_grid_spacing
+        return max(1, available_width // max(1, cell_width))
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if self.view_model.view_mode != "waterfall":
+            return
+        columns = self._calculate_grid_columns()
+        if columns != self._last_grid_columns:
+            self._render_grid(self.view_model.filtered_resources())
+
+    def _on_density_changed(self) -> None:
+        GRID_DENSITY.apply(
+            card_width=self.card_width_spin.value(),
+            min_grid_spacing=self.spacing_spin.value(),
+        )
+        self.grid_layout.setHorizontalSpacing(GRID_DENSITY.min_grid_spacing)
+        self.grid_layout.setVerticalSpacing(GRID_DENSITY.min_grid_spacing)
+        self.render()

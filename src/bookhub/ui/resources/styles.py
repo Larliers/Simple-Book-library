@@ -63,6 +63,11 @@ QLineEdit, QComboBox, QTextEdit, QListWidget, QTableWidget {
 #PageSubtitle {
     color: #6b7280;
 }
+#DensityPanel {
+    background: #f7f9fc;
+    border: 1px solid #d8e1ee;
+    border-radius: 4px;
+}
 #BookCard {
     background: #ffffff;
     border: 1px solid #d6dde9;
@@ -97,4 +102,3 @@ QHeaderView::section {
     font-weight: 600;
 }
 """
-
