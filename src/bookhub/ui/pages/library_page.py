@@ -1,8 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -10,8 +12,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QMenu,
     QPushButton,
+    QSizePolicy,
     QScrollArea,
-    QSpinBox,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -20,8 +22,10 @@ from PySide6.QtWidgets import (
 )
 
 from bookhub.i18n import tr
+from bookhub.ui.dialogs.add_tag_dialog import AddTagDialog
 from bookhub.ui.models.resource import ResourceItem
-from bookhub.ui.resources.layout_config import GRID_DENSITY
+from bookhub.ui.resources.assets import load_icon
+from bookhub.ui.resources.layout_config import UI_LAYOUT
 from bookhub.ui.viewmodels.library_viewmodel import LibraryViewModel
 from bookhub.ui.widgets.book_card import BookCardWidget
 
@@ -31,66 +35,62 @@ class LibraryPage(QWidget):
         super().__init__(parent)
         self.view_model = view_model
         self.interaction_events: list[dict[str, str | None]] = []
-        self._card_widgets: list[BookCardWidget] = []
         self._last_grid_columns = 0
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(20, 18, 20, 20)
+        root.setContentsMargins(24, 20, 24, 20)
         root.setSpacing(12)
 
+        header_row = QHBoxLayout()
+        header_row.setSpacing(10)
+        title_col = QVBoxLayout()
+        title_col.setSpacing(2)
         self.title = QLabel("Library")
         self.title.setObjectName("PageTitle")
-        self.subtitle = QLabel("UI outline based on New UI references")
+        self.subtitle = QLabel("")
         self.subtitle.setObjectName("PageSubtitle")
+        title_col.addWidget(self.title)
+        title_col.addWidget(self.subtitle)
+        header_row.addLayout(title_col, 1)
 
-        root.addWidget(self.title)
-        root.addWidget(self.subtitle)
+        self.view_toggle_panel = QFrame()
+        self.view_toggle_panel.setObjectName("ViewTogglePanel")
+        self.view_toggle_panel.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        panel_layout = QHBoxLayout(self.view_toggle_panel)
+        panel_layout.setContentsMargins(0, 0, 0, 0)
+        panel_layout.setSpacing(2)
 
-        toolbar = QHBoxLayout()
-        self.density_panel = QFrame()
-        self.density_panel.setObjectName("DensityPanel")
-        density_layout = QHBoxLayout(self.density_panel)
-        density_layout.setContentsMargins(10, 8, 10, 8)
-        density_layout.setSpacing(10)
-
-        self.card_width_label = QLabel("Card Width")
-        self.card_width_spin = QSpinBox()
-        self.card_width_spin.setRange(120, 360)
-        self.card_width_spin.setValue(GRID_DENSITY.card_width)
-        self.card_width_spin.valueChanged.connect(self._on_density_changed)
-
-        self.spacing_label = QLabel("Min Spacing")
-        self.spacing_spin = QSpinBox()
-        self.spacing_spin.setRange(4, 48)
-        self.spacing_spin.setValue(GRID_DENSITY.min_grid_spacing)
-        self.spacing_spin.valueChanged.connect(self._on_density_changed)
-
-        density_layout.addWidget(self.card_width_label)
-        density_layout.addWidget(self.card_width_spin)
-        density_layout.addWidget(self.spacing_label)
-        density_layout.addWidget(self.spacing_spin)
-        density_layout.addStretch(1)
-        toolbar.addWidget(self.density_panel, 1)
-
-        self.grid_btn = QPushButton("Grid")
+        self.grid_btn = QPushButton()
+        self.grid_btn.setObjectName("ViewToggleButton")
+        self.grid_btn.setCheckable(True)
+        self.grid_btn.setIcon(load_icon("view_grid.svg"))
+        self.grid_btn.setIconSize(QSize(14, 14))
         self.grid_btn.clicked.connect(lambda: self.set_view_mode("waterfall"))
-        self.list_btn = QPushButton("List")
+
+        self.list_btn = QPushButton()
+        self.list_btn.setObjectName("ViewToggleButton")
+        self.list_btn.setCheckable(True)
+        self.list_btn.setIcon(load_icon("view_list.svg"))
+        self.list_btn.setIconSize(QSize(14, 14))
         self.list_btn.clicked.connect(lambda: self.set_view_mode("list"))
-        toolbar.addWidget(self.grid_btn)
-        toolbar.addWidget(self.list_btn)
-        root.addLayout(toolbar)
+
+        panel_layout.addWidget(self.grid_btn)
+        panel_layout.addWidget(self.list_btn)
+        header_row.addWidget(self.view_toggle_panel, 0, Qt.AlignTop)
+        root.addLayout(header_row)
 
         self.view_stack = QStackedWidget()
         root.addWidget(self.view_stack, 1)
 
         self.grid_container = QWidget()
         self.grid_layout = QGridLayout(self.grid_container)
-        self.grid_layout.setHorizontalSpacing(GRID_DENSITY.min_grid_spacing)
-        self.grid_layout.setVerticalSpacing(GRID_DENSITY.min_grid_spacing)
+        self.grid_layout.setHorizontalSpacing(UI_LAYOUT.card_spacing)
+        self.grid_layout.setVerticalSpacing(UI_LAYOUT.card_spacing)
         self.grid_layout.setContentsMargins(0, 0, 0, 0)
 
         self.grid_scroll = QScrollArea()
         self.grid_scroll.setWidgetResizable(True)
+        self.grid_scroll.setFrameShape(QFrame.NoFrame)
         self.grid_scroll.setWidget(self.grid_container)
         self.view_stack.addWidget(self.grid_scroll)
 
@@ -100,6 +100,7 @@ class LibraryPage(QWidget):
         self.list_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.list_table.customContextMenuRequested.connect(self._show_list_menu)
         self.list_table.horizontalHeader().setStretchLastSection(True)
+        self.list_table.verticalHeader().setVisible(False)
         self.view_stack.addWidget(self.list_table)
 
         self.retranslate_ui()
@@ -107,11 +108,8 @@ class LibraryPage(QWidget):
 
     def retranslate_ui(self) -> None:
         self.title.setText(tr("library.title", "Library"))
-        self.subtitle.setText(tr("library.subtitle", "UI outline based on New UI references"))
-        self.card_width_label.setText(tr("library.density.card_width", "Card Width"))
-        self.spacing_label.setText(tr("library.density.min_spacing", "Min Spacing"))
-        self.grid_btn.setText(tr("library.grid", "Grid"))
-        self.list_btn.setText(tr("library.list", "List"))
+        self.grid_btn.setToolTip(tr("library.grid", "Grid"))
+        self.list_btn.setToolTip(tr("library.list", "List"))
         self.list_table.setHorizontalHeaderLabels(
             [
                 tr("library.table.cover", "Cover"),
@@ -135,6 +133,9 @@ class LibraryPage(QWidget):
 
     def render(self) -> None:
         items = self.view_model.filtered_resources()
+        self.subtitle.setText(
+            tr("library.subtitle.count", "{count} books in your local collection").format(count=len(items))
+        )
         self._render_grid(items)
         self._render_list(items)
 
@@ -142,10 +143,6 @@ class LibraryPage(QWidget):
         self.view_stack.setCurrentIndex(1 if is_list else 0)
         self.grid_btn.setChecked(not is_list)
         self.list_btn.setChecked(is_list)
-        self.grid_btn.setObjectName("PrimaryButton" if not is_list else "")
-        self.list_btn.setObjectName("PrimaryButton" if is_list else "")
-        self.style().polish(self.grid_btn)
-        self.style().polish(self.list_btn)
 
     def _render_grid(self, items: list[ResourceItem]) -> None:
         columns = self._calculate_grid_columns()
@@ -155,7 +152,6 @@ class LibraryPage(QWidget):
             child = self.grid_layout.takeAt(0)
             if child and child.widget():
                 child.widget().deleteLater()
-        self._card_widgets.clear()
 
         for idx, item in enumerate(items):
             row = idx // columns
@@ -166,31 +162,45 @@ class LibraryPage(QWidget):
                 lambda pos, resource=item, widget=card: self._show_card_menu(resource, widget.mapToGlobal(pos))
             )
             self.grid_layout.addWidget(card, row, col, alignment=Qt.AlignLeft | Qt.AlignTop)
-            self._card_widgets.append(card)
 
         add_card = QLabel(tr("library.add_new_book", "+\nADD NEW BOOK"))
         add_card.setObjectName("AddCard")
         add_card.setAlignment(Qt.AlignCenter)
-        add_card.setFixedSize(GRID_DENSITY.card_width, GRID_DENSITY.add_card_height)
+        add_card.setFixedSize(UI_LAYOUT.card_width, UI_LAYOUT.add_card_height)
         self.grid_layout.addWidget(
             add_card,
-            (len(items)) // columns,
-            (len(items)) % columns,
+            len(items) // columns,
+            len(items) % columns,
             alignment=Qt.AlignLeft | Qt.AlignTop,
         )
 
     def _render_list(self, items: list[ResourceItem]) -> None:
         self.list_table.setRowCount(len(items))
         for row, item in enumerate(items):
-            self.list_table.setItem(row, 0, QTableWidgetItem("COVER"))
+            cover_item = QTableWidgetItem("  ")
+            cover_item.setData(Qt.UserRole, item.resource_id)
+            cover_item.setIcon(self._build_thumbnail_icon(item))
+            self.list_table.setItem(row, 0, cover_item)
             self.list_table.setItem(row, 1, QTableWidgetItem(item.title))
             self.list_table.setItem(row, 2, QTableWidgetItem(item.author))
             self.list_table.setItem(row, 3, QTableWidgetItem(item.status))
             self.list_table.setItem(row, 4, QTableWidgetItem(", ".join(item.tags)))
-            self.list_table.item(row, 0).setData(Qt.UserRole, item.resource_id)
 
         self.list_table.resizeColumnsToContents()
-        self.list_table.setColumnWidth(1, 240)
+        self.list_table.setColumnWidth(1, 260)
+
+    def _build_thumbnail_icon(self, item: ResourceItem) -> QIcon:
+        if item.thumbnail_path:
+            file_path = Path(item.thumbnail_path)
+            if file_path.exists():
+                pixmap = QPixmap(str(file_path))
+                if not pixmap.isNull():
+                    return QIcon(
+                        pixmap.scaled(26, 38, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                    )
+        fallback = QPixmap(26, 38)
+        fallback.fill(Qt.lightGray)
+        return QIcon(fallback)
 
     def _show_card_menu(self, resource: ResourceItem, global_pos) -> None:
         menu = QMenu(self)
@@ -200,12 +210,15 @@ class LibraryPage(QWidget):
         add_tag_action = menu.addAction(tr("library.menu.add_tag", "Add Tag"))
         remove_action = menu.addAction(tr("library.menu.remove_library", "Remove from Library"))
         chosen = menu.exec(global_pos)
+
         if chosen == open_action:
             self._track_event("open_external", resource.resource_id)
         elif chosen == open_folder_action:
             self._track_event("open_external", resource.resource_id)
         elif chosen == add_tag_action:
-            self._track_event("sort", resource.resource_id)
+            dialog = AddTagDialog(self)
+            if dialog.exec():
+                self._track_event("sort", resource.resource_id)
         elif chosen == remove_action:
             self._track_event("paginate", resource.resource_id)
 
@@ -216,10 +229,16 @@ class LibraryPage(QWidget):
         resource_id = self.list_table.item(row, 0).data(Qt.UserRole)
         menu = QMenu(self)
         open_action = menu.addAction(tr("library.menu.open_external", "Open External"))
+        add_tag_action = menu.addAction(tr("library.menu.add_tag", "Add Tag"))
         mark_action = menu.addAction(tr("library.menu.mark_reading", "Mark as Reading"))
         chosen = menu.exec(self.list_table.viewport().mapToGlobal(pos))
+
         if chosen == open_action:
             self._track_event("open_external", resource_id)
+        elif chosen == add_tag_action:
+            dialog = AddTagDialog(self)
+            if dialog.exec():
+                self._track_event("sort", resource_id)
         elif chosen == mark_action:
             self._track_event("sort", resource_id)
 
@@ -234,7 +253,7 @@ class LibraryPage(QWidget):
 
     def _calculate_grid_columns(self) -> int:
         available_width = max(1, self.grid_scroll.viewport().width())
-        cell_width = GRID_DENSITY.card_width + GRID_DENSITY.min_grid_spacing
+        cell_width = UI_LAYOUT.card_width + UI_LAYOUT.card_spacing
         return max(1, available_width // max(1, cell_width))
 
     def resizeEvent(self, event) -> None:
@@ -244,12 +263,3 @@ class LibraryPage(QWidget):
         columns = self._calculate_grid_columns()
         if columns != self._last_grid_columns:
             self._render_grid(self.view_model.filtered_resources())
-
-    def _on_density_changed(self) -> None:
-        GRID_DENSITY.apply(
-            card_width=self.card_width_spin.value(),
-            min_grid_spacing=self.spacing_spin.value(),
-        )
-        self.grid_layout.setHorizontalSpacing(GRID_DENSITY.min_grid_spacing)
-        self.grid_layout.setVerticalSpacing(GRID_DENSITY.min_grid_spacing)
-        self.render()

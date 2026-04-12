@@ -1,6 +1,7 @@
-{
+﻿{
   "app.window_title": "简易图书馆 - UI 大纲",
   "sidebar.title": "书架",
+  "sidebar.subtitle": "本地数据库",
   "sidebar.library": "图书馆",
   "sidebar.collections": "合集",
   "sidebar.reading_now": "正在阅读",
@@ -10,12 +11,12 @@
   "sidebar.settings": "设置",
   "sidebar.import_books": "导入图书",
   "topbar.search_placeholder": "搜索书库...",
+  "topbar.search.empty": "无搜索建议",
   "topbar.import": "导入",
   "topbar.new_list": "新建列表",
   "library.title": "图书馆",
   "library.subtitle": "基于新 UI 参考图的界面骨架",
-  "library.density.card_width": "卡片宽度",
-  "library.density.min_spacing": "最小间距",
+  "library.subtitle.count": "本地馆藏共 {count} 本",
   "library.grid": "网格",
   "library.list": "列表",
   "library.table.cover": "封面",
@@ -40,9 +41,17 @@
   "settings.add_path": "+ 添加路径",
   "settings.scan_now": "立即扫描新书",
   "settings.manage_metadata": "管理元数据",
+  "settings.search_placeholder": "搜索设置",
+  "settings.restart_hint": "更改语言后需重启应用。",
   "plugins.title": "已安装工具",
   "plugins.configure": "配置",
   "plugins.disable": "禁用",
   "plugins.uninstall": "卸载插件",
-  "plugins.description": "自动抓取并更新图书元数据。\n\n功能：\n- 同步高清封面\n- 支持多语言元数据\n- 可自定义字段映射"
+  "plugins.description": "自动抓取并更新图书元数据。\n\n功能：\n- 同步高清封面\n- 支持多语言元数据\n- 可自定义字段映射",
+  "tag_dialog.title": "添加标签",
+  "tag_dialog.tag_placeholder": "输入标签...",
+  "tag_dialog.recent": "最近标签",
+  "tag_dialog.lists": "添加到自定义书单",
+  "tag_dialog.confirm": "确认",
+  "tag_dialog.cancel": "取消"
 }

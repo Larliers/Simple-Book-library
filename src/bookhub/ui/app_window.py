@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -14,10 +14,11 @@ from bookhub.ui.pages.library_page import LibraryPage
 from bookhub.ui.pages.placeholder_page import PlaceholderPage
 from bookhub.ui.pages.plugins_page import PluginsPage
 from bookhub.ui.pages.settings_page import SettingsPage
+from bookhub.ui.resources.layout_config import UI_LAYOUT
 from bookhub.ui.resources.styles import APP_STYLE
 from bookhub.ui.viewmodels.library_viewmodel import LibraryViewModel
 from bookhub.ui.widgets.sidebar import SidebarWidget
-from bookhub.ui.widgets.topbar import TopBarWidget
+from bookhub.ui.widgets.topbar import SearchSuggestion, TopBarWidget
 
 
 class AppWindow(QMainWindow):
@@ -37,8 +38,9 @@ class AppWindow(QMainWindow):
         root.setSpacing(0)
 
         self.sidebar = SidebarWidget()
-        self.sidebar.setFixedWidth(240)
+        self.sidebar.setFixedWidth(UI_LAYOUT.sidebar_width)
         self.sidebar.page_requested.connect(self._show_page)
+        self.sidebar.import_button.clicked.connect(self._show_import_dialog)
         root.addWidget(self.sidebar)
 
         main_panel = QWidget()
@@ -69,6 +71,7 @@ class AppWindow(QMainWindow):
 
         self.setStyleSheet(APP_STYLE)
         self.retranslate_ui()
+        self._refresh_search_suggestions()
         self._show_page("library")
 
     def _register_page(self, page_name: str, widget: QWidget) -> None:
@@ -83,9 +86,23 @@ class AppWindow(QMainWindow):
         self.sidebar.set_active(page_name)
 
     def _on_query_changed(self, query: str) -> None:
+        self._library_vm.set_query(query)
+        self._refresh_search_suggestions()
         current_page = self.page_stack.currentWidget()
         if current_page is self.library_page:
             self.library_page.set_query(query)
+
+    def _refresh_search_suggestions(self) -> None:
+        suggestions = [
+            SearchSuggestion(
+                group=item["group"],
+                label=item["label"],
+                description=item["description"],
+                query_value=item["query_value"],
+            )
+            for item in self._library_vm.ui_state.search_suggestions
+        ]
+        self.topbar.set_search_suggestions(suggestions)
 
     def _show_import_dialog(self) -> None:
         dialog = ImportDialog(self)
