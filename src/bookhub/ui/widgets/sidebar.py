@@ -50,7 +50,7 @@ class SidebarWidget(QWidget):
             ("reading_now", "Reading Now", "reading_now.svg"),
             ("favorites", "Favorites", "favorites.svg"),
             ("tools", "Tools", "tools.svg"),
-            ("trash", "Trash", "trash.svg"),
+            ("missed", "Missed", "trash.svg"),
         ]
 
         for key, text, icon_name in button_definitions:
@@ -99,7 +99,7 @@ class SidebarWidget(QWidget):
         self._buttons["reading_now"].setText(tr("sidebar.reading_now", "Reading Now"))
         self._buttons["favorites"].setText(tr("sidebar.favorites", "Favorites"))
         self._buttons["tools"].setText(tr("sidebar.tools", "Tools"))
-        self._buttons["trash"].setText(tr("sidebar.trash", "Trash"))
+        self._buttons["missed"].setText(tr("sidebar.missed", "Missed"))
         self.import_button.setText(tr("sidebar.import_books", "IMPORT BOOKS"))
         self.settings_button.setText(tr("sidebar.settings", "Settings"))
 

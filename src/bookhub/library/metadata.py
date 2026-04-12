@@ -1,0 +1,253 @@
+from __future__ import annotations
+
+import hashlib
+import os
+import zipfile
+from io import BytesIO
+from pathlib import Path, PurePosixPath
+from xml.etree import ElementTree as ET
+
+from PIL import Image, ImageDraw
+
+from bookhub.library.models import FingerprintBundle, ParsedMetadata
+
+EPUB_NS = {
+    "container": "urn:oasis:names:tc:opendocument:xmlns:container",
+    "opf": "http://www.idpf.org/2007/opf",
+    "dc": "http://purl.org/dc/elements/1.1/",
+}
+
+
+def _clean_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _normalize_language(value: str | None) -> str | None:
+    text = _clean_text(value)
+    if not text:
+        return None
+    return text.lower()
+
+
+def _format_authors(creators: list[str]) -> str | None:
+    compact = [item.strip() for item in creators if item and item.strip()]
+    if not compact:
+        return None
+    return " | ".join(compact)
+
+
+def build_metadata_tags(metadata: ParsedMetadata) -> list[str]:
+    tags: list[str] = []
+    if metadata.author:
+        tags.append(f"author: {metadata.author}")
+    if metadata.publisher:
+        tags.append(f"publisher: {metadata.publisher}")
+    if metadata.language:
+        tags.append(f"language: {metadata.language}")
+    return tags
+
+
+def compute_fingerprints(file_path: Path) -> FingerprintBundle:
+    stat = file_path.stat()
+    size_mtime = f"{stat.st_size}:{int(stat.st_mtime)}"
+    sha256 = hashlib.sha256()
+    quick = hashlib.sha256()
+    with file_path.open("rb") as handle:
+        first_chunk = handle.read(4 * 1024 * 1024)
+        quick.update(first_chunk)
+        sha256.update(first_chunk)
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            sha256.update(chunk)
+    return FingerprintBundle(
+        sha256=sha256.hexdigest(),
+        size_mtime=size_mtime,
+        quick=quick.hexdigest(),
+    )
+
+
+def extract_pdf_metadata(file_path: Path) -> ParsedMetadata:
+    try:
+        import fitz  # type: ignore[import-not-found]
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("PyMuPDF is required for PDF import. Install dependency: PyMuPDF.") from exc
+
+    doc = fitz.open(str(file_path))
+    try:
+        payload = doc.metadata or {}
+        title = _clean_text(payload.get("title"))
+        author = _clean_text(payload.get("author"))
+        publisher = _clean_text(payload.get("publisher"))
+        language = _normalize_language(payload.get("language"))
+        return ParsedMetadata(
+            title=title,
+            author=author,
+            publisher=publisher,
+            language=language,
+        )
+    finally:
+        doc.close()
+
+
+def _extract_epub_package(zip_file: zipfile.ZipFile) -> tuple[str, ET.Element]:
+    container = ET.fromstring(zip_file.read("META-INF/container.xml"))
+    rootfile = container.find(".//container:rootfile", EPUB_NS)
+    if rootfile is None:
+        raise RuntimeError("EPUB metadata error: META-INF/container.xml missing rootfile entry")
+    package_path = rootfile.attrib.get("full-path")
+    if not package_path:
+        raise RuntimeError("EPUB metadata error: rootfile full-path is empty")
+    opf_root = ET.fromstring(zip_file.read(package_path))
+    return package_path, opf_root
+
+
+def extract_epub_metadata(file_path: Path) -> ParsedMetadata:
+    with zipfile.ZipFile(file_path, "r") as zip_file:
+        _, opf_root = _extract_epub_package(zip_file)
+        metadata = opf_root.find(".//opf:metadata", EPUB_NS)
+        if metadata is None:
+            return ParsedMetadata()
+
+        def first_text(xpath: str) -> str | None:
+            node = metadata.find(xpath, EPUB_NS)
+            return _clean_text(node.text if node is not None else None)
+
+        creators = [node.text or "" for node in metadata.findall("dc:creator", EPUB_NS)]
+        return ParsedMetadata(
+            title=first_text("dc:title"),
+            author=_format_authors(creators),
+            publisher=first_text("dc:publisher"),
+            language=_normalize_language(first_text("dc:language")),
+        )
+
+
+def _extract_epub_cover_bytes(file_path: Path) -> bytes | None:
+    with zipfile.ZipFile(file_path, "r") as zip_file:
+        package_path, opf_root = _extract_epub_package(zip_file)
+        metadata = opf_root.find(".//opf:metadata", EPUB_NS)
+        manifest = opf_root.find(".//opf:manifest", EPUB_NS)
+        if manifest is None:
+            return None
+
+        cover_id: str | None = None
+        if metadata is not None:
+            for node in metadata.findall("opf:meta", EPUB_NS):
+                if node.attrib.get("name", "").lower() == "cover":
+                    cover_id = node.attrib.get("content")
+                    if cover_id:
+                        break
+
+        manifest_items = manifest.findall("opf:item", EPUB_NS)
+        selected_href: str | None = None
+        if cover_id:
+            for item in manifest_items:
+                if item.attrib.get("id") == cover_id:
+                    selected_href = item.attrib.get("href")
+                    if selected_href:
+                        break
+
+        if selected_href is None:
+            for item in manifest_items:
+                properties = item.attrib.get("properties", "")
+                if "cover-image" in properties:
+                    selected_href = item.attrib.get("href")
+                    if selected_href:
+                        break
+
+        if selected_href is None:
+            for item in manifest_items:
+                media_type = item.attrib.get("media-type", "").lower()
+                if media_type.startswith("image/"):
+                    selected_href = item.attrib.get("href")
+                    if selected_href:
+                        break
+
+        if not selected_href:
+            return None
+
+        opf_dir = PurePosixPath(package_path).parent
+        cover_path = (opf_dir / selected_href).as_posix()
+        try:
+            return zip_file.read(cover_path)
+        except KeyError:
+            return None
+
+
+def _save_thumbnail_image(image: Image.Image, output_path: Path) -> str:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    thumb = image.convert("RGB")
+    thumb.thumbnail((360, 540), Image.Resampling.LANCZOS)
+    # Drop ICC metadata to avoid libpng iCCP warnings in Qt image loader.
+    thumb.save(output_path, format="PNG", icc_profile=None)
+    return str(output_path.resolve(strict=False))
+
+
+def generate_pdf_thumbnail(file_path: Path, output_path: Path) -> str:
+    try:
+        import fitz  # type: ignore[import-not-found]
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("PyMuPDF is required for PDF thumbnail rendering.") from exc
+
+    doc = fitz.open(str(file_path))
+    try:
+        if doc.page_count <= 0:
+            raise RuntimeError("PDF has no pages for thumbnail rendering.")
+        page = doc.load_page(0)
+        pixmap = page.get_pixmap(matrix=fitz.Matrix(1.45, 1.45), alpha=False)
+        image = Image.frombytes("RGB", [pixmap.width, pixmap.height], pixmap.samples)
+        return _save_thumbnail_image(image, output_path)
+    finally:
+        doc.close()
+
+
+def generate_epub_thumbnail(file_path: Path, output_path: Path, title_fallback: str) -> str:
+    cover_bytes = _extract_epub_cover_bytes(file_path)
+    if cover_bytes:
+        with Image.open(BytesIO(cover_bytes)) as cover_image:
+            return _save_thumbnail_image(cover_image, output_path)
+
+    placeholder = Image.new("RGB", (360, 540), color=(232, 238, 248))
+    draw = ImageDraw.Draw(placeholder)
+    label = title_fallback[:80] if title_fallback else file_path.stem[:80]
+    draw.text((20, 24), label, fill=(55, 65, 86))
+    return _save_thumbnail_image(placeholder, output_path)
+
+
+def regenerate_thumbnail_for_record(
+    *,
+    extension: str,
+    source_path: str,
+    output_path: str,
+    title_fallback: str,
+) -> str:
+    file_path = Path(source_path)
+    target_path = Path(output_path)
+    ext = extension.lower()
+    if ext == ".pdf":
+        return generate_pdf_thumbnail(file_path, target_path)
+    if ext == ".epub":
+        return generate_epub_thumbnail(file_path, target_path, title_fallback)
+    raise RuntimeError(f"Unsupported extension for thumbnail regeneration: {extension}")
+
+
+def file_size_mtime_token(file_path: Path) -> str:
+    stat = file_path.stat()
+    return f"{stat.st_size}:{int(stat.st_mtime)}"
+
+
+def extension_lower(file_path: Path) -> str:
+    return file_path.suffix.lower()
+
+
+def file_name(file_path: Path) -> str:
+    return file_path.name
+
+
+def path_is_subpath(path: str, root: str) -> bool:
+    normalized_path = os.path.normcase(os.path.normpath(path))
+    normalized_root = os.path.normcase(os.path.normpath(root))
+    if normalized_path == normalized_root:
+        return True
+    return normalized_path.startswith(normalized_root + os.sep)

@@ -190,6 +190,25 @@ QComboBox#SettingsLanguageCombo::drop-down {
     width: 22px;
     background: transparent;
 }
+QListWidget#LibraryPathList {
+    background: #f8fafd;
+    border: 1px solid #d7dfeb;
+    padding: 6px;
+}
+QListWidget#LibraryPathList::item {
+    border: 1px solid #d6ddea;
+    background: #ffffff;
+    margin: 2px 0px;
+}
+QProgressBar {
+    border: 1px solid #c8d0dc;
+    background: #ffffff;
+    text-align: center;
+    min-height: 18px;
+}
+QProgressBar::chunk {
+    background: #0078d7;
+}
 #PageTitle {
     font-size: 46px;
     font-weight: 700;

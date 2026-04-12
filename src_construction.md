@@ -1,14 +1,16 @@
 # src 结构说明书（Simple-Book-library）
 
 ## 文档目标
-- 本文件用于解释 `src` 目录的当前结构与职责分层。
-- 说明方式以“字符串路径图 + 文件职责说明”为主，便于后续开发快速定位。
-- 约定：`__pycache__/` 属于运行时缓存产物，不作为业务结构说明主体。
+- 解释 `src` 目录当前结构、职责分层与关键运行链路。
+- 采用“字符串路径图 + 职责说明”形式，便于快速定位。
+- 运行缓存（如 `__pycache__/`）不作为业务结构主体。
 
 ## 字符串路径图（2026-04-12）
 ```text
 src/
 ├─ main.py
+├─ sql/
+│  └─ .gitkeep
 ├─ assets/
 │  └─ icons/
 │     ├─ collections.svg
@@ -30,6 +32,15 @@ src/
    │  ├─ language.py
    │  └─ locales/
    │     └─ zh-cn.json
+   ├─ library/
+   │  ├─ __init__.py
+   │  ├─ metadata.py
+   │  ├─ models.py
+   │  ├─ repository.py
+   │  ├─ scanner.py
+   │  ├─ thumbnail_tasks.py
+   │  ├─ thumbnail_worker.py
+   │  └─ worker.py
    └─ ui/
       ├─ __init__.py
       ├─ app_window.py
@@ -62,91 +73,104 @@ src/
 ```
 
 ## 分层职责总览
-- `src/main.py`：程序入口，启动 `QApplication` 并展示主窗口。
-- `src/assets/icons/`：UI 使用的本地 SVG 图标资源，避免系统图标平台差异。
-- `src/bookhub/i18n/`：语言切换与文案读取层（当前支持 `en` 与 `zh-cn` 资源文件）。
-- `src/bookhub/ui/`：界面主层，按 `resources -> models/viewmodels -> widgets/pages/dialogs -> app_window` 组织。
+- `main.py`：程序入口，启动 `QApplication` 并打开主窗口。
+- `assets/icons/`：本地 SVG 图标资源。
+- `sql/`：运行期 SQLite 与扫描报告目录（当前用 `.gitkeep` 占位）。
+- `bookhub/i18n/`：语言管理与文案词典加载。
+- `bookhub/library/`：书库后端核心层（SQLite 存储、扫描、元数据提取、缩略图生成、后台 worker）。
+- `bookhub/ui/`：界面与交互层，消费 `library` 层输出。
 
 ## 启动链路（运行时）
 ```text
 main.py
   -> AppWindow (ui/app_window.py)
-    -> SidebarWidget / TopBarWidget
-    -> LibraryPage / SettingsPage / PluginsPage / PlaceholderPage
-    -> LibraryViewModel (提供页面状态与假数据)
-    -> LanguageManager (文案翻译)
+    -> LibraryRepository (library/repository.py)
+    -> LibraryViewModel (ui/viewmodels/library_viewmodel.py)
+    -> Sidebar/TopBar/Pages
+    -> SettingsPage 信号（Add/Remove Path、扫描深度、哈希策略、立即扫描）
+    -> ScanWorker (library/worker.py, QThread)
+      -> scan_roots (library/scanner.py)
+        -> metadata/thumbnail (library/metadata.py)
+        -> sqlite 持久化 + scan_report.json
+    -> ThumbnailTaskWorker (library/thumbnail_worker.py, QThread)
+      -> cleanup_all_thumbnails / regenerate_all_thumbnails (library/thumbnail_tasks.py)
 ```
 
 ## 关键目录与文件说明
 
-### 1) 入口层
+### 1) 入口与运行目录
 - `src/main.py`
-  - 创建 Qt 应用实例。
-  - 创建并显示 `AppWindow`。
-  - 负责事件循环生命周期返回值。
+  - 创建 Qt 应用并挂载 `AppWindow`。
+- `src/sql/.gitkeep`
+  - 运行数据目录占位文件。
+  - 实际运行时会生成 `library.db` 与 `scan_report.json`（均已被 `.gitignore` 忽略）。
 
-### 2) 静态资源层
-- `src/assets/icons/*.svg`
-  - 全局图标资产（侧边栏、TopBar、视图切换等）。
-  - 由 `ui/resources/assets.py` 统一读取并转换为 `QIcon/QPixmap`。
-
-### 3) 包根与国际化层（bookhub）
-- `src/bookhub/__init__.py`
-  - 包标记文件。
+### 2) 国际化层
 - `src/bookhub/i18n/language.py`
-  - `LanguageManager`：维护当前语言、缓存词典、读取 `locales/*.json`。
-  - `tr(key, english_text)`：统一翻译入口，未命中时回退英文默认文案。
+  - `LanguageManager` 负责语言切换、词典缓存、回退逻辑。
 - `src/bookhub/i18n/locales/zh-cn.json`
-  - 中文翻译词典，覆盖侧边栏、TopBar、Library、Settings、Plugins、标签弹窗文案。
-- `src/bookhub/i18n/__init__.py`
-  - 导出 `language_manager` 与 `tr`。
+  - 中文文案词典，覆盖 Sidebar、Library、Settings、扫描提示等键。
 
-### 4) UI 主层（bookhub/ui）
-- `src/bookhub/ui/app_window.py`
-  - 主窗口编排器。
-  - 组装侧边栏、顶部栏、页面堆栈（`QStackedWidget`）。
-  - 管理页面切换、搜索联动、导入弹窗、语言重翻译。
-- `src/bookhub/ui/resources/layout_config.py`
-  - `UiLayoutConfig`：集中定义页面尺寸常量（侧边栏宽度、卡片尺寸、间距、封面比例等）。
-- `src/bookhub/ui/resources/styles.py`
-  - `APP_STYLE`：全局 QSS 样式令牌与组件样式规则。
-- `src/bookhub/ui/resources/assets.py`
-  - 图标路径与加载工具函数（`icon_path/load_icon/load_pixmap`）。
-- `src/bookhub/ui/models/resource.py`
-  - `ResourceItem`：图书资源数据模型（标题、作者、状态、标签、路径、封面路径等）。
-- `src/bookhub/ui/viewmodels/library_viewmodel.py`
-  - `UiState`：UI 状态容器（筛选、分页、搜索建议、选中项等）。
-  - `LibraryViewModel`：维护视图模式、筛选逻辑、事件数据输入封装（`UiInputEnvelope`）与本地假数据。
-- `src/bookhub/ui/widgets/sidebar.py`
-  - 侧边栏导航组件，包含导航按钮、导入按钮、设置入口与自适应字体/图标缩放。
-- `src/bookhub/ui/widgets/topbar.py`
-  - 顶部栏组件，包含搜索框、建议下拉、导入按钮、刷新与菜单按钮。
-- `src/bookhub/ui/widgets/book_card.py`
-  - 图书卡片组件，负责封面展示、标题作者、状态与标签信息。
-- `src/bookhub/ui/pages/library_page.py`
-  - 核心书库页面。
-  - 提供网格/列表双视图、右键菜单、标签弹窗、交互事件记录（`interaction_events`）。
-- `src/bookhub/ui/pages/settings_page.py`
-  - 设置页面骨架。
-  - 提供启动项、语言切换、书库目录列表、扫描/元数据按钮等。
-- `src/bookhub/ui/pages/plugins_page.py`
-  - 插件管理页面骨架。
-  - 提供插件列表、详情、描述与操作按钮展示。
-- `src/bookhub/ui/pages/placeholder_page.py`
-  - 占位页组件，用于 `collections/reading_now/favorites/trash` 等未实现页面。
-- `src/bookhub/ui/dialogs/import_dialog.py`
-  - 导入图书弹窗骨架，模拟文件浏览与文件类型选择流程。
-- `src/bookhub/ui/dialogs/add_tag_dialog.py`
-  - 添加标签弹窗，支持最近标签与自定义书单选择。
-- `src/bookhub/ui/**/__init__.py`
-  - 子包标记文件，维持包结构清晰。
+### 3) 书库后端层（bookhub/library）
+- `repository.py`
+  - SQLite 初始化与表结构维护。
+  - 维护设置项（扫描深度、哈希策略）、书库目录、书籍索引、Missed 状态、扫描历史摘要。
+- `scanner.py`
+  - 按目录与深度扫描文件系统。
+  - 仅导入 `pdf/epub`，忽略不支持格式并记录。
+  - 执行重名冲突检查（同文件名+同后缀）与默认跳过策略。
+  - 命中 Missed 指纹时自动恢复书籍。
+- `metadata.py`
+  - PDF（PyMuPDF）与 EPUB（OPF）元数据提取。
+  - 封面/首图缩略图生成，写入项目根目录 `img_preview/`。
+  - 统一按“无 ICC 元数据”策略写盘，减少 Qt `libpng iCCP` 告警。
+  - 三种指纹计算：`sha256`、`size_mtime`、`quick(4MB)`。
+- `models.py`
+  - 扫描请求、扫描结果、冲突项、元数据/指纹结构定义。
+  - 缩略图维护任务结果结构定义（清理/重建）。
+- `worker.py`
+  - `QThread` 扫描执行器，避免 UI 阻塞。
+- `thumbnail_tasks.py`
+  - 实现“清理所有缩略图（删文件+清空 DB 路径）”与“按主库记录重新生成缩略图”。
+- `thumbnail_worker.py`
+  - 缩略图维护任务 `QThread`，提供进度与完成回调。
+
+### 4) UI 层（bookhub/ui）
+- `app_window.py`
+  - 主窗口编排与事件接线中心。
+  - 接管 Import 按钮目录导入、Settings 的 Add/Remove Path、扫描触发、扫描结果弹窗。
+  - 页面路由包含 `library` 与 `missed`（替代旧 `trash`）。
+- `viewmodels/library_viewmodel.py`
+  - 管理资源集合、检索词、建议词、list/waterfall 切换。
+  - 支持 `include_missing` 过滤（Library/Missed 共用）。
+- `models/resource.py`
+  - UI 书籍模型，扩展 `publisher/language/is_missing/file_name/extension`。
+- `pages/settings_page.py`
+  - General 页支持：
+    - Add Path（目录选择）
+    - 路径行级 Delete
+    - 扫描深度（1~3）
+    - Missed 匹配策略（3种）
+    - 扫描摘要与支持格式说明
+    - 缩略图维护双按钮：清理所有缩略图、重新生成缩略图
+    - 任务展开区进度条（第X个/共X个）与完成状态文案
+- `pages/library_page.py`
+  - 一套页面逻辑支持 Library 与 Missed 两种模式。
+  - 网格/列表双视图，消费真实索引数据。
+- `widgets/sidebar.py`
+  - 侧栏 `trash` 导航改为 `missed`。
 
 ## 当前实现边界（基于代码现状）
-- 当前 `LibraryViewModel` 内置的是演示假数据，尚未接入真实扫描/索引链路。
-- `ImportDialog` 以 UI 骨架为主，文件系统导入流程尚未打通。
-- 多个页面属于“壳层完成、业务待接入”状态，符合当前项目的 UI 先行阶段目标。
+- 仅支持目录导入，不支持单文件导入。
+- PDF 真实缩略图依赖 `PyMuPDF`；依赖缺失时会在扫描结果中报错。
+- PDF 重新生成缩略图同样依赖 `PyMuPDF`；缺失时 PDF 项进入重建失败统计。
+- 元数据策略为“仅文件内 metadata，缺失置空”；手工补录后续迭代实现。
+- 重名冲突当前为“扫描后汇总提示 + 默认跳过新文件”。
 
-## 维护约定（后续更新本文件时）
-- 新增或删除 `src` 文件时，先更新“字符串路径图”，再更新“关键目录与文件说明”。
-- 文案必须描述“文件在架构中的职责”，而非仅重复文件名。
-- 每次任务结束时同步更新本文件，以保证结构说明与实际代码一致。
+## 维护约定
+- 任何新增/删除 `src` 文件后，必须同步更新本说明书路径图与职责段落。
+- 文档描述必须强调“架构职责”，避免只罗列文件名。
+- 与书库后端相关能力变更时，需同步检查：
+  - `src/sql` 运行数据约定
+  - `img_preview` 缩略图落盘约定
+  - UI 与 `library` 层接口字段一致性

@@ -31,9 +31,15 @@ from bookhub.ui.widgets.book_card import BookCardWidget
 
 
 class LibraryPage(QWidget):
-    def __init__(self, view_model: LibraryViewModel, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        view_model: LibraryViewModel,
+        parent: QWidget | None = None,
+        missing_mode: bool = False,
+    ) -> None:
         super().__init__(parent)
         self.view_model = view_model
+        self.missing_mode = missing_mode
         self.interaction_events: list[dict[str, str | None]] = []
         self._last_grid_columns = 0
 
@@ -107,7 +113,10 @@ class LibraryPage(QWidget):
         self.render()
 
     def retranslate_ui(self) -> None:
-        self.title.setText(tr("library.title", "Library"))
+        if self.missing_mode:
+            self.title.setText(tr("missed.title", "Missed"))
+        else:
+            self.title.setText(tr("library.title", "Library"))
         self.grid_btn.setToolTip(tr("library.grid", "Grid"))
         self.list_btn.setToolTip(tr("library.list", "List"))
         self.list_table.setHorizontalHeaderLabels(
@@ -132,10 +141,15 @@ class LibraryPage(QWidget):
         self.render()
 
     def render(self) -> None:
-        items = self.view_model.filtered_resources()
-        self.subtitle.setText(
-            tr("library.subtitle.count", "{count} books in your local collection").format(count=len(items))
-        )
+        items = self.view_model.filtered_resources(include_missing=self.missing_mode)
+        if self.missing_mode:
+            self.subtitle.setText(
+                tr("missed.subtitle.count", "{count} missing books waiting restore").format(count=len(items))
+            )
+        else:
+            self.subtitle.setText(
+                tr("library.subtitle.count", "{count} books in your local collection").format(count=len(items))
+            )
         self._render_grid(items)
         self._render_list(items)
 
@@ -163,16 +177,17 @@ class LibraryPage(QWidget):
             )
             self.grid_layout.addWidget(card, row, col, alignment=Qt.AlignLeft | Qt.AlignTop)
 
-        add_card = QLabel(tr("library.add_new_book", "+\nADD NEW BOOK"))
-        add_card.setObjectName("AddCard")
-        add_card.setAlignment(Qt.AlignCenter)
-        add_card.setFixedSize(UI_LAYOUT.card_width, UI_LAYOUT.add_card_height)
-        self.grid_layout.addWidget(
-            add_card,
-            len(items) // columns,
-            len(items) % columns,
-            alignment=Qt.AlignLeft | Qt.AlignTop,
-        )
+        if not self.missing_mode:
+            add_card = QLabel(tr("library.add_new_book", "+\nADD NEW BOOK"))
+            add_card.setObjectName("AddCard")
+            add_card.setAlignment(Qt.AlignCenter)
+            add_card.setFixedSize(UI_LAYOUT.card_width, UI_LAYOUT.add_card_height)
+            self.grid_layout.addWidget(
+                add_card,
+                len(items) // columns,
+                len(items) % columns,
+                alignment=Qt.AlignLeft | Qt.AlignTop,
+            )
 
     def _render_list(self, items: list[ResourceItem]) -> None:
         self.list_table.setRowCount(len(items))
@@ -262,4 +277,4 @@ class LibraryPage(QWidget):
             return
         columns = self._calculate_grid_columns()
         if columns != self._last_grid_columns:
-            self._render_grid(self.view_model.filtered_resources())
+            self._render_grid(self.view_model.filtered_resources(include_missing=self.missing_mode))

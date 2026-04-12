@@ -14,3 +14,17 @@ __pycache__/
 # 系统
 .DS_Store
 Thumbs.db
+
+#测试文件夹
+.book_test_using/
+book_test_using/
+
+# 运行期数据
+src/sql/*.db
+src/sql/*.db-*
+src/sql/*.sqlite
+src/sql/*.sqlite3
+src/sql/*.sqlite3-*
+src/sql/scan_report.json
+img_preview/*
+!img_preview/.gitkeep

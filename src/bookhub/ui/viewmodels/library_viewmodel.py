@@ -31,8 +31,12 @@ class LibraryViewModel:
     def __init__(self) -> None:
         self.view_mode = "waterfall"
         self.ui_state = UiState()
-        self.resources = self._seed_resources()
+        self.resources: list[ResourceItem] = []
         self._refresh_search_suggestions("")
+
+    def set_resources(self, resources: list[ResourceItem]) -> None:
+        self.resources = list(resources)
+        self._refresh_search_suggestions(self.ui_state.filter)
 
     def set_query(self, query: str) -> None:
         self.ui_state.filter = query.strip().lower()
@@ -51,16 +55,18 @@ class LibraryViewModel:
     def set_settings_section(self, section: str) -> None:
         self.ui_state.settings_section = section
 
-    def filtered_resources(self) -> list[ResourceItem]:
+    def filtered_resources(self, include_missing: bool = False) -> list[ResourceItem]:
+        source = [item for item in self.resources if bool(item.is_missing) is include_missing]
         query = self.ui_state.filter
         if not query:
-            return list(self.resources)
+            return list(source)
         return [
             item
-            for item in self.resources
+            for item in source
             if query in item.title.lower()
             or query in item.author.lower()
             or any(query in tag.lower() for tag in item.tags)
+            or query in item.path.lower()
         ]
 
     def build_envelope(self) -> UiInputEnvelope:
@@ -68,7 +74,7 @@ class LibraryViewModel:
             request_id="req-ui-outline",
             task_id="task-library-render",
             view_mode=self.view_mode,
-            data_source={"resources": self.filtered_resources()},
+            data_source={"resources": self.filtered_resources(include_missing=False)},
             ui_state=self.ui_state,
             trace_id="trace-ui-outline-001",
         )
@@ -85,6 +91,8 @@ class LibraryViewModel:
         ]
 
         for item in self.resources:
+            if item.is_missing:
+                continue
             if query and query not in item.title.lower() and query not in item.author.lower():
                 continue
             suggestions.append(
@@ -96,7 +104,11 @@ class LibraryViewModel:
                 }
             )
 
-        authors = {resource.author for resource in self.resources if not query or query in resource.author.lower()}
+        authors = {
+            resource.author
+            for resource in self.resources
+            if resource.author and not resource.is_missing and (not query or query in resource.author.lower())
+        }
         for author in sorted(authors):
             suggestions.append(
                 {
@@ -108,53 +120,3 @@ class LibraryViewModel:
             )
 
         self.ui_state.search_suggestions = suggestions[:10]
-
-    @staticmethod
-    def _seed_resources() -> list[ResourceItem]:
-        return [
-            ResourceItem(
-                resource_id="b001",
-                title="Architectural Patterns",
-                author="Elena Rostova",
-                status="READING",
-                tags=["Design", "2024"],
-                path=r"D:\Library\Architectural Patterns.pdf",
-                thumbnail_path=r"",
-            ),
-            ResourceItem(
-                resource_id="b002",
-                title="The Grid System",
-                author="Josef Muller-Brockmann",
-                status="FINISHED",
-                tags=["Classic", "Theory"],
-                path=r"D:\Library\The Grid System.pdf",
-                thumbnail_path=r"",
-            ),
-            ResourceItem(
-                resource_id="b003",
-                title="Neural Networks",
-                author="Dr. Aris Thorne",
-                status="READING",
-                tags=["Science"],
-                path=r"D:\Library\Neural Networks.pdf",
-                thumbnail_path=r"",
-            ),
-            ResourceItem(
-                resource_id="b004",
-                title="Minimalism in Life",
-                author="Sato Kenji",
-                status="UNREAD",
-                tags=["Lifestyle"],
-                path=r"D:\Library\Minimalism in Life.pdf",
-                thumbnail_path=r"",
-            ),
-            ResourceItem(
-                resource_id="b005",
-                title="Legacy Systems",
-                author="Markus Hoffman",
-                status="READING",
-                tags=["History"],
-                path=r"D:\Library\Legacy Systems.pdf",
-                thumbnail_path=r"",
-            ),
-        ]
