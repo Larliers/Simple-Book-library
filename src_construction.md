@@ -179,19 +179,29 @@ main.py
 ## 新增模块 - Collections & Favorites (2026-04-13)
 
 ### src/bookhub/ui/pages/collections_page.py
-**用途**: 自定义书单（Collections）页面
+**用途**: 书单（Collections）页面
 - `CollectionCard` - 书单卡片小部件，显示书单封面（彩色首字母）、名称和书籍数量
-- `CollectionDetailPage` - 书单详情页，显示书单内的书籍，支持移除书籍
+- `CollectionDetailPage` - 书单详情页，显示书单内的书籍（**真实缩略图**），支持移除书籍
 - `CollectionsPage` - 主页面，网格展示所有书单，支持创建/删除/重命名，点击进入详情
 
 ### src/bookhub/ui/pages/favorites_page.py
-**用途**: 收藏夹（Favorites）页面
-- `FavoriteBookCard` - 收藏书籍卡片，右键菜单支持移除
-- `FavoritesPage` - 展示所有收藏书籍，网格布局，支持右键移除
+**用途**: 自定义书单（自定义书单）页面 —— 重构自原 Favorites 收藏夹
+- `_load_thumbnail()` / `_fallback_cover()` - 缩略图辅助函数（真实封面 + 首字母兜底）
+- `ReadingListCard` - 自定义书单卡片，封面优先展示书单内第一本书的真实缩略图
+- `ReadingListDetailPage` - 书单详情页，书籍卡片显示真实缩略图，支持移除
+- `FavoritesPage` - "自定义书单"主页面，与 Collections 并列，功能完全一致
 
 ### src/bookhub/ui/dialogs/add_to_collection_dialog.py
-**用途**: 添加到书单的弹出对话框
+**用途**: 添加到书单的弹出对话框（旧版，保留兼容）
 - `AddToCollectionDialog` - 显示现有书单列表（复选框），支持搜索和新建书单
+
+### src/bookhub/ui/dialogs/quick_add_dialog.py ★新增
+**用途**: 右键快速添加弹窗（匹配 鼠标右键的菜单.html 设计）
+- `_TagChip` - 可切换选中状态的标签芯片按钮
+- `_CollectionRow` - 书单列表行（单行「添加/已添加」按钮）
+- `_FlowLayout` - 自定义流式布局，用于标签芯片自动换行
+- `QuickAddDialog` - 主对话框：标签区（搜索/创建/选择）+ 书单区（搜索/新建/加入）+ 确认/取消
+  - 确认时批量写入标签变更和书单成员变更
 
 ### src/bookhub/library/repository.py (新增方法)
 **新增**: Collections & Favorites 的数据库操作
@@ -200,9 +210,10 @@ main.py
 - `add_book_to_collection()` / `remove_book_from_collection()` / `get_books_in_collection()`
 - `get_collection_book_count()` / `is_book_in_collection()`
 - `add_to_favorites()` / `remove_from_favorites()` / `get_favorite_books()` / `is_favorite()`
+- `get_all_tags()` / `add_tag_to_book()` / `remove_tag_from_book()` / `get_book_tags()` ★新增
 
-### src/bookhub/ui/widgets/book_card.py (新增函数)
-**新增**: 右键菜单支持函数
-- `install_book_context_menu(card_widget, repository)` - 为书籍卡片安装右键菜单
-  - ☆ Add to Favorites / ★ Remove from Favorites
-  - 📚 Add to Collection… （打开 AddToCollectionDialog）
+### src/bookhub/ui/pages/library_page.py (更新)
+**更新**: 右键菜单改为调用 QuickAddDialog
+- 移除旧的 Favorites 切换 / 旧 AddToCollectionDialog 入口
+- 新增「🏷️ 添加标签 / 加入书单…」入口 → 打开 `QuickAddDialog`
+- 新增 `_open_book_external()` / `_open_book_folder()` 实际执行打开文件/文件夹

@@ -628,3 +628,81 @@ class LibraryRepository:
                 (book_id,),
             ).fetchone()
             return row is not None
+
+    # -- Tags ---------------------------------------------------------
+
+    def get_all_tags(self) -> list[str]:
+        """Return all unique tags across all books, sorted alphabetically."""
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT tags_json FROM books WHERE tags_json IS NOT NULL AND tags_json != '[]'"
+            ).fetchall()
+        tags_set: set[str] = set()
+        for row in rows:
+            try:
+                tags = json.loads(row[0])
+                if isinstance(tags, list):
+                    for t in tags:
+                        if t and isinstance(t, str):
+                            tags_set.add(t.strip())
+            except Exception:
+                pass
+        return sorted(tags_set)
+
+    def add_tag_to_book(self, book_id: int, tag: str) -> None:
+        """Add a tag to a book's tag list (idempotent)."""
+        tag = tag.strip()
+        if not tag:
+            return
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT tags_json FROM books WHERE id = ?", (book_id,)
+            ).fetchone()
+            if not row:
+                return
+            try:
+                tags: list = json.loads(row[0] or "[]")
+            except Exception:
+                tags = []
+            if not isinstance(tags, list):
+                tags = []
+            if tag not in tags:
+                tags.append(tag)
+                conn.execute(
+                    "UPDATE books SET tags_json = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps(tags, ensure_ascii=False), now_utc_iso(), book_id),
+                )
+
+    def remove_tag_from_book(self, book_id: int, tag: str) -> None:
+        """Remove a specific tag from a book."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT tags_json FROM books WHERE id = ?", (book_id,)
+            ).fetchone()
+            if not row:
+                return
+            try:
+                tags: list = json.loads(row[0] or "[]")
+            except Exception:
+                tags = []
+            if not isinstance(tags, list):
+                tags = []
+            tags = [t for t in tags if t != tag]
+            conn.execute(
+                "UPDATE books SET tags_json = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(tags, ensure_ascii=False), now_utc_iso(), book_id),
+            )
+
+    def get_book_tags(self, book_id: int) -> list[str]:
+        """Return the tags for a specific book."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT tags_json FROM books WHERE id = ?", (book_id,)
+            ).fetchone()
+        if not row:
+            return []
+        try:
+            tags = json.loads(row[0] or "[]")
+            return [str(t) for t in tags if t] if isinstance(tags, list) else []
+        except Exception:
+            return []

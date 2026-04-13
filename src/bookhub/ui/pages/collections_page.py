@@ -251,15 +251,41 @@ class CollectionDetailPage(QWidget):
         cover = QLabel()
         cover.setFixedSize(144, 170)
         cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title = str(book_data.get("title", book_data.get("file_path", "?")))
-        colors = ["#1565C0", "#2E7D32", "#B71C1C", "#E65100", "#4A148C"]
-        idx = int(hashlib.md5(title.encode("utf-8", errors="replace")).hexdigest(), 16) % len(colors)
-        color = colors[idx]
-        cover.setText(title[0].upper() if title else "?")
-        cover.setStyleSheet(
-            f"background-color: {color}; color: white; border-radius: 4px;"
-            " font-size: 28pt; font-weight: bold;"
-        )
+        title = str(book_data.get("title", book_data.get("file_name", book_data.get("file_path", "?"))))
+
+        # Try to load actual thumbnail
+        thumbnail_path = book_data.get("thumbnail_path")
+        thumbnail_loaded = False
+        if thumbnail_path:
+            from pathlib import Path as _Path
+            from PySide6.QtGui import QPixmap
+            tp = _Path(thumbnail_path)
+            if tp.exists():
+                pixmap = QPixmap(str(tp))
+                if not pixmap.isNull():
+                    scaled = pixmap.scaled(
+                        144, 170,
+                        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    # Crop center
+                    if scaled.width() > 144 or scaled.height() > 170:
+                        x = max(0, (scaled.width() - 144) // 2)
+                        y = max(0, (scaled.height() - 170) // 2)
+                        scaled = scaled.copy(x, y, 144, 170)
+                    cover.setPixmap(scaled)
+                    cover.setStyleSheet("border-radius: 4px;")
+                    thumbnail_loaded = True
+
+        if not thumbnail_loaded:
+            colors = ["#1565C0", "#2E7D32", "#B71C1C", "#E65100", "#4A148C"]
+            idx = int(hashlib.md5(title.encode("utf-8", errors="replace")).hexdigest(), 16) % len(colors)
+            color = colors[idx]
+            cover.setText(title[0].upper() if title else "?")
+            cover.setStyleSheet(
+                f"background-color: {color}; color: white; border-radius: 4px;"
+                " font-size: 28pt; font-weight: bold;"
+            )
         layout.addWidget(cover)
 
         display = (title[:22] + "...") if len(title) > 22 else title

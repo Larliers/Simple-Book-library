@@ -224,82 +224,70 @@ class LibraryPage(QWidget):
         open_action = menu.addAction(tr("library.menu.open_external", "Open External"))
         open_folder_action = menu.addAction(tr("library.menu.open_folder", "Open Folder"))
         menu.addSeparator()
-        add_tag_action = menu.addAction(tr("library.menu.add_tag", "Add Tag"))
         remove_action = menu.addAction(tr("library.menu.remove_library", "Remove from Library"))
 
-        # Favorites and Collections (only when repository is available)
-        fav_action = None
-        col_action = None
+        # Quick-add (tags + custom reading lists) — only when repository available
+        quick_add_action = None
         if self._repository is not None:
             menu.addSeparator()
-            book_id = self._repository.get_book_int_id(resource.resource_id)
-            if book_id is not None:
-                try:
-                    is_fav = self._repository.is_favorite(book_id)
-                except Exception:
-                    is_fav = False
-                if is_fav:
-                    fav_action = menu.addAction("★  Remove from Favorites")
-                else:
-                    fav_action = menu.addAction("☆  Add to Favorites")
-                col_action = menu.addAction("📚  Add to Collection…")
+            quick_add_action = menu.addAction("🏷️  添加标签 / 加入书单…")
 
         chosen = menu.exec(global_pos)
 
         if chosen == open_action:
-            self._track_event("open_external", resource.resource_id)
+            self._open_book_external(resource)
         elif chosen == open_folder_action:
-            self._track_event("open_external", resource.resource_id)
-        elif chosen == add_tag_action:
-            dialog = AddTagDialog(self)
-            if dialog.exec():
-                self._track_event("sort", resource.resource_id)
+            self._open_book_folder(resource)
         elif chosen == remove_action:
             self._track_event("paginate", resource.resource_id)
-        elif fav_action is not None and chosen == fav_action:
-            self._toggle_favorite(resource)
-        elif col_action is not None and chosen == col_action:
-            self._add_to_collection(resource)
+        elif quick_add_action is not None and chosen == quick_add_action:
+            self._open_quick_add_dialog(resource, global_pos)
 
-    def _toggle_favorite(self, resource: ResourceItem) -> None:
-        if self._repository is None:
-            return
-        book_id = self._repository.get_book_int_id(resource.resource_id)
-        if book_id is None:
-            return
+    def _open_book_external(self, resource: ResourceItem) -> None:
+        import subprocess
+        import sys
         try:
-            if self._repository.is_favorite(book_id):
-                self._repository.remove_from_favorites(book_id)
-                from PySide6.QtWidgets import QToolTip
-                from PySide6.QtCore import QPoint
-                QToolTip.showText(
-                    self.mapToGlobal(QPoint(0, 0)),
-                    "Removed from Favorites",
-                    self, self.rect(), 1800,
-                )
+            path = resource.path
+            if sys.platform == "win32":
+                subprocess.Popen(["start", "", path], shell=True)
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", path])
             else:
-                self._repository.add_to_favorites(book_id)
-                from PySide6.QtWidgets import QToolTip
-                from PySide6.QtCore import QPoint
-                QToolTip.showText(
-                    self.mapToGlobal(QPoint(0, 0)),
-                    "Added to Favorites  ★",
-                    self, self.rect(), 1800,
-                )
+                subprocess.Popen(["xdg-open", path])
         except Exception as e:
-            print(f"[LibraryPage] favorite error: {e}")
+            print(f"[LibraryPage] open external error: {e}")
+        self._track_event("open_external", resource.resource_id)
 
-    def _add_to_collection(self, resource: ResourceItem) -> None:
+    def _open_book_folder(self, resource: ResourceItem) -> None:
+        import subprocess
+        import sys
+        from pathlib import Path as _Path
+        try:
+            folder = str(_Path(resource.path).parent)
+            if sys.platform == "win32":
+                subprocess.Popen(["explorer", folder])
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", folder])
+            else:
+                subprocess.Popen(["xdg-open", folder])
+        except Exception as e:
+            print(f"[LibraryPage] open folder error: {e}")
+        self._track_event("open_external", resource.resource_id)
+
+    def _open_quick_add_dialog(self, resource: ResourceItem, global_pos) -> None:
         if self._repository is None:
             return
         book_id = self._repository.get_book_int_id(resource.resource_id)
         if book_id is None:
             return
         try:
-            from bookhub.ui.dialogs.add_to_collection_dialog import AddToCollectionDialog
-        except ImportError:
+            from bookhub.ui.dialogs.quick_add_dialog import QuickAddDialog
+        except ImportError as e:
+            print(f"[LibraryPage] QuickAddDialog import error: {e}")
             return
-        dlg = AddToCollectionDialog(book_id, resource.title, self._repository, self)
+        dlg = QuickAddDialog(book_id, resource.title, self._repository, self)
+        # Position near the cursor
+        dlg.move(global_pos)
         dlg.exec()
 
     def _show_list_menu(self, pos) -> None:
