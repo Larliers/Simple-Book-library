@@ -24,6 +24,11 @@ from bookhub.ui.viewmodels.library_viewmodel import LibraryViewModel
 from bookhub.ui.widgets.sidebar import SidebarWidget
 from bookhub.ui.widgets.topbar import SearchSuggestion, TopBarWidget
 
+# Collections and Favorites (auto-added)
+from bookhub.ui.pages.collections_page import CollectionsPage
+from bookhub.ui.pages.favorites_page import FavoritesPage
+
+
 
 class AppWindow(QMainWindow):
     def __init__(self) -> None:
@@ -65,14 +70,14 @@ class AppWindow(QMainWindow):
         panel_layout.addWidget(self.page_stack, 1)
         root.addWidget(main_panel, 1)
 
-        self.library_page = LibraryPage(self._library_vm, missing_mode=False)
+        self.library_page = LibraryPage(self._library_vm, missing_mode=False, repository=self._repository)
         self._register_page("library", self.library_page)
-        self._register_page("collections", PlaceholderPage("Collections", "Collections page skeleton."))
+        self._register_page("collections", CollectionsPage(self._repository))
         self._register_page("reading_now", PlaceholderPage("Reading Now", "Reading queue page skeleton."))
-        self._register_page("favorites", PlaceholderPage("Favorites", "Favorites page skeleton."))
+        self._register_page("favorites", FavoritesPage(self._repository))
         self.plugins_page = PluginsPage()
         self._register_page("tools", self.plugins_page)
-        self.missed_page = LibraryPage(self._library_vm, missing_mode=True)
+        self.missed_page = LibraryPage(self._library_vm, missing_mode=True, repository=self._repository)
         self._register_page("missed", self.missed_page)
         self.settings_page = SettingsPage()
         self.settings_page.language_changed.connect(self._on_language_changed)

@@ -441,3 +441,190 @@ class LibraryRepository:
                 "UPDATE books SET thumbnail_path = ?, updated_at = ? WHERE id = ?",
                 (thumbnail_path, now_utc_iso(), int(book_id)),
             )
+
+    def get_book_int_id(self, resource_id: str) -> int | None:
+        """Return the integer primary key for a given resource_id (UUID hex)."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT id FROM books WHERE resource_id = ?",
+                (resource_id,),
+            ).fetchone()
+        return int(row["id"]) if row else None
+
+
+    # ==================================================================
+    # Collections & Favorites (added by _final_implement.py)
+    # ==================================================================
+
+    def _init_collections_tables(self) -> None:
+        """Create collections/favorites tables if they don't exist."""
+        with self._connection() as conn:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS collections (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name        TEXT    NOT NULL,
+                    description TEXT    NOT NULL DEFAULT '',
+                    created_at  TEXT    NOT NULL DEFAULT ''
+                );
+                CREATE TABLE IF NOT EXISTS collection_books (
+                    collection_id INTEGER NOT NULL,
+                    book_id       INTEGER NOT NULL,
+                    added_at      TEXT    NOT NULL DEFAULT '',
+                    PRIMARY KEY (collection_id, book_id),
+                    FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
+                );
+                CREATE TABLE IF NOT EXISTS favorite_books (
+                    book_id  INTEGER PRIMARY KEY,
+                    added_at TEXT    NOT NULL DEFAULT ''
+                );
+            """)
+
+    # -- Collections --------------------------------------------------
+
+    def create_collection(self, name: str, description: str = "") -> int:
+        """Create a new collection and return its id."""
+        import datetime
+        self._init_collections_tables()
+        with self._connection() as conn:
+            cur = conn.execute(
+                "INSERT INTO collections (name, description, created_at) VALUES (?, ?, ?)",
+                (name, description, datetime.datetime.now().isoformat()),
+            )
+            return cur.lastrowid
+
+    def get_all_collections(self) -> list[dict]:
+        """Return all collections ordered by creation time (newest first)."""
+        self._init_collections_tables()
+        with self._connection() as conn:
+            conn.row_factory = __import__('sqlite3').Row
+            rows = conn.execute(
+                "SELECT * FROM collections ORDER BY created_at DESC"
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def delete_collection(self, collection_id: int) -> None:
+        """Delete a collection (and its book links)."""
+        self._init_collections_tables()
+        with self._connection() as conn:
+            conn.execute(
+                "DELETE FROM collection_books WHERE collection_id = ?",
+                (collection_id,),
+            )
+            conn.execute(
+                "DELETE FROM collections WHERE id = ?",
+                (collection_id,),
+            )
+
+    def rename_collection(self, collection_id: int, new_name: str) -> None:
+        """Rename a collection."""
+        self._init_collections_tables()
+        with self._connection() as conn:
+            conn.execute(
+                "UPDATE collections SET name = ? WHERE id = ?",
+                (new_name, collection_id),
+            )
+
+    def add_book_to_collection(self, book_id: int, collection_id: int) -> None:
+        """Add a book to a collection (idempotent)."""
+        import datetime
+        self._init_collections_tables()
+        with self._connection() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO collection_books (collection_id, book_id, added_at)"
+                " VALUES (?, ?, ?)",
+                (collection_id, book_id, datetime.datetime.now().isoformat()),
+            )
+
+    def remove_book_from_collection(self, book_id: int, collection_id: int) -> None:
+        """Remove a book from a collection."""
+        self._init_collections_tables()
+        with self._connection() as conn:
+            conn.execute(
+                "DELETE FROM collection_books WHERE collection_id = ? AND book_id = ?",
+                (collection_id, book_id),
+            )
+
+    def get_books_in_collection(self, collection_id: int) -> list[dict]:
+        """Return all book rows for a collection."""
+        self._init_collections_tables()
+        with self._connection() as conn:
+            conn.row_factory = __import__('sqlite3').Row
+            try:
+                rows = conn.execute(
+                    """SELECT b.*
+                       FROM books b
+                       INNER JOIN collection_books cb ON b.id = cb.book_id
+                       WHERE cb.collection_id = ?
+                       ORDER BY cb.added_at DESC""",
+                    (collection_id,),
+                ).fetchall()
+                return [dict(r) for r in rows]
+            except Exception:
+                return []
+
+    def get_collection_book_count(self, collection_id: int) -> int:
+        """Return number of books in a collection."""
+        self._init_collections_tables()
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM collection_books WHERE collection_id = ?",
+                (collection_id,),
+            ).fetchone()
+            return row[0] if row else 0
+
+    def is_book_in_collection(self, book_id: int, collection_id: int) -> bool:
+        """Return True if book is in the collection."""
+        self._init_collections_tables()
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM collection_books WHERE collection_id = ? AND book_id = ?",
+                (collection_id, book_id),
+            ).fetchone()
+            return row is not None
+
+    # -- Favorites ----------------------------------------------------
+
+    def add_to_favorites(self, book_id: int) -> None:
+        """Add a book to favorites (idempotent)."""
+        import datetime
+        self._init_collections_tables()
+        with self._connection() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO favorite_books (book_id, added_at) VALUES (?, ?)",
+                (book_id, datetime.datetime.now().isoformat()),
+            )
+
+    def remove_from_favorites(self, book_id: int) -> None:
+        """Remove a book from favorites."""
+        self._init_collections_tables()
+        with self._connection() as conn:
+            conn.execute(
+                "DELETE FROM favorite_books WHERE book_id = ?",
+                (book_id,),
+            )
+
+    def get_favorite_books(self) -> list[dict]:
+        """Return all favorited book rows."""
+        self._init_collections_tables()
+        with self._connection() as conn:
+            conn.row_factory = __import__('sqlite3').Row
+            try:
+                rows = conn.execute(
+                    """SELECT b.*
+                       FROM books b
+                       INNER JOIN favorite_books fb ON b.id = fb.book_id
+                       ORDER BY fb.added_at DESC""",
+                ).fetchall()
+                return [dict(r) for r in rows]
+            except Exception:
+                return []
+
+    def is_favorite(self, book_id: int) -> bool:
+        """Return True if book is in favorites."""
+        self._init_collections_tables()
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM favorite_books WHERE book_id = ?",
+                (book_id,),
+            ).fetchone()
+            return row is not None

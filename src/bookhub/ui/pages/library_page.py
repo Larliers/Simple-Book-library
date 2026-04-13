@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,10 +36,12 @@ class LibraryPage(QWidget):
         view_model: LibraryViewModel,
         parent: QWidget | None = None,
         missing_mode: bool = False,
+        repository=None,
     ) -> None:
         super().__init__(parent)
         self.view_model = view_model
         self.missing_mode = missing_mode
+        self._repository = repository
         self.interaction_events: list[dict[str, str | None]] = []
         self._last_grid_columns = 0
 
@@ -224,6 +226,24 @@ class LibraryPage(QWidget):
         menu.addSeparator()
         add_tag_action = menu.addAction(tr("library.menu.add_tag", "Add Tag"))
         remove_action = menu.addAction(tr("library.menu.remove_library", "Remove from Library"))
+
+        # Favorites and Collections (only when repository is available)
+        fav_action = None
+        col_action = None
+        if self._repository is not None:
+            menu.addSeparator()
+            book_id = self._repository.get_book_int_id(resource.resource_id)
+            if book_id is not None:
+                try:
+                    is_fav = self._repository.is_favorite(book_id)
+                except Exception:
+                    is_fav = False
+                if is_fav:
+                    fav_action = menu.addAction("★  Remove from Favorites")
+                else:
+                    fav_action = menu.addAction("☆  Add to Favorites")
+                col_action = menu.addAction("📚  Add to Collection…")
+
         chosen = menu.exec(global_pos)
 
         if chosen == open_action:
@@ -236,6 +256,51 @@ class LibraryPage(QWidget):
                 self._track_event("sort", resource.resource_id)
         elif chosen == remove_action:
             self._track_event("paginate", resource.resource_id)
+        elif fav_action is not None and chosen == fav_action:
+            self._toggle_favorite(resource)
+        elif col_action is not None and chosen == col_action:
+            self._add_to_collection(resource)
+
+    def _toggle_favorite(self, resource: ResourceItem) -> None:
+        if self._repository is None:
+            return
+        book_id = self._repository.get_book_int_id(resource.resource_id)
+        if book_id is None:
+            return
+        try:
+            if self._repository.is_favorite(book_id):
+                self._repository.remove_from_favorites(book_id)
+                from PySide6.QtWidgets import QToolTip
+                from PySide6.QtCore import QPoint
+                QToolTip.showText(
+                    self.mapToGlobal(QPoint(0, 0)),
+                    "Removed from Favorites",
+                    self, self.rect(), 1800,
+                )
+            else:
+                self._repository.add_to_favorites(book_id)
+                from PySide6.QtWidgets import QToolTip
+                from PySide6.QtCore import QPoint
+                QToolTip.showText(
+                    self.mapToGlobal(QPoint(0, 0)),
+                    "Added to Favorites  ★",
+                    self, self.rect(), 1800,
+                )
+        except Exception as e:
+            print(f"[LibraryPage] favorite error: {e}")
+
+    def _add_to_collection(self, resource: ResourceItem) -> None:
+        if self._repository is None:
+            return
+        book_id = self._repository.get_book_int_id(resource.resource_id)
+        if book_id is None:
+            return
+        try:
+            from bookhub.ui.dialogs.add_to_collection_dialog import AddToCollectionDialog
+        except ImportError:
+            return
+        dlg = AddToCollectionDialog(book_id, resource.title, self._repository, self)
+        dlg.exec()
 
     def _show_list_menu(self, pos) -> None:
         row = self.list_table.rowAt(pos.y())

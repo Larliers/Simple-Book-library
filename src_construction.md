@@ -174,3 +174,35 @@ main.py
   - `src/sql` 运行数据约定
   - `img_preview` 缩略图落盘约定
   - UI 与 `library` 层接口字段一致性
+
+
+## 新增模块 - Collections & Favorites (2026-04-13)
+
+### src/bookhub/ui/pages/collections_page.py
+**用途**: 自定义书单（Collections）页面
+- `CollectionCard` - 书单卡片小部件，显示书单封面（彩色首字母）、名称和书籍数量
+- `CollectionDetailPage` - 书单详情页，显示书单内的书籍，支持移除书籍
+- `CollectionsPage` - 主页面，网格展示所有书单，支持创建/删除/重命名，点击进入详情
+
+### src/bookhub/ui/pages/favorites_page.py
+**用途**: 收藏夹（Favorites）页面
+- `FavoriteBookCard` - 收藏书籍卡片，右键菜单支持移除
+- `FavoritesPage` - 展示所有收藏书籍，网格布局，支持右键移除
+
+### src/bookhub/ui/dialogs/add_to_collection_dialog.py
+**用途**: 添加到书单的弹出对话框
+- `AddToCollectionDialog` - 显示现有书单列表（复选框），支持搜索和新建书单
+
+### src/bookhub/library/repository.py (新增方法)
+**新增**: Collections & Favorites 的数据库操作
+- `_init_collections_tables()` - 懒初始化三张新表：collections, collection_books, favorite_books
+- `create_collection()` / `get_all_collections()` / `delete_collection()` / `rename_collection()`
+- `add_book_to_collection()` / `remove_book_from_collection()` / `get_books_in_collection()`
+- `get_collection_book_count()` / `is_book_in_collection()`
+- `add_to_favorites()` / `remove_from_favorites()` / `get_favorite_books()` / `is_favorite()`
+
+### src/bookhub/ui/widgets/book_card.py (新增函数)
+**新增**: 右键菜单支持函数
+- `install_book_context_menu(card_widget, repository)` - 为书籍卡片安装右键菜单
+  - ☆ Add to Favorites / ★ Remove from Favorites
+  - 📚 Add to Collection… （打开 AddToCollectionDialog）

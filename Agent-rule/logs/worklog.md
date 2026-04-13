@@ -44,3 +44,53 @@
   "next_actions": ["执行首轮模块任务拆分并登记 registry"]
 }
 ```
+
+
+---
+
+## 2026-04-13 - Collections & Favorites 模块实现
+
+### 任务
+完善 Collections 和 Favorites 模块（自定义书单），以及配套的右键菜单功能。
+
+### 实现内容
+
+**新增文件**:
+1. `src/bookhub/ui/pages/collections_page.py`
+   - `CollectionsPage` - 主书单列表页，网格展示，支持增删改
+   - `CollectionCard` - 书单卡片（彩色首字母封面）
+   - `CollectionDetailPage` - 书单内书籍列表
+
+2. `src/bookhub/ui/pages/favorites_page.py`
+   - `FavoritesPage` - 收藏书籍展示页
+   - `FavoriteBookCard` - 收藏书籍卡片
+
+3. `src/bookhub/ui/dialogs/add_to_collection_dialog.py`
+   - `AddToCollectionDialog` - 添加到书单对话框
+   - 支持搜索书单、复选框批量选择、新建书单
+
+**修改文件**:
+4. `src/bookhub/library/repository.py`
+   - 新增 SQLite 表：collections, collection_books, favorite_books
+   - 新增 15 个 CRUD 方法支持书单和收藏功能
+
+5. `src/bookhub/ui/widgets/book_card.py`
+   - 新增 `install_book_context_menu()` 函数
+   - 右键菜单：添加/移除收藏、添加到书单
+
+6. `src/bookhub/ui/app_window.py`
+   - 将 Collections 和 Favorites PlaceholderPage 替换为真实页面
+
+### 技术栈
+- PySide6 (UI framework)
+- SQLite (通过现有 LibraryRepository._connection() 扩展)
+- hashlib (书单封面颜色哈希)
+
+### 设计决策
+- 书单封面使用书单名称的 MD5 哈希选取颜色，显示首字母缩写（类似 Google Material Design）
+- 右键菜单通过 `install_book_context_menu()` 函数在外部安装，不侵入 BookCardWidget 原有结构
+- 收藏和书单使用独立 SQLite 表，与现有 books 表通过 book_id 关联
+- 懒初始化 DB 表（首次调用时创建），不修改 _init_db 方法
+
+### 后续
+- 在 library_page.py 中调用 `install_book_context_menu(card, repository)` 后，右键菜单即可生效
