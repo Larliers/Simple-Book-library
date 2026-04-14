@@ -28,3 +28,5 @@ src/sql/*.sqlite3-*
 src/sql/scan_report.json
 img_preview/*
 !img_preview/.gitkeep
+# Test PDF files
+Simple-Book-library-Dev_Document/UI/新UI/测试用pdf(1)/
