@@ -208,7 +208,15 @@ class LibraryPage(QWidget):
 
     def _build_thumbnail_icon(self, item: ResourceItem) -> QIcon:
         if item.thumbnail_path:
-            file_path = Path(item.thumbnail_path)
+            thumb = item.thumbnail_path
+            # Support both file:// URLs (new format) and legacy bare filesystem paths
+            if thumb.startswith("file://"):
+                from urllib.parse import urlparse
+                from urllib.request import url2pathname
+                parsed = urlparse(thumb)
+                file_path = Path(url2pathname(parsed.path))
+            else:
+                file_path = Path(thumb)
             if file_path.exists():
                 pixmap = QPixmap(str(file_path))
                 if not pixmap.isNull():
@@ -228,9 +236,11 @@ class LibraryPage(QWidget):
 
         # Quick-add (tags + custom reading lists) — only when repository available
         quick_add_action = None
+        edit_cover_action = None
         if self._repository is not None:
             menu.addSeparator()
             quick_add_action = menu.addAction("🏷️  添加标签 / 加入书单…")
+            edit_cover_action = menu.addAction("🖼️  编辑封面…")
 
         chosen = menu.exec(global_pos)
 
@@ -242,6 +252,87 @@ class LibraryPage(QWidget):
             self._track_event("paginate", resource.resource_id)
         elif quick_add_action is not None and chosen == quick_add_action:
             self._open_quick_add_dialog(resource, global_pos)
+        elif edit_cover_action is not None and chosen == edit_cover_action:
+            self._edit_cover(resource)
+
+    def _edit_cover(self, resource: ResourceItem) -> None:
+        """Right-click → 编辑封面 flow:
+        1. Open file dialog (upload接口 equivalent)
+        2. Convert picked image to WebP, save to img_preview/
+        3. Build file:// URL (returned URL from upload接口)
+        4. Update DB thumbnail_path (coverUrl update)
+        5. Refresh UI card
+        """
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        from pathlib import Path as _Path
+
+        if self._repository is None:
+            return
+
+        # Step 1: File picker (the "upload" entry point)
+        image_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择封面图片",
+            "",
+            "图片文件 (*.png *.jpg *.jpeg *.webp *.bmp *.gif *.tiff *.tif)",
+        )
+        if not image_path:
+            return
+
+        src = _Path(image_path)
+        if not src.exists():
+            QMessageBox.warning(self, "错误", f"文件不存在：{src}")
+            return
+
+        # Step 2: Convert to WebP and save to img_preview/
+        try:
+            from PIL import Image as _Image
+            from bookhub.library.repository import DEFAULT_PREVIEW_DIR
+            import hashlib as _hashlib
+
+            DEFAULT_PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+            # Stable collision-free filename from source path hash
+            name_hash = _hashlib.md5(str(src).encode("utf-8", errors="replace")).hexdigest()[:16]
+            out_path = DEFAULT_PREVIEW_DIR / f"cover_{name_hash}.webp"
+
+            img = _Image.open(str(src))
+            img = img.convert("RGB")
+            img.save(str(out_path), format="WebP", quality=80)
+
+        except ImportError:
+            # Pillow not available — copy file as-is
+            import shutil as _shutil
+            from bookhub.library.repository import DEFAULT_PREVIEW_DIR
+            import hashlib as _hashlib
+
+            DEFAULT_PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+            name_hash = _hashlib.md5(str(src).encode("utf-8", errors="replace")).hexdigest()[:16]
+            out_path = DEFAULT_PREVIEW_DIR / f"cover_{name_hash}{src.suffix.lower()}"
+            _shutil.copy2(str(src), str(out_path))
+
+        except Exception as exc:
+            QMessageBox.critical(self, "封面更新失败", f"图片处理错误：{exc}")
+            return
+
+        # Step 3: Build file:// URL (the value returned by the upload接口)
+        file_url = out_path.as_uri()
+
+        # Step 4: Update DB — coverUrl update
+        try:
+            book_id = self._repository.get_book_int_id(resource.resource_id)
+            if book_id is None:
+                QMessageBox.warning(self, "错误", "找不到书籍记录，无法更新封面。")
+                return
+            self._repository.update_book_thumbnail_path(book_id, file_url)
+        except Exception as exc:
+            QMessageBox.critical(self, "封面更新失败", f"数据库写入错误：{exc}")
+            return
+
+        # Step 5: Update in-memory ResourceItem so render() picks it up immediately
+        resource.thumbnail_path = file_url
+
+        # Refresh the view
+        self.render()
 
     def _open_book_external(self, resource: ResourceItem) -> None:
         import subprocess

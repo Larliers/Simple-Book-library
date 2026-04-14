@@ -77,21 +77,64 @@ class CollectionCard(QFrame):
         self._apply_styles()
 
     def _render_cover(self) -> None:
-        colors = ["#1565C0", "#2E7D32", "#B71C1C", "#E65100", "#4A148C", "#006064", "#37474F", "#558B2F"]
-        idx = int(hashlib.md5(self._col_name.encode("utf-8", errors="replace")).hexdigest(), 16) % len(colors)
-        color = colors[idx]
-        words = self._col_name.strip().split()
-        initials = "".join(w[0].upper() for w in words[:2]) if words else "?"
-        self._cover_label.setText(initials)
-        self._cover_label.setStyleSheet(f"""
-            QLabel#collectionCover {{
-                background-color: {color};
-                color: white;
-                border-radius: 6px 6px 0px 0px;
-                font-size: 36pt;
-                font-weight: bold;
-            }}
-        """)
+        # Try to show the first book's thumbnail (JS: booklist.coverUrl = firstBookWithCover?.coverUrl || defaultCover)
+        cover_shown = False
+        try:
+            books = self._repo.get_books_in_collection(self._col_id)
+        except Exception:
+            books = []
+
+        for book in books:
+            thumbnail_path = book.get("thumbnail_path")
+            if not thumbnail_path:
+                continue
+            from pathlib import Path as _Path
+            from PySide6.QtGui import QPixmap
+            from urllib.parse import urlparse
+            from urllib.request import url2pathname
+            if thumbnail_path.startswith("file://"):
+                parsed = urlparse(thumbnail_path)
+                tp = _Path(url2pathname(parsed.path))
+            else:
+                tp = _Path(thumbnail_path)
+            if not tp.exists():
+                continue
+            pixmap = QPixmap(str(tp))
+            if pixmap.isNull():
+                continue
+            scaled = pixmap.scaled(
+                180, 160,
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            if scaled.width() > 180 or scaled.height() > 160:
+                x = max(0, (scaled.width() - 180) // 2)
+                y = max(0, (scaled.height() - 160) // 2)
+                scaled = scaled.copy(x, y, 180, 160)
+            self._cover_label.setPixmap(scaled)
+            self._cover_label.setStyleSheet(
+                "QLabel#collectionCover { border-radius: 6px 6px 0px 0px; }"
+            )
+            cover_shown = True
+            break
+
+        if not cover_shown:
+            # defaultCover: colored initials
+            colors = ["#1565C0", "#2E7D32", "#B71C1C", "#E65100", "#4A148C", "#006064", "#37474F", "#558B2F"]
+            idx = int(hashlib.md5(self._col_name.encode("utf-8", errors="replace")).hexdigest(), 16) % len(colors)
+            color = colors[idx]
+            words = self._col_name.strip().split()
+            initials = "".join(w[0].upper() for w in words[:2]) if words else "?"
+            self._cover_label.setText(initials)
+            self._cover_label.setStyleSheet(f"""
+                QLabel#collectionCover {{
+                    background-color: {color};
+                    color: white;
+                    border-radius: 6px 6px 0px 0px;
+                    font-size: 36pt;
+                    font-weight: bold;
+                }}
+            """)
 
     def _apply_styles(self) -> None:
         self.setStyleSheet("""
@@ -253,13 +296,19 @@ class CollectionDetailPage(QWidget):
         cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title = str(book_data.get("title", book_data.get("file_name", book_data.get("file_path", "?"))))
 
-        # Try to load actual thumbnail
+        # Try to load actual thumbnail (supports both file:// URLs and bare filesystem paths)
         thumbnail_path = book_data.get("thumbnail_path")
         thumbnail_loaded = False
         if thumbnail_path:
             from pathlib import Path as _Path
             from PySide6.QtGui import QPixmap
-            tp = _Path(thumbnail_path)
+            from urllib.parse import urlparse
+            from urllib.request import url2pathname
+            if thumbnail_path.startswith("file://"):
+                parsed = urlparse(thumbnail_path)
+                tp = _Path(url2pathname(parsed.path))
+            else:
+                tp = _Path(thumbnail_path)
             if tp.exists():
                 pixmap = QPixmap(str(tp))
                 if not pixmap.isNull():

@@ -176,12 +176,17 @@ def _extract_epub_cover_bytes(file_path: Path) -> bytes | None:
 
 
 def _save_thumbnail_image(image: Image.Image, output_path: Path) -> str:
+    """Save thumbnail as compressed WebP and return a file:// URL string."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    # Force .webp extension regardless of what was passed
+    webp_path = output_path.with_suffix(".webp")
     thumb = image.convert("RGB")
     thumb.thumbnail((360, 540), Image.Resampling.LANCZOS)
-    # Drop ICC metadata to avoid libpng iCCP warnings in Qt image loader.
-    thumb.save(output_path, format="PNG", icc_profile=None)
-    return str(output_path.resolve(strict=False))
+    # Save as WebP quality=80 – typically 70-80% smaller than PNG
+    thumb.save(webp_path, format="WEBP", quality=80, method=4)
+    resolved = webp_path.resolve(strict=False)
+    # Return as file:// URL so the DB never stores bare filesystem paths
+    return resolved.as_uri()
 
 
 def generate_pdf_thumbnail(file_path: Path, output_path: Path) -> str:

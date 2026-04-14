@@ -68,12 +68,21 @@ class BookCardWidget(QFrame):
         layout.addLayout(tags_row)
 
     def _render_cover(self) -> None:
-        if not self.resource.thumbnail_path:
+        thumb = self.resource.thumbnail_path
+        if not thumb:
             return
-        thumbnail_path = Path(self.resource.thumbnail_path)
-        if not thumbnail_path.exists():
+        # Support both file:// URLs (new format) and legacy bare filesystem paths
+        if thumb.startswith("file://"):
+            # Convert file:// URL to local path
+            from urllib.request import url2pathname
+            from urllib.parse import urlparse
+            parsed = urlparse(thumb)
+            local_path = Path(url2pathname(parsed.path))
+        else:
+            local_path = Path(thumb)
+        if not local_path.exists():
             return
-        pixmap = QPixmap(str(thumbnail_path))
+        pixmap = QPixmap(str(local_path))
         if pixmap.isNull():
             return
         scaled = pixmap.scaled(

@@ -10,12 +10,19 @@ from bookhub.library.repository import LibraryRepository
 
 def build_thumbnail_output_path(preview_dir: Path, source_path: str) -> Path:
     token = hashlib.sha1(source_path.encode("utf-8")).hexdigest()  # noqa: S324
-    return preview_dir / f"{token}.png"
+    # Extension is .webp; _save_thumbnail_image will enforce this anyway.
+    return preview_dir / f"{token}.webp"
 
 
 def cleanup_all_thumbnails(repository: LibraryRepository, progress_cb=None) -> ThumbnailTaskResult:
     result = ThumbnailTaskResult(task_kind="cleanup")
-    files = sorted(path for path in repository.preview_dir.glob("*.png") if path.name != ".gitkeep")
+    # Collect both legacy .png files and current .webp files
+    files = sorted(
+        path
+        for pattern in ("*.png", "*.webp")
+        for path in repository.preview_dir.glob(pattern)
+        if path.name != ".gitkeep"
+    )
     result.total = len(files)
 
     for index, file_path in enumerate(files, start=1):

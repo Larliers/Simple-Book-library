@@ -32,10 +32,21 @@ import hashlib
 # ---------------------------------------------------------------------------
 
 def _load_thumbnail(thumbnail_path: str | None, w: int, h: int) -> QPixmap | None:
-    """Try to load and crop-scale a thumbnail, returning None on failure."""
+    """Try to load and crop-scale a thumbnail, returning None on failure.
+
+    Supports both ``file://`` URLs (new format, stored since 2026-04-14)
+    and legacy bare filesystem paths.
+    """
     if not thumbnail_path:
         return None
-    tp = Path(thumbnail_path)
+    # Resolve file:// URL → local path (JS equivalent: booklist.coverUrl = firstBookWithCover?.coverUrl || defaultCover)
+    if thumbnail_path.startswith("file://"):
+        from urllib.parse import urlparse
+        from urllib.request import url2pathname
+        parsed = urlparse(thumbnail_path)
+        tp = Path(url2pathname(parsed.path))
+    else:
+        tp = Path(thumbnail_path)
     if not tp.exists():
         return None
     pixmap = QPixmap(str(tp))
