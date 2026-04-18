@@ -10,7 +10,7 @@ from bookhub.ui.app_window import AppWindow
 def main() -> int:
     app = QApplication(sys.argv)
     window = AppWindow()
-    window.show()
+    window.showMaximized()
     return app.exec()
 
 

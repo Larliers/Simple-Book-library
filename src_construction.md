@@ -73,7 +73,7 @@ src/
 ```
 
 ## 分层职责总览
-- `main.py`：程序入口，启动 `QApplication` 并打开主窗口。
+- `main.py`：程序入口，启动 `QApplication` 并以默认最大化方式打开主窗口。
 - `assets/icons/`：本地 SVG 图标资源。
 - `sql/`：运行期 SQLite 与扫描报告目录（当前用 `.gitkeep` 占位）。
 - `bookhub/i18n/`：语言管理与文案词典加载。
@@ -84,6 +84,7 @@ src/
 ```text
 main.py
   -> AppWindow (ui/app_window.py)
+  -> showMaximized() 默认最大化显示
     -> LibraryRepository (library/repository.py)
     -> LibraryViewModel (ui/viewmodels/library_viewmodel.py)
     -> Sidebar/TopBar/Pages
@@ -101,6 +102,7 @@ main.py
 ### 1) 入口与运行目录
 - `src/main.py`
   - 创建 Qt 应用并挂载 `AppWindow`。
+  - 启动时调用 `showMaximized()`，避免默认小窗口启动。
 - `src/sql/.gitkeep`
   - 运行数据目录占位文件。
   - 实际运行时会生成 `library.db` 与 `scan_report.json`（均已被 `.gitignore` 忽略）。
