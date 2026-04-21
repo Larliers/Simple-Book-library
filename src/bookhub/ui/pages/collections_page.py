@@ -104,13 +104,9 @@ class CollectionCard(QFrame):
                 continue
             scaled = pixmap.scaled(
                 180, 160,
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
-            if scaled.width() > 180 or scaled.height() > 160:
-                x = max(0, (scaled.width() - 180) // 2)
-                y = max(0, (scaled.height() - 160) // 2)
-                scaled = scaled.copy(x, y, 180, 160)
             self._cover_label.setPixmap(scaled)
             self._cover_label.setStyleSheet(
                 "QLabel#collectionCover { border-radius: 6px 6px 0px 0px; }"
@@ -314,14 +310,9 @@ class CollectionDetailPage(QWidget):
                 if not pixmap.isNull():
                     scaled = pixmap.scaled(
                         144, 170,
-                        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                        Qt.AspectRatioMode.KeepAspectRatio,
                         Qt.TransformationMode.SmoothTransformation,
                     )
-                    # Crop center
-                    if scaled.width() > 144 or scaled.height() > 170:
-                        x = max(0, (scaled.width() - 144) // 2)
-                        y = max(0, (scaled.height() - 170) // 2)
-                        scaled = scaled.copy(x, y, 144, 170)
                     cover.setPixmap(scaled)
                     cover.setStyleSheet("border-radius: 4px;")
                     thumbnail_loaded = True
@@ -337,10 +328,12 @@ class CollectionDetailPage(QWidget):
             )
         layout.addWidget(cover)
 
-        display = (title[:22] + "...") if len(title) > 22 else title
-        lbl = QLabel(display)
+        lbl = QLabel()
+        lbl.setFixedWidth(144)
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl.setWordWrap(True)
+        lbl.setWordWrap(False)
+        lbl.setText(lbl.fontMetrics().elidedText(title, Qt.TextElideMode.ElideRight, 144))
+        lbl.setToolTip(title)
         lbl.setStyleSheet("font-size: 11px; color: #333;")
         layout.addWidget(lbl)
 

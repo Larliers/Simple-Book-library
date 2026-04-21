@@ -250,3 +250,26 @@ main.py
 | ROUGH ARCHIVE 2011-2014 | 27.5 KB |
 | ROUGH ARCHIVE 2015-2018 | 34.4 KB |
 | The Artists Guide to Drawing Animals | 28.3 KB |
+
+
+## UI 网格一致性优化（2026-04-21）
+
+### 核心变更
+- 网格卡片标题统一为单行省略（像素级 elide），避免长标题撑高卡片导致排版不齐。
+- 书籍元数据展示统一为 `author / publisher`，空值统一显示 `Unknown`，不再出现空白文本。
+- 所有封面缩放由“铺满裁切”改为“完整显示优先（KeepAspectRatio）”，减少长宽比差异导致的封面截断。
+
+### 影响文件
+- `src/bookhub/ui/widgets/book_card.py`
+  - 新增 `format_author_publisher_meta()`，供网格卡片和列表视图复用。
+  - `BookCardWidget` 标题改为单行省略；元数据行改为 author/publisher 组合并支持 Unknown 占位。
+  - `_render_cover()` 缩放策略改为 `KeepAspectRatio`。
+- `src/bookhub/ui/pages/library_page.py`
+  - 列表视图作者列复用 `format_author_publisher_meta()`，空值不再显示为空字符串。
+  - 列表缩略图 icon 缩放改为 `KeepAspectRatio`。
+- `src/bookhub/ui/pages/collections_page.py`
+  - 书单封面与详情页书封缩放改为 `KeepAspectRatio`。
+  - 详情卡标题由固定字符截断改为单行像素级省略。
+- `src/bookhub/ui/pages/favorites_page.py`
+  - `_load_thumbnail()` 缩放改为 `KeepAspectRatio`。
+  - 详情卡标题由固定字符截断改为单行像素级省略。

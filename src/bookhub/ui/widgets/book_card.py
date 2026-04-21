@@ -9,6 +9,19 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLay
 from bookhub.ui.models.resource import ResourceItem
 from bookhub.ui.resources.layout_config import UI_LAYOUT
 
+UNKNOWN_META_TEXT = "Unknown"
+
+
+def _normalize_meta_value(value: str | None) -> str:
+    text = (value or "").strip()
+    return text if text else UNKNOWN_META_TEXT
+
+
+def format_author_publisher_meta(author: str | None, publisher: str | None) -> str:
+    author_text = _normalize_meta_value(author)
+    publisher_text = _normalize_meta_value(publisher)
+    return f"{author_text} / {publisher_text}"
+
 
 class BookCardWidget(QFrame):
     def __init__(self, resource: ResourceItem, parent: QWidget | None = None) -> None:
@@ -18,6 +31,7 @@ class BookCardWidget(QFrame):
         self.setFrameShape(QFrame.StyledPanel)
         self.setCursor(Qt.PointingHandCursor)
         self.setFixedWidth(UI_LAYOUT.card_width)
+        self._text_width = UI_LAYOUT.card_width - UI_LAYOUT.card_inner_padding * 2
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(
@@ -37,13 +51,20 @@ class BookCardWidget(QFrame):
         layout.addWidget(self.cover)
         self._render_cover()
 
-        title = QLabel(resource.title)
+        title_text = resource.title or UNKNOWN_META_TEXT
+        title = QLabel()
         title.setObjectName("BookTitle")
-        title.setWordWrap(True)
+        title.setWordWrap(False)
+        title.setText(self._elide_text(title_text, title.fontMetrics()))
+        title.setToolTip(title_text)
         layout.addWidget(title)
 
-        author = QLabel(resource.author)
+        meta_text = format_author_publisher_meta(resource.author, resource.publisher)
+        author = QLabel()
         author.setObjectName("BookMeta")
+        author.setWordWrap(False)
+        author.setText(self._elide_text(meta_text, author.fontMetrics()))
+        author.setToolTip(meta_text)
         layout.addWidget(author)
 
         status = QLabel(resource.status)
@@ -88,11 +109,16 @@ class BookCardWidget(QFrame):
         scaled = pixmap.scaled(
             self.cover.width(),
             self.cover.height(),
-            Qt.KeepAspectRatioByExpanding,
+            Qt.KeepAspectRatio,
             Qt.SmoothTransformation,
         )
         self.cover.setPixmap(scaled)
         self.cover.setText("")
+
+    def _elide_text(self, text: str, metrics) -> str:
+        if self._text_width <= 0:
+            return text
+        return metrics.elidedText(text, Qt.ElideRight, self._text_width)
 
 
 # =======================================================================

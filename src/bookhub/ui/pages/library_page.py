@@ -27,7 +27,7 @@ from bookhub.ui.models.resource import ResourceItem
 from bookhub.ui.resources.assets import load_icon
 from bookhub.ui.resources.layout_config import UI_LAYOUT
 from bookhub.ui.viewmodels.library_viewmodel import LibraryViewModel
-from bookhub.ui.widgets.book_card import BookCardWidget
+from bookhub.ui.widgets.book_card import BookCardWidget, format_author_publisher_meta
 
 
 class LibraryPage(QWidget):
@@ -199,7 +199,11 @@ class LibraryPage(QWidget):
             cover_item.setIcon(self._build_thumbnail_icon(item))
             self.list_table.setItem(row, 0, cover_item)
             self.list_table.setItem(row, 1, QTableWidgetItem(item.title))
-            self.list_table.setItem(row, 2, QTableWidgetItem(item.author))
+            self.list_table.setItem(
+                row,
+                2,
+                QTableWidgetItem(format_author_publisher_meta(item.author, item.publisher)),
+            )
             self.list_table.setItem(row, 3, QTableWidgetItem(item.status))
             self.list_table.setItem(row, 4, QTableWidgetItem(", ".join(item.tags)))
 
@@ -221,7 +225,7 @@ class LibraryPage(QWidget):
                 pixmap = QPixmap(str(file_path))
                 if not pixmap.isNull():
                     return QIcon(
-                        pixmap.scaled(26, 38, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                        pixmap.scaled(26, 38, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                     )
         fallback = QPixmap(26, 38)
         fallback.fill(Qt.lightGray)

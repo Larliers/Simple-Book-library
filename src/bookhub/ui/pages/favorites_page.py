@@ -54,13 +54,9 @@ def _load_thumbnail(thumbnail_path: str | None, w: int, h: int) -> QPixmap | Non
         return None
     scaled = pixmap.scaled(
         w, h,
-        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+        Qt.AspectRatioMode.KeepAspectRatio,
         Qt.TransformationMode.SmoothTransformation,
     )
-    if scaled.width() > w or scaled.height() > h:
-        x = max(0, (scaled.width() - w) // 2)
-        y = max(0, (scaled.height() - h) // 2)
-        scaled = scaled.copy(x, y, w, h)
     return scaled
 
 
@@ -352,10 +348,12 @@ class ReadingListDetailPage(QWidget):
 
         layout.addWidget(cover)
 
-        display = (title[:22] + "…") if len(title) > 22 else title
-        lbl = QLabel(display)
+        lbl = QLabel()
+        lbl.setFixedWidth(144)
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl.setWordWrap(True)
+        lbl.setWordWrap(False)
+        lbl.setText(lbl.fontMetrics().elidedText(title, Qt.TextElideMode.ElideRight, 144))
+        lbl.setToolTip(title)
         lbl.setStyleSheet("font-size: 11px; color: #333;")
         layout.addWidget(lbl)
 
