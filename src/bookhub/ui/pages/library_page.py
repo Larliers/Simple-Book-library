@@ -164,6 +164,8 @@ class LibraryPage(QWidget):
         self.list_btn.setChecked(is_list)
 
     def _render_grid(self, items: list[ResourceItem]) -> None:
+        self.grid_layout.setHorizontalSpacing(UI_LAYOUT.card_spacing)
+        self.grid_layout.setVerticalSpacing(UI_LAYOUT.card_spacing)
         columns = self._calculate_grid_columns()
         self._last_grid_columns = columns
 
@@ -241,6 +243,9 @@ class LibraryPage(QWidget):
         menu = QMenu(self)
         open_action = menu.addAction(tr("library.menu.open_external", "Open External"))
         open_folder_action = menu.addAction(tr("library.menu.open_folder", "Open Folder"))
+        add_favorite_action = None
+        if self._repository is not None and not self.missing_mode:
+            add_favorite_action = menu.addAction(tr("library.menu.add_to_favorites", "Add to Favorites"))
         menu.addSeparator()
         remove_action = menu.addAction(tr("library.menu.remove_library", "Remove from Library"))
 
@@ -262,6 +267,8 @@ class LibraryPage(QWidget):
             self._open_book_external(resource)
         elif chosen == open_folder_action:
             self._open_book_folder(resource)
+        elif add_favorite_action is not None and chosen == add_favorite_action:
+            self._add_to_favorites(resource)
         elif chosen == remove_action:
             self._track_event("paginate", resource.resource_id)
         elif quick_add_action is not None and chosen == quick_add_action:
@@ -423,6 +430,9 @@ class LibraryPage(QWidget):
         global_pos = self.list_table.viewport().mapToGlobal(pos)
         menu = QMenu(self)
         open_action = menu.addAction(tr("library.menu.open_external", "Open External"))
+        add_favorite_action = None
+        if self._repository is not None and not self.missing_mode:
+            add_favorite_action = menu.addAction(tr("library.menu.add_to_favorites", "Add to Favorites"))
         add_tag_action = menu.addAction(tr("library.menu.add_tag", "Add Tag"))
         mark_action = menu.addAction(tr("library.menu.mark_reading", "Mark as Reading"))
         chosen = menu.exec(global_pos)
@@ -436,12 +446,28 @@ class LibraryPage(QWidget):
                     tr("library.toast.open_failed", "Unable to open with default app."),
                     global_pos,
                 )
+        elif add_favorite_action is not None and chosen == add_favorite_action:
+            resource = self._resource_by_id.get(str(resource_id or ""))
+            if resource is not None:
+                self._add_to_favorites(resource)
         elif chosen == add_tag_action:
             dialog = AddTagDialog(self)
             if dialog.exec():
                 self._track_event("sort", resource_id)
         elif chosen == mark_action:
             self._track_event("sort", resource_id)
+
+    def _add_to_favorites(self, resource: ResourceItem) -> None:
+        if self._repository is None:
+            return
+        book_id = self._repository.get_book_int_id(resource.resource_id)
+        if book_id is None:
+            return
+        try:
+            self._repository.add_to_favorites(book_id)
+            self._track_event("sort", resource.resource_id)
+        except Exception as e:
+            print(f"[LibraryPage] add to favorites error: {e}")
 
     def _show_open_error_toast(self, message: str, global_pos: QPoint | None = None) -> None:
         anchor = global_pos or QCursor.pos()
@@ -484,6 +510,12 @@ class LibraryPage(QWidget):
         available_width = max(1, self.grid_scroll.viewport().width())
         cell_width = UI_LAYOUT.card_width + UI_LAYOUT.card_spacing
         return max(1, available_width // max(1, cell_width))
+
+    def apply_card_spacing(self, _spacing: int) -> None:
+        self.grid_layout.setHorizontalSpacing(UI_LAYOUT.card_spacing)
+        self.grid_layout.setVerticalSpacing(UI_LAYOUT.card_spacing)
+        if self.view_model.view_mode == "waterfall":
+            self._render_grid(self.view_model.filtered_resources(include_missing=self.missing_mode))
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

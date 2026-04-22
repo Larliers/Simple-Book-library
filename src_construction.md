@@ -156,6 +156,7 @@ main.py
     - 路径行级 Delete
     - 扫描深度（1~3）
     - Missed 匹配策略（3种）
+    - 卡片间距（全局统一，Library/Collections/Favorites 共用）
     - 扫描摘要与支持格式说明
     - 缩略图维护双按钮：清理所有缩略图、重新生成缩略图
     - 任务展开区进度条（第X个/共X个）与完成状态文案
@@ -193,11 +194,13 @@ main.py
 - `CollectionsPage` - 主页面，网格展示所有书单，支持创建/删除/重命名，点击进入详情
 
 ### src/bookhub/ui/pages/favorites_page.py
-**用途**: 自定义书单（自定义书单）页面 —— 重构自原 Favorites 收藏夹
-- `_load_thumbnail()` / `_fallback_cover()` - 缩略图辅助函数（真实封面 + 首字母兜底）；`_load_thumbnail()` 同时支持 `file://` URL（2026-04-14 新格式）和旧裸路径（向后兼容）
-- `ReadingListCard` - 自定义书单卡片，封面优先展示书单内第一本书的真实缩略图
-- `ReadingListDetailPage` - 书单详情页，书籍卡片显示真实缩略图，支持移除
-- `FavoritesPage` - "自定义书单"主页面，与 Collections 并列，功能完全一致
+**用途**: 收藏书籍页面（Favorites）
+- `FavoritesPage` - 以单本书卡片展示收藏内容（非书单），直接消费 `favorite_books` 关联数据。
+- 复用 `BookCardWidget` 呈现封面与元数据，支持双击外部打开。
+- 卡片右键菜单支持「外部打开」和「从收藏中移除」。
+- 切换到页面时自动 `refresh()`，与 Library 右键添加收藏保持实时一致。
+- 标题右侧提供排序下拉（添加时间新到旧/旧到新），并持久化到 `app_settings.favorites_sort_order`。
+- 网格布局固定为左上对齐，避免少量卡片时出现横向拉散。
 
 ### src/bookhub/ui/dialogs/add_to_collection_dialog.py
 **用途**: 添加到书单的弹出对话框（旧版，保留兼容）
@@ -223,6 +226,7 @@ main.py
 ### src/bookhub/ui/pages/library_page.py (更新)
 **更新**: 右键菜单改为调用 QuickAddDialog；新增封面编辑入口
 - 移除旧的 Favorites 切换 / 旧 AddToCollectionDialog 入口
+- 新增「添加到收藏」入口 → 写入 `favorite_books`（idempotent）
 - 新增「添加标签 / 加入书单...」入口 → 打开 `QuickAddDialog`
 - 新增「编辑封面...」入口 → `_edit_cover()`：文件选择 → WebP 转换 → `img_preview/` 落盘 → `file://` URL → DB 更新 → UI 刷新
 - 新增 `_open_book_external()` / `_open_book_folder()` 实际执行打开文件/文件夹
@@ -271,8 +275,8 @@ main.py
   - 书单封面与详情页书封缩放改为 `KeepAspectRatio`。
   - 详情卡标题由固定字符截断改为单行像素级省略。
 - `src/bookhub/ui/pages/favorites_page.py`
-  - `_load_thumbnail()` 缩放改为 `KeepAspectRatio`。
-  - 详情卡标题由固定字符截断改为单行像素级省略。
+  - 收藏页改为“单书卡片模式”（不再是书单/书单详情双层结构）。
+  - 复用 `BookCardWidget` 展示卡片，并支持双击外部打开与右键移除收藏。
 
 
 ## 卡片外部打开交互增强（2026-04-22）
@@ -297,3 +301,70 @@ main.py
   - `#BookCover` 背景从灰底改为白底；边框从虚线改为浅灰实线。
 - `src/bookhub/i18n/locales/zh-cn.json`
   - 新增 `library.menu.quick_add`、`library.menu.edit_cover`、`library.toast.file_missing`、`library.toast.open_failed`。
+
+
+## Favorites 语义修正（2026-04-22）
+
+### 核心变更
+- Favorites 页从“自定义书单页”调整为“单本书收藏页”，与侧栏语义保持一致。
+- Library（网格/列表）右键菜单新增「添加到收藏」，直接写入 `favorite_books`。
+- 页面切换时对支持 `refresh()` 的页面执行刷新，确保收藏变更可即时看到。
+
+### 影响文件
+- `src/bookhub/ui/pages/favorites_page.py`
+  - 重构为单层收藏书籍网格页，支持双击外部打开与右键移除收藏。
+- `src/bookhub/ui/pages/library_page.py`
+  - 网格和列表右键菜单新增「添加到收藏」动作。
+- `src/bookhub/ui/app_window.py`
+  - `_show_page()` 增加页面级 `refresh()` 调度，`retranslate_ui()` 增加 Favorites 文案刷新。
+- `src/bookhub/i18n/locales/zh-cn.json`
+  - 新增 `library.menu.add_to_favorites` 与 Favorites 页面相关文案键。
+
+
+## Favorites 网格与排序修复（2026-04-22）
+
+### 核心变更
+- 修复 Favorites 网格在少量卡片场景下分散排列的问题，改为左上紧凑布局。
+- 标题右侧新增“排序”下拉，支持按收藏添加时间正序/逆序切换。
+- 排序偏好写入 `app_settings`（键：`favorites_sort_order`），重启后保持。
+
+### 影响文件
+- `src/bookhub/ui/pages/favorites_page.py`
+  - 新增排序控件与排序状态管理（读取、切换、保存）。
+  - 收藏数据读取改为按排序参数拉取。
+  - 网格布局增加 `AlignLeft | AlignTop`，确保卡片紧凑排列。
+- `src/bookhub/library/repository.py`
+  - `get_favorite_books(order='desc')` 新增排序参数，按 `favorite_books.added_at` 返回。
+- `src/bookhub/i18n/locales/zh-cn.json`
+  - 新增 `favorites.sort.label`、`favorites.sort.added_desc`、`favorites.sort.added_asc`。
+
+
+## 卡片缩略图边缘与全局间隔统一（2026-04-22）
+
+### 核心变更
+- 移除 `BookCover` 缩略图区边框样式，消除卡片缩略图边缘黑线/深色描边视觉。
+- 将卡片间隔参数统一到全局 `UI_LAYOUT.card_spacing`，Library、Collections、Favorites 统一消费。
+- Settings 新增“卡片间距”选项，调整后即时生效，并持久化到 `app_settings.card_spacing`。
+- AppWindow 的间隔更新逻辑改为“按页面能力分发”：
+  - 当前支持 `apply_card_spacing()` 的页面立即重排；
+  - 后续 Reading Now 开发只需实现同名方法即可自动接入。
+
+### 影响文件
+- `src/bookhub/ui/resources/styles.py`
+  - `#BookCover` 边框改为 `none`。
+- `src/bookhub/ui/resources/layout_config.py`
+  - `UiLayoutConfig` 改为可变配置，新增 `normalize_card_spacing()` 与 `set_card_spacing()`。
+- `src/bookhub/library/repository.py`
+  - 新增 `get_card_spacing()` / `set_card_spacing()`，并在默认设置中加入 `card_spacing`。
+- `src/bookhub/ui/pages/settings_page.py`
+  - 新增卡片间距控件与信号 `card_spacing_changed`。
+- `src/bookhub/ui/app_window.py`
+  - 启动时加载间隔设置并应用；设置修改后分发到各页面重排。
+- `src/bookhub/ui/pages/library_page.py`
+  - 新增 `apply_card_spacing()`，网格使用动态间隔值。
+- `src/bookhub/ui/pages/collections_page.py`
+  - 主网格/详情网格统一使用动态间隔；新增 `apply_card_spacing()`。
+- `src/bookhub/ui/pages/favorites_page.py`
+  - 网格改为动态间隔，新增 `apply_card_spacing()`。
+- `src/bookhub/i18n/locales/zh-cn.json`
+  - 新增 `settings.card_spacing`。

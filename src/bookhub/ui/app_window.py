@@ -18,7 +18,7 @@ from bookhub.ui.pages.library_page import LibraryPage
 from bookhub.ui.pages.placeholder_page import PlaceholderPage
 from bookhub.ui.pages.plugins_page import PluginsPage
 from bookhub.ui.pages.settings_page import SettingsPage
-from bookhub.ui.resources.layout_config import UI_LAYOUT
+from bookhub.ui.resources.layout_config import UI_LAYOUT, normalize_card_spacing
 from bookhub.ui.resources.styles import APP_STYLE
 from bookhub.ui.viewmodels.library_viewmodel import LibraryViewModel
 from bookhub.ui.widgets.sidebar import SidebarWidget
@@ -38,6 +38,7 @@ class AppWindow(QMainWindow):
         self.resize(1400, 860)
 
         self._repository = LibraryRepository()
+        UI_LAYOUT.set_card_spacing(self._repository.get_card_spacing())
         self._library_vm = LibraryViewModel()
         self._pages: dict[str, int] = {}
         self._scan_worker: ScanWorker | None = None
@@ -86,6 +87,7 @@ class AppWindow(QMainWindow):
         self.settings_page.scan_requested.connect(lambda: self._start_scan("manual"))
         self.settings_page.scan_depth_changed.connect(self._on_scan_depth_changed)
         self.settings_page.hash_strategy_changed.connect(self._on_hash_strategy_changed)
+        self.settings_page.card_spacing_changed.connect(self._on_card_spacing_changed)
         self.settings_page.cleanup_all_thumbnails_requested.connect(self._start_cleanup_thumbnails)
         self.settings_page.regenerate_thumbnails_requested.connect(self._start_regenerate_thumbnails)
         self._register_page("settings", self.settings_page)
@@ -109,6 +111,9 @@ class AppWindow(QMainWindow):
         self.page_stack.setCurrentIndex(index)
         self.sidebar.set_active(page_name)
         current = self.page_stack.currentWidget()
+        refresh_fn = getattr(current, "refresh", None)
+        if callable(refresh_fn):
+            refresh_fn()
         if current in {self.library_page, self.missed_page}:
             self.library_page.render()
             self.missed_page.render()
@@ -162,6 +167,7 @@ class AppWindow(QMainWindow):
         self.settings_page.set_library_roots(self._repository.list_roots())
         self.settings_page.set_scan_depth(self._repository.get_scan_depth())
         self.settings_page.set_hash_strategy(self._repository.get_hash_strategy())
+        self.settings_page.set_card_spacing(self._repository.get_card_spacing())
         self.settings_page.set_scan_summary(self._repository.read_scan_report())
 
     def _import_directory(self) -> None:
@@ -200,6 +206,16 @@ class AppWindow(QMainWindow):
 
     def _on_hash_strategy_changed(self, strategy: str) -> None:
         self._repository.set_hash_strategy(strategy)
+
+    def _on_card_spacing_changed(self, spacing: int) -> None:
+        normalized = normalize_card_spacing(spacing)
+        self._repository.set_card_spacing(normalized)
+        UI_LAYOUT.set_card_spacing(normalized)
+        for index in self._pages.values():
+            widget = self.page_stack.widget(index)
+            apply_spacing = getattr(widget, "apply_card_spacing", None)
+            if callable(apply_spacing):
+                apply_spacing(normalized)
 
     def _start_scan(self, trigger: str) -> None:
         if self._thumbnail_worker is not None and self._thumbnail_worker.isRunning():
@@ -355,5 +371,8 @@ class AppWindow(QMainWindow):
         self.topbar.retranslate_ui()
         self.library_page.retranslate_ui()
         self.missed_page.retranslate_ui()
+        favorites_retranslate = getattr(self.page_stack.widget(self._pages["favorites"]), "retranslate_ui", None)
+        if callable(favorites_retranslate):
+            favorites_retranslate()
         self.plugins_page.retranslate_ui()
         self.settings_page.retranslate_ui()

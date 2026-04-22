@@ -251,7 +251,7 @@ QPushButton#ViewToggleButton:checked {
 #BookCover {
     background: #ffffff;
     color: #6b7280;
-    border: 1px solid #d6dde9;
+    border: none;
 }
 #BookTitle {
     font-size: 15px;

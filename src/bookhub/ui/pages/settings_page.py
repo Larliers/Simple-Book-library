@@ -18,6 +18,12 @@ from PySide6.QtWidgets import (
 )
 
 from bookhub.i18n import tr
+from bookhub.ui.resources.layout_config import (
+    CARD_SPACING_MAX,
+    CARD_SPACING_MIN,
+    DEFAULT_CARD_SPACING,
+    normalize_card_spacing,
+)
 
 
 class SettingsPage(QWidget):
@@ -27,6 +33,7 @@ class SettingsPage(QWidget):
     scan_requested = Signal()
     scan_depth_changed = Signal(int)
     hash_strategy_changed = Signal(str)
+    card_spacing_changed = Signal(int)
     cleanup_all_thumbnails_requested = Signal()
     regenerate_thumbnails_requested = Signal()
 
@@ -141,6 +148,15 @@ class SettingsPage(QWidget):
         self.hash_strategy_combo.addItem("Quick hash (first 4MB)", "quick")
         self.hash_strategy_combo.currentIndexChanged.connect(self._emit_hash_strategy_changed)
         options_row.addWidget(self.hash_strategy_combo, 1)
+
+        self.card_spacing_label = QLabel("Card spacing")
+        options_row.addWidget(self.card_spacing_label)
+        self.card_spacing_combo = QComboBox()
+        self.card_spacing_combo.setObjectName("SettingsLanguageCombo")
+        for spacing in range(CARD_SPACING_MIN, CARD_SPACING_MAX + 1, 2):
+            self.card_spacing_combo.addItem(f"{spacing}px", spacing)
+        self.card_spacing_combo.currentIndexChanged.connect(self._emit_card_spacing_changed)
+        options_row.addWidget(self.card_spacing_combo, 1)
         library_layout.addLayout(options_row)
 
         self.formats_hint = QLabel(
@@ -229,6 +245,17 @@ class SettingsPage(QWidget):
         self.hash_strategy_combo.setCurrentIndex(index if index >= 0 else 0)
         self.hash_strategy_combo.blockSignals(False)
 
+    def set_card_spacing(self, spacing: int) -> None:
+        value = normalize_card_spacing(spacing)
+        index = self.card_spacing_combo.findData(value)
+        if index < 0:
+            index = self.card_spacing_combo.findData(DEFAULT_CARD_SPACING)
+        if index < 0:
+            index = 0
+        self.card_spacing_combo.blockSignals(True)
+        self.card_spacing_combo.setCurrentIndex(index)
+        self.card_spacing_combo.blockSignals(False)
+
     def set_scan_summary(self, summary: dict[str, object]) -> None:
         self._last_summary = dict(summary)
         added_count = int(summary.get("added_count", 0) or 0)
@@ -292,6 +319,7 @@ class SettingsPage(QWidget):
         self.search_settings.setPlaceholderText(tr("settings.search_placeholder", "Search settings"))
         self.scan_depth_label.setText(tr("settings.scan_depth", "Scan depth"))
         self.hash_strategy_label.setText(tr("settings.hash_strategy", "Missed hash matching"))
+        self.card_spacing_label.setText(tr("settings.card_spacing", "Card spacing"))
         self.cleanup_thumbnails_btn.setText(tr("settings.thumb.clean_all", "Clean All Thumbnails"))
         self.regenerate_thumbnails_btn.setText(tr("settings.thumb.regenerate", "Regenerate Thumbnails"))
         self.formats_hint.setText(
@@ -354,6 +382,10 @@ class SettingsPage(QWidget):
     def _emit_hash_strategy_changed(self) -> None:
         strategy = str(self.hash_strategy_combo.currentData() or "size_mtime")
         self.hash_strategy_changed.emit(strategy)
+
+    def _emit_card_spacing_changed(self) -> None:
+        value = normalize_card_spacing(self.card_spacing_combo.currentData())
+        self.card_spacing_changed.emit(value)
 
     def set_thumbnail_task_running(self, task_kind: str, running: bool) -> None:
         self._thumbnail_task_kind = task_kind if running else self._thumbnail_task_kind

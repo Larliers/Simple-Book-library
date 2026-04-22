@@ -15,6 +15,10 @@ from bookhub.library.models import (
     HashStrategy,
 )
 
+DEFAULT_CARD_SPACING = 14
+CARD_SPACING_MIN = 6
+CARD_SPACING_MAX = 40
+
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SRC_ROOT = PROJECT_ROOT / "src"
 DEFAULT_DB_PATH = SRC_ROOT / "sql" / "library.db"
@@ -24,6 +28,14 @@ DEFAULT_PREVIEW_DIR = PROJECT_ROOT / "img_preview"
 
 def now_utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _normalize_card_spacing(value: int | str | None) -> int:
+    try:
+        spacing = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        spacing = DEFAULT_CARD_SPACING
+    return min(CARD_SPACING_MAX, max(CARD_SPACING_MIN, spacing))
 
 
 class LibraryRepository:
@@ -106,6 +118,8 @@ class LibraryRepository:
             self.set_setting("scan_depth", 2)
         if self.get_setting("hash_strategy", None) is None:
             self.set_setting("hash_strategy", HASH_STRATEGY_SIZE_MTIME)
+        if self.get_setting("card_spacing", None) is None:
+            self.set_setting("card_spacing", DEFAULT_CARD_SPACING)
 
     @staticmethod
     def normalize_path(path: str | Path) -> str:
@@ -157,6 +171,13 @@ class LibraryRepository:
     def set_hash_strategy(self, strategy: str) -> None:
         normalized = strategy if strategy in HASH_STRATEGIES else HASH_STRATEGY_SIZE_MTIME
         self.set_setting("hash_strategy", normalized)
+
+    def get_card_spacing(self) -> int:
+        raw = self.get_setting("card_spacing", DEFAULT_CARD_SPACING)
+        return _normalize_card_spacing(raw)
+
+    def set_card_spacing(self, spacing: int) -> None:
+        self.set_setting("card_spacing", _normalize_card_spacing(spacing))
 
     def list_roots(self) -> list[str]:
         with self._connection() as conn:
@@ -603,18 +624,19 @@ class LibraryRepository:
                 (book_id,),
             )
 
-    def get_favorite_books(self) -> list[dict]:
-        """Return all favorited book rows."""
+    def get_favorite_books(self, order: str = "desc") -> list[dict]:
+        """Return all favorited book rows sorted by favorite add time."""
         self._init_collections_tables()
+        order_text = str(order or "").strip().lower()
+        order_sql = "ASC" if order_text == "asc" else "DESC"
+        query = f"""SELECT b.*, fb.added_at AS favorite_added_at
+                    FROM books b
+                    INNER JOIN favorite_books fb ON b.id = fb.book_id
+                    ORDER BY fb.added_at {order_sql}"""
         with self._connection() as conn:
             conn.row_factory = __import__('sqlite3').Row
             try:
-                rows = conn.execute(
-                    """SELECT b.*
-                       FROM books b
-                       INNER JOIN favorite_books fb ON b.id = fb.book_id
-                       ORDER BY fb.added_at DESC""",
-                ).fetchall()
+                rows = conn.execute(query).fetchall()
                 return [dict(r) for r in rows]
             except Exception:
                 return []

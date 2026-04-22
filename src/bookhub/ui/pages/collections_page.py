@@ -14,6 +14,8 @@ from PySide6.QtGui import QFont, QAction
 
 import hashlib
 
+from bookhub.ui.resources.layout_config import UI_LAYOUT
+
 
 class CollectionCard(QFrame):
     """Card widget representing a single collection (book list)."""
@@ -224,7 +226,8 @@ class CollectionDetailPage(QWidget):
         self._container = QWidget()
         self._grid = QGridLayout(self._container)
         self._grid.setContentsMargins(0, 0, 0, 0)
-        self._grid.setSpacing(16)
+        self._grid.setHorizontalSpacing(UI_LAYOUT.card_spacing)
+        self._grid.setVerticalSpacing(UI_LAYOUT.card_spacing)
         self._grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self._scroll.setWidget(self._container)
         layout.addWidget(self._scroll)
@@ -271,10 +274,22 @@ class CollectionDetailPage(QWidget):
         else:
             self._empty_label.hide()
             self._scroll.show()
-            cols_per_row = 6
+            self._grid.setHorizontalSpacing(UI_LAYOUT.card_spacing)
+            self._grid.setVerticalSpacing(UI_LAYOUT.card_spacing)
+            cols_per_row = self._calculate_grid_columns()
             for i, book_data in enumerate(books):
                 card = self._make_book_card(book_data)
                 self._grid.addWidget(card, i // cols_per_row, i % cols_per_row)
+
+    def _calculate_grid_columns(self) -> int:
+        available_width = max(1, self._scroll.viewport().width())
+        cell_width = 160 + UI_LAYOUT.card_spacing
+        return max(1, available_width // max(1, cell_width))
+
+    def apply_card_spacing(self, _spacing: int) -> None:
+        self._grid.setHorizontalSpacing(UI_LAYOUT.card_spacing)
+        self._grid.setVerticalSpacing(UI_LAYOUT.card_spacing)
+        self.refresh()
 
     def _make_book_card(self, book_data: dict) -> QFrame:
         frame = QFrame()
@@ -413,7 +428,8 @@ class CollectionsPage(QWidget):
         self._grid_container.setObjectName("collectionsGrid")
         self._grid_layout = QGridLayout(self._grid_container)
         self._grid_layout.setContentsMargins(0, 0, 0, 0)
-        self._grid_layout.setSpacing(20)
+        self._grid_layout.setHorizontalSpacing(UI_LAYOUT.card_spacing)
+        self._grid_layout.setVerticalSpacing(UI_LAYOUT.card_spacing)
         self._grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self._scroll.setWidget(self._grid_container)
         grid_layout.addWidget(self._scroll)
@@ -475,13 +491,29 @@ class CollectionsPage(QWidget):
         else:
             self._empty_label.hide()
             self._scroll.show()
-            cols_per_row = 5
+            self._grid_layout.setHorizontalSpacing(UI_LAYOUT.card_spacing)
+            self._grid_layout.setVerticalSpacing(UI_LAYOUT.card_spacing)
+            cols_per_row = self._calculate_grid_columns()
             for i, col in enumerate(collections):
                 card = CollectionCard(col, self._repo)
                 card.clicked.connect(self._show_detail_view)
                 card.delete_requested.connect(self._on_delete_collection)
                 card.rename_requested.connect(self._on_rename_collection)
                 self._grid_layout.addWidget(card, i // cols_per_row, i % cols_per_row)
+
+    def _calculate_grid_columns(self) -> int:
+        available_width = max(1, self._scroll.viewport().width())
+        cell_width = 180 + UI_LAYOUT.card_spacing
+        return max(1, available_width // max(1, cell_width))
+
+    def apply_card_spacing(self, spacing: int) -> None:
+        _ = spacing
+        self._grid_layout.setHorizontalSpacing(UI_LAYOUT.card_spacing)
+        self._grid_layout.setVerticalSpacing(UI_LAYOUT.card_spacing)
+        if self._detail_view is not None and hasattr(self._detail_view, "apply_card_spacing"):
+            self._detail_view.apply_card_spacing(UI_LAYOUT.card_spacing)
+            return
+        self.refresh()
 
     def _show_detail_view(self, collection_id: int, collection_name: str) -> None:
         self._hide_detail_view()
