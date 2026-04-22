@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtCore import QPoint, QSize, QTimer, Qt
+from PySide6.QtGui import QCursor, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -44,6 +44,8 @@ class LibraryPage(QWidget):
         self._repository = repository
         self.interaction_events: list[dict[str, str | None]] = []
         self._last_grid_columns = 0
+        self._resource_by_id: dict[str, ResourceItem] = {}
+        self._active_toasts: list[QLabel] = []
 
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 20, 24, 20)
@@ -144,6 +146,7 @@ class LibraryPage(QWidget):
 
     def render(self) -> None:
         items = self.view_model.filtered_resources(include_missing=self.missing_mode)
+        self._resource_by_id = {item.resource_id: item for item in items}
         if self.missing_mode:
             self.subtitle.setText(
                 tr("missed.subtitle.count", "{count} missing books waiting restore").format(count=len(items))
@@ -176,6 +179,9 @@ class LibraryPage(QWidget):
             card.setContextMenuPolicy(Qt.CustomContextMenu)
             card.customContextMenuRequested.connect(
                 lambda pos, resource=item, widget=card: self._show_card_menu(resource, widget.mapToGlobal(pos))
+            )
+            card.open_requested.connect(
+                lambda global_pos, resource=item: self._open_book_external(resource, global_pos)
             )
             self.grid_layout.addWidget(card, row, col, alignment=Qt.AlignLeft | Qt.AlignTop)
 
@@ -243,8 +249,12 @@ class LibraryPage(QWidget):
         edit_cover_action = None
         if self._repository is not None:
             menu.addSeparator()
-            quick_add_action = menu.addAction("🏷️  添加标签 / 加入书单…")
-            edit_cover_action = menu.addAction("🖼️  编辑封面…")
+            quick_add_action = menu.addAction(
+                tr("library.menu.quick_add", "Add Tags / Add to List...")
+            )
+            edit_cover_action = menu.addAction(
+                tr("library.menu.edit_cover", "Edit Cover...")
+            )
 
         chosen = menu.exec(global_pos)
 
@@ -338,20 +348,40 @@ class LibraryPage(QWidget):
         # Refresh the view
         self.render()
 
-    def _open_book_external(self, resource: ResourceItem) -> None:
+    def _open_book_external(self, resource: ResourceItem, global_pos: QPoint | None = None) -> None:
+        self._open_path_external(resource.path, resource.resource_id, global_pos)
+
+    def _open_path_external(
+        self,
+        path: str,
+        resource_id: str | None,
+        global_pos: QPoint | None = None,
+    ) -> None:
+        import os
         import subprocess
         import sys
+        file_path = Path(path).expanduser()
+        if not str(file_path).strip() or not file_path.exists():
+            self._show_open_error_toast(
+                tr("library.toast.file_missing", "File not found or moved."),
+                global_pos,
+            )
+            return
         try:
-            path = resource.path
             if sys.platform == "win32":
-                subprocess.Popen(["start", "", path], shell=True)
+                os.startfile(str(file_path))  # type: ignore[attr-defined]
             elif sys.platform == "darwin":
-                subprocess.Popen(["open", path])
+                subprocess.Popen(["open", str(file_path)])
             else:
-                subprocess.Popen(["xdg-open", path])
+                subprocess.Popen(["xdg-open", str(file_path)])
         except Exception as e:
             print(f"[LibraryPage] open external error: {e}")
-        self._track_event("open_external", resource.resource_id)
+            self._show_open_error_toast(
+                tr("library.toast.open_failed", "Unable to open with default app."),
+                global_pos,
+            )
+            return
+        self._track_event("open_external", resource_id)
 
     def _open_book_folder(self, resource: ResourceItem) -> None:
         import subprocess
@@ -390,20 +420,56 @@ class LibraryPage(QWidget):
         if row < 0:
             return
         resource_id = self.list_table.item(row, 0).data(Qt.UserRole)
+        global_pos = self.list_table.viewport().mapToGlobal(pos)
         menu = QMenu(self)
         open_action = menu.addAction(tr("library.menu.open_external", "Open External"))
         add_tag_action = menu.addAction(tr("library.menu.add_tag", "Add Tag"))
         mark_action = menu.addAction(tr("library.menu.mark_reading", "Mark as Reading"))
-        chosen = menu.exec(self.list_table.viewport().mapToGlobal(pos))
+        chosen = menu.exec(global_pos)
 
         if chosen == open_action:
-            self._track_event("open_external", resource_id)
+            resource = self._resource_by_id.get(str(resource_id or ""))
+            if resource is not None:
+                self._open_book_external(resource, global_pos)
+            else:
+                self._show_open_error_toast(
+                    tr("library.toast.open_failed", "Unable to open with default app."),
+                    global_pos,
+                )
         elif chosen == add_tag_action:
             dialog = AddTagDialog(self)
             if dialog.exec():
                 self._track_event("sort", resource_id)
         elif chosen == mark_action:
             self._track_event("sort", resource_id)
+
+    def _show_open_error_toast(self, message: str, global_pos: QPoint | None = None) -> None:
+        anchor = global_pos or QCursor.pos()
+        toast = QLabel(message)
+        toast.setWindowFlags(Qt.ToolTip | Qt.FramelessWindowHint)
+        toast.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        toast.setStyleSheet(
+            "QLabel {"
+            "background: #fff5f5;"
+            "color: #8e2c2c;"
+            "border: 1px solid #f0b8b8;"
+            "border-radius: 8px;"
+            "padding: 6px 10px;"
+            "font-size: 12px;"
+            "}"
+        )
+        toast.adjustSize()
+        toast.move(anchor + QPoint(12, 12))
+        toast.show()
+        self._active_toasts.append(toast)
+
+        def _cleanup() -> None:
+            if toast in self._active_toasts:
+                self._active_toasts.remove(toast)
+            toast.close()
+            toast.deleteLater()
+
+        QTimer.singleShot(2000, _cleanup)
 
     def _track_event(self, event_type: str, resource_id: str | None) -> None:
         self.interaction_events.append(

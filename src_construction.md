@@ -223,8 +223,8 @@ main.py
 ### src/bookhub/ui/pages/library_page.py (更新)
 **更新**: 右键菜单改为调用 QuickAddDialog；新增封面编辑入口
 - 移除旧的 Favorites 切换 / 旧 AddToCollectionDialog 入口
-- 新增「🏷️ 添加标签 / 加入书单…」入口 → 打开 `QuickAddDialog`
-- 新增「🖼️ 编辑封面…」入口 → `_edit_cover()`：文件选择 → WebP 转换 → `img_preview/` 落盘 → `file://` URL → DB 更新 → UI 刷新
+- 新增「添加标签 / 加入书单...」入口 → 打开 `QuickAddDialog`
+- 新增「编辑封面...」入口 → `_edit_cover()`：文件选择 → WebP 转换 → `img_preview/` 落盘 → `file://` URL → DB 更新 → UI 刷新
 - 新增 `_open_book_external()` / `_open_book_folder()` 实际执行打开文件/文件夹
 - `_build_thumbnail_icon()` 同时支持 `file://` URL 和旧裸路径（向后兼容）
 
@@ -273,3 +273,27 @@ main.py
 - `src/bookhub/ui/pages/favorites_page.py`
   - `_load_thumbnail()` 缩放改为 `KeepAspectRatio`。
   - 详情卡标题由固定字符截断改为单行像素级省略。
+
+
+## 卡片外部打开交互增强（2026-04-22）
+
+### 核心变更
+- 网格卡片支持左键双击直接外部打开资源文件，沿用系统默认软件处理 PDF/EPUB。
+- 列表视图右键“外部打开”由仅记录事件修复为真实执行外部打开。
+- 外部打开链路增加路径存在性校验；失败时在鼠标附近显示圆角非模态轻提示。
+- 网格封面占位区背景改为纯白、边框改为浅灰实线，与卡片色彩体系一致。
+- Library 右键菜单去 emoji，并将新增/调整文案接入 i18n（`tr` + `zh-cn.json`）。
+
+### 影响文件
+- `src/bookhub/ui/widgets/book_card.py`
+  - 新增 `open_requested` 信号与 `mouseDoubleClickEvent()`，将双击事件上抛给页面层。
+- `src/bookhub/ui/pages/library_page.py`
+  - 网格卡片接入双击打开回调。
+  - 新增 `_open_path_external()` 统一外部打开逻辑（含校验、跨平台调用、事件记录）。
+  - 新增 `_show_open_error_toast()` 实现鼠标锚点的圆角轻提示。
+  - 修复列表右键“外部打开”逻辑，改为调用统一外部打开链路。
+  - 右键菜单“添加标签 / 加入书单...”与“编辑封面...”改为 i18n 文案键。
+- `src/bookhub/ui/resources/styles.py`
+  - `#BookCover` 背景从灰底改为白底；边框从虚线改为浅灰实线。
+- `src/bookhub/i18n/locales/zh-cn.json`
+  - 新增 `library.menu.quick_add`、`library.menu.edit_cover`、`library.toast.file_missing`、`library.toast.open_failed`。

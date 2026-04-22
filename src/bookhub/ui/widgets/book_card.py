@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
@@ -24,6 +24,8 @@ def format_author_publisher_meta(author: str | None, publisher: str | None) -> s
 
 
 class BookCardWidget(QFrame):
+    open_requested = Signal(QPoint)
+
     def __init__(self, resource: ResourceItem, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.resource = resource
@@ -119,6 +121,13 @@ class BookCardWidget(QFrame):
         if self._text_width <= 0:
             return text
         return metrics.elidedText(text, Qt.ElideRight, self._text_width)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton:
+            self.open_requested.emit(self.mapToGlobal(event.position().toPoint()))
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
 
 
 # =======================================================================
