@@ -93,6 +93,9 @@
   "scan.failed_title": "扫描失败",
   "scan.conflict_title": "发现重名与重后缀书本",
   "scan.conflict_msg": "以下文件因为“同文件名+同后缀”已存在而被跳过：\n\n{details}",
+  "scan.conflict.toast_msg": "检测到 {count} 个同名同后缀文件，已自动跳过导入",
+  "scan.conflict.toast_example": "示例",
+  "scan.conflict.toast_countdown": "{seconds} 秒后自动关闭",
   "scan.conflict.empty": "检测到重名冲突。",
   "scan.error_title": "扫描完成，但存在错误"
 }

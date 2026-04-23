@@ -22,6 +22,7 @@ from bookhub.ui.resources.layout_config import UI_LAYOUT, normalize_card_spacing
 from bookhub.ui.resources.styles import APP_STYLE
 from bookhub.ui.viewmodels.library_viewmodel import LibraryViewModel
 from bookhub.ui.widgets.sidebar import SidebarWidget
+from bookhub.ui.widgets.slide_toast import SlideToast
 from bookhub.ui.widgets.topbar import SearchSuggestion, TopBarWidget
 
 # Collections and Favorites (auto-added)
@@ -44,6 +45,7 @@ class AppWindow(QMainWindow):
         self._scan_worker: ScanWorker | None = None
         self._thumbnail_worker: ThumbnailTaskWorker | None = None
         self._active_thumbnail_task_kind: str | None = None
+        self._scan_conflict_toast = SlideToast(self)
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -260,25 +262,31 @@ class AppWindow(QMainWindow):
         self._scan_worker = None
 
     def _show_name_conflicts(self, conflicts: list[object]) -> None:
-        lines = []
-        for item in conflicts[:10]:
-            if not isinstance(item, dict):
-                continue
-            file_name = str(item.get("file_name") or "")
-            incoming = str(item.get("incoming_path") or "")
-            existing_title = str(item.get("existing_title") or "")
-            lines.append(f"- {file_name} | {existing_title}\n  new: {incoming}")
-        extra_count = max(0, len(conflicts) - len(lines))
-        if extra_count:
-            lines.append(f"... and {extra_count} more conflicts")
-        message = "\n".join(lines) if lines else tr("scan.conflict.empty", "Name conflicts detected.")
-        QMessageBox.warning(
-            self,
-            tr("scan.conflict_title", "Duplicate name and extension detected"),
-            tr(
-                "scan.conflict_msg",
-                "Some files were skipped because same file name + extension already exists.\n\n{details}",
-            ).format(details=message),
+        normalized = [item for item in conflicts if isinstance(item, dict)]
+        if not normalized:
+            message = tr("scan.conflict.empty", "Name conflicts detected.")
+        else:
+            count = len(normalized)
+            message = tr(
+                "scan.conflict.toast_msg",
+                "Skipped {count} files because same file name + extension already exists.",
+            ).format(count=count)
+            samples = [
+                str(item.get("file_name") or "").strip()
+                for item in normalized[:2]
+                if str(item.get("file_name") or "").strip()
+            ]
+            if samples:
+                preview = "、".join(samples)
+                message = (
+                    f"{message}\n"
+                    f"{tr('scan.conflict.toast_example', 'Example')}: {preview}"
+                )
+
+        self._scan_conflict_toast.show_toast(
+            title=tr("scan.conflict_title", "Duplicate name and extension detected"),
+            message=message,
+            duration_seconds=7,
         )
 
     def _show_scan_errors(self, errors: list[object]) -> None:
@@ -364,6 +372,10 @@ class AppWindow(QMainWindow):
     def _on_thumbnail_worker_finished(self) -> None:
         self._thumbnail_worker = None
         self._active_thumbnail_task_kind = None
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._scan_conflict_toast.reposition()
 
     def retranslate_ui(self) -> None:
         self.setWindowTitle(tr("app.window_title", "Simple Book Library - UI Outline"))

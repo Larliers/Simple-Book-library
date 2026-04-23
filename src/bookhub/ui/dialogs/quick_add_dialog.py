@@ -82,10 +82,6 @@ class _CollectionRow(QWidget):
         layout.setContentsMargins(12, 6, 12, 6)
         layout.setSpacing(8)
 
-        icon_label = QLabel("📚")
-        icon_label.setFixedWidth(20)
-        layout.addWidget(icon_label)
-
         name_label = QLabel(col_name)
         name_label.setObjectName("colRowName")
         name_label.setSizePolicy(name_label.sizePolicy().horizontalPolicy(),
@@ -207,24 +203,12 @@ class QuickAddDialog(QDialog):
         tb_layout.addWidget(title_lbl)
         tb_layout.addStretch()
 
-        close_btn = QPushButton("✕")
+        close_btn = QPushButton("X")
         close_btn.setObjectName("closeBtn")
         close_btn.setFixedSize(24, 24)
         close_btn.clicked.connect(self.reject)
         tb_layout.addWidget(close_btn)
         root.addWidget(title_bar)
-
-        # ── Book name strip ───────────────────────────────────────────
-        book_strip = QWidget()
-        book_strip.setObjectName("bookStrip")
-        bs_layout = QHBoxLayout(book_strip)
-        bs_layout.setContentsMargins(12, 6, 12, 6)
-        short_title = (self._book_title[:40] + "…") if len(self._book_title) > 40 else self._book_title
-        book_lbl = QLabel(f"📖  {short_title}")
-        book_lbl.setObjectName("bookLabel")
-        book_lbl.setWordWrap(False)
-        bs_layout.addWidget(book_lbl)
-        root.addWidget(book_strip)
 
         # ── Body ───────────────────────────────────────────────────────
         body = QWidget()
@@ -232,6 +216,12 @@ class QuickAddDialog(QDialog):
         body_layout = QVBoxLayout(body)
         body_layout.setContentsMargins(16, 14, 16, 14)
         body_layout.setSpacing(14)
+
+        short_title = (self._book_title[:40] + "...") if len(self._book_title) > 40 else self._book_title
+        book_lbl = QLabel(short_title)
+        book_lbl.setObjectName("bookLabel")
+        book_lbl.setWordWrap(False)
+        body_layout.addWidget(book_lbl)
 
         # Section: 标签名称 ─────────────────────────────────────────────
         sec1_title = QLabel("标签名称")
@@ -372,11 +362,13 @@ class QuickAddDialog(QDialog):
                 text-align: center;
             }
             QPushButton#closeBtn:hover { color: #005FAC; }
-            QWidget#bookStrip {
-                background-color: #EEEEEE;
-                border-bottom: 1px solid #E0E0E0;
+            QLabel#bookLabel {
+                font-size: 12px;
+                color: #6A7382;
+                padding: 0;
+                background-color: transparent;
+                border: none;
             }
-            QLabel#bookLabel { font-size: 12px; color: #414752; }
             QWidget#dialogBody { background-color: #F9F9F9; }
             QLabel#sectionTitle {
                 font-size: 10px;

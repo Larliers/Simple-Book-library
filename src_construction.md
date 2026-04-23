@@ -69,6 +69,7 @@ src/
          ├─ __init__.py
          ├─ book_card.py
          ├─ sidebar.py
+         ├─ slide_toast.py
          └─ topbar.py
 ```
 
@@ -368,3 +369,20 @@ main.py
   - 网格改为动态间隔，新增 `apply_card_spacing()`。
 - `src/bookhub/i18n/locales/zh-cn.json`
   - 新增 `settings.card_spacing`。
+
+
+## 重名冲突提示交互改造（2026-04-23）
+
+### 核心变更
+- 扫描完成后的“重名冲突”反馈由阻塞式 `QMessageBox` 改为右下角非模态滑入提醒（Toast）。
+- 提醒框自带秒级倒计时，倒计时结束后自动滑出窗口并关闭。
+- 提醒文案保留冲突总数与示例文件名，避免长文本遮挡主流程。
+
+### 影响文件
+- `src/bookhub/ui/widgets/slide_toast.py` ★新增
+  - 新增 `SlideToast` 组件，提供右下角定位、滑入/滑出动画、倒计时自动关闭能力。
+- `src/bookhub/ui/app_window.py`
+  - `_show_name_conflicts()` 改为调用 `SlideToast.show_toast()`，不再弹阻塞式告警框。
+  - 新增 `resizeEvent()`，窗口尺寸变化时重定位右下角提醒。
+- `src/bookhub/i18n/locales/zh-cn.json`
+  - 新增冲突提醒倒计时与示例文案键：`scan.conflict.toast_*`。

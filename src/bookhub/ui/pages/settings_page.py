@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
+from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -36,12 +37,15 @@ class SettingsPage(QWidget):
     card_spacing_changed = Signal(int)
     cleanup_all_thumbnails_requested = Signal()
     regenerate_thumbnails_requested = Signal()
+    font_changed = Signal(str, str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._last_summary: dict[str, object] = {}
         self._current_roots: list[str] = []
         self._thumbnail_task_kind: str | None = None
+        self._project_font_families: list[str] = []
+        self._font_source: str = "system"
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 16, 16, 16)
@@ -107,6 +111,48 @@ class SettingsPage(QWidget):
         self.restart_hint.setObjectName("PageSubtitle")
         lang_layout.addWidget(self.restart_hint)
         content_layout.addWidget(lang)
+
+        font_box = QFrame()
+        font_box.setObjectName("PageSection")
+        font_layout = QVBoxLayout(font_box)
+        font_layout.setContentsMargins(14, 14, 14, 14)
+
+        self.font_title = QLabel("Font")
+        self.font_title.setStyleSheet("font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #6a7382;")
+        font_layout.addWidget(self.font_title)
+
+        font_row = QHBoxLayout()
+        font_row.setSpacing(10)
+
+        self.font_source_label = QLabel("Font source")
+        font_row.addWidget(self.font_source_label)
+        self.font_source_combo = QComboBox()
+        self.font_source_combo.setObjectName("SettingsLanguageCombo")
+        self.font_source_combo.addItem("System", "system")
+        self.font_source_combo.addItem("Project (src/fonts)", "project")
+        self.font_source_combo.currentIndexChanged.connect(self._on_font_source_changed)
+        font_row.addWidget(self.font_source_combo, 1)
+
+        self.font_family_label = QLabel("Font family")
+        font_row.addWidget(self.font_family_label)
+        self.font_family_combo = QComboBox()
+        self.font_family_combo.setObjectName("SettingsLanguageCombo")
+        self.font_family_combo.currentIndexChanged.connect(self._emit_font_changed)
+        font_row.addWidget(self.font_family_combo, 1)
+
+        self.reload_fonts_btn = QPushButton("Reload Fonts")
+        self.reload_fonts_btn.setObjectName("GhostButton")
+        self.reload_fonts_btn.clicked.connect(self._on_reload_fonts_clicked)
+        font_row.addWidget(self.reload_fonts_btn)
+
+        font_layout.addLayout(font_row)
+
+        self.font_preview_label = QLabel("Preview")
+        self.font_preview_label.setObjectName("PageSubtitle")
+        self.font_preview_label.setWordWrap(True)
+        font_layout.addWidget(self.font_preview_label)
+
+        content_layout.addWidget(font_box)
 
         library_box = QFrame()
         library_box.setObjectName("PageSection")
@@ -256,6 +302,19 @@ class SettingsPage(QWidget):
         self.card_spacing_combo.setCurrentIndex(index)
         self.card_spacing_combo.blockSignals(False)
 
+    def set_available_project_fonts(self, families: list[str]) -> None:
+        self._project_font_families = sorted({str(item).strip() for item in families if str(item).strip()})
+        self._rebuild_font_family_options()
+
+    def set_font_selection(self, source: str, family: str) -> None:
+        source_value = "project" if source == "project" else "system"
+        source_index = self.font_source_combo.findData(source_value)
+        self.font_source_combo.blockSignals(True)
+        self.font_source_combo.setCurrentIndex(source_index if source_index >= 0 else 0)
+        self.font_source_combo.blockSignals(False)
+        self._font_source = source_value
+        self._rebuild_font_family_options(preferred_family=family)
+
     def set_scan_summary(self, summary: dict[str, object]) -> None:
         self._last_summary = dict(summary)
         added_count = int(summary.get("added_count", 0) or 0)
@@ -320,6 +379,13 @@ class SettingsPage(QWidget):
         self.scan_depth_label.setText(tr("settings.scan_depth", "Scan depth"))
         self.hash_strategy_label.setText(tr("settings.hash_strategy", "Missed hash matching"))
         self.card_spacing_label.setText(tr("settings.card_spacing", "Card spacing"))
+        self.font_title.setText(tr("settings.font.title", "Font"))
+        self.font_source_label.setText(tr("settings.font.source", "Font source"))
+        self.font_family_label.setText(tr("settings.font.family", "Font family"))
+        self.reload_fonts_btn.setText(tr("settings.font.reload", "Reload Fonts"))
+        self.font_preview_label.setText(
+            tr("settings.font.preview", "Preview: The quick brown fox jumps over the lazy dog 你好，世界")
+        )
         self.cleanup_thumbnails_btn.setText(tr("settings.thumb.clean_all", "Clean All Thumbnails"))
         self.regenerate_thumbnails_btn.setText(tr("settings.thumb.regenerate", "Regenerate Thumbnails"))
         self.formats_hint.setText(
@@ -386,6 +452,45 @@ class SettingsPage(QWidget):
     def _emit_card_spacing_changed(self) -> None:
         value = normalize_card_spacing(self.card_spacing_combo.currentData())
         self.card_spacing_changed.emit(value)
+
+    def _on_reload_fonts_clicked(self) -> None:
+        self._emit_font_changed()
+
+    def _on_font_source_changed(self) -> None:
+        self._font_source = str(self.font_source_combo.currentData() or "system")
+        self._rebuild_font_family_options()
+        self._emit_font_changed()
+
+    def _rebuild_font_family_options(self, preferred_family: str | None = None) -> None:
+        source = str(self.font_source_combo.currentData() or self._font_source or "system")
+        self._font_source = source
+        self.font_family_combo.blockSignals(True)
+        self.font_family_combo.clear()
+
+        if source == "project":
+            families = list(self._project_font_families)
+        else:
+            families = sorted({family for family in QFontDatabase.families() if family})
+
+        if not families:
+            families = [tr("settings.font.none", "No fonts available")]
+
+        for family in families:
+            self.font_family_combo.addItem(family, family)
+
+        target = preferred_family or ""
+        index = self.font_family_combo.findData(target) if target else -1
+        if index < 0:
+            index = 0
+        self.font_family_combo.setCurrentIndex(index)
+        self.font_family_combo.blockSignals(False)
+
+    def _emit_font_changed(self) -> None:
+        source = str(self.font_source_combo.currentData() or "system")
+        family = str(self.font_family_combo.currentData() or "")
+        if not family:
+            return
+        self.font_changed.emit(source, family)
 
     def set_thumbnail_task_running(self, task_kind: str, running: bool) -> None:
         self._thumbnail_task_kind = task_kind if running else self._thumbnail_task_kind

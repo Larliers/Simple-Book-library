@@ -94,3 +94,31 @@
 
 ### 后续
 - 在 library_page.py 中调用 `install_book_context_menu(card, repository)` 后，右键菜单即可生效
+
+---
+
+## 2026-04-23 - QuickAddDialog 顶部白色层问题留档（仅记录）
+
+### 任务
+用户反馈右键弹窗中“添加标签”文字下方仍有白色层，本次仅做问题留档，不继续改代码。
+
+### 现象
+- 已移除书名条样式层与书单左侧 LIST 列后，顶部区域仍存在层级感（白色/浅色层视觉）。
+
+### 初步判断
+- 问题更可能来自 `titleBar` 容器样式而非 `bookLabel` 文本自身。
+- 重点关注：
+  - `QWidget#titleBar` 的 `background-color`
+  - `QWidget#titleBar` 的 `border-bottom`
+
+### 影响文件（观察范围）
+- `src/bookhub/ui/dialogs/quick_add_dialog.py`
+- `src/bookhub/ui/resources/styles.py`（如需排查全局样式覆盖）
+
+### 风险
+- 若直接调整标题栏样式，可能影响弹窗边界层次感与关闭按钮可见性，需要视觉回归确认。
+
+### 后续建议
+1. 将 `titleBar` 背景与 `dialogBody` 统一；
+2. 去除 `titleBar` 下边框分割线；
+3. 若问题仍在，排查全局 QSS 通配规则优先级。
