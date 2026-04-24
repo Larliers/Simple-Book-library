@@ -386,3 +386,18 @@ main.py
   - 新增 `resizeEvent()`，窗口尺寸变化时重定位右下角提醒。
 - `src/bookhub/i18n/locales/zh-cn.json`
   - 新增冲突提醒倒计时与示例文案键：`scan.conflict.toast_*`。
+
+
+## Collections 详情网格与总书单卡片复用修复（2026-04-24）
+
+### 核心变更
+- 修复 Collections 详情页书籍网格与总书单（Library/Favorites）卡片样式不一致问题。
+- `CollectionDetailPage` 不再维护独立 `DetailBookCard`，改为直接复用 `BookCardWidget`。
+- 书单详情页新增“记录 -> ResourceItem”转换，统一字段来源与渲染路径。
+- 保留“从书单移除”右键动作；双击卡片支持外部打开文件。
+
+### 影响文件
+- `src/bookhub/ui/pages/collections_page.py`
+  - 移除手写详情卡片构造逻辑，统一为 `BookCardWidget`。
+  - 新增 `_parse_tags()` 与 `_record_to_resource()`，对齐 Library/Favorites 的模型结构。
+  - 新增 `_open_external()`，详情页行为与其他书籍卡片页一致。

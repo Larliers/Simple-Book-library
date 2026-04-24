@@ -4,17 +4,25 @@ Collections page - shows all user-defined book lists (custom shelves).
 """
 from __future__ import annotations
 
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QFrame, QGridLayout, QSizePolicy, QInputDialog,
+    QScrollArea, QFrame, QGridLayout, QInputDialog,
     QMessageBox, QMenu
 )
-from PySide6.QtCore import Qt, Signal, QSize
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QAction
 
 import hashlib
 
+from bookhub.ui.models.resource import ResourceItem
 from bookhub.ui.resources.layout_config import UI_LAYOUT
+from bookhub.ui.widgets.book_card import BookCardWidget
 
 
 class CollectionCard(QFrame):
@@ -283,7 +291,7 @@ class CollectionDetailPage(QWidget):
 
     def _calculate_grid_columns(self) -> int:
         available_width = max(1, self._scroll.viewport().width())
-        cell_width = 160 + UI_LAYOUT.card_spacing
+        cell_width = UI_LAYOUT.card_width + UI_LAYOUT.card_spacing
         return max(1, available_width // max(1, cell_width))
 
     def apply_card_spacing(self, _spacing: int) -> None:
@@ -291,73 +299,18 @@ class CollectionDetailPage(QWidget):
         self._grid.setVerticalSpacing(UI_LAYOUT.card_spacing)
         self.refresh()
 
-    def _make_book_card(self, book_data: dict) -> QFrame:
-        frame = QFrame()
-        frame.setObjectName("DetailBookCard")
-        frame.setFixedSize(160, 230)
-        frame.setCursor(Qt.CursorShape.PointingHandCursor)
+    def _make_book_card(self, book_data: dict) -> BookCardWidget:
+        resource = self._record_to_resource(book_data)
+        frame = BookCardWidget(resource)
+        frame.open_requested.connect(lambda _pos, path=resource.path: self._open_external(path))
         frame.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
-        layout = QVBoxLayout(frame)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
-
-        cover = QLabel()
-        cover.setFixedSize(144, 170)
-        cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title = str(book_data.get("title", book_data.get("file_name", book_data.get("file_path", "?"))))
-
-        # Try to load actual thumbnail (supports both file:// URLs and bare filesystem paths)
-        thumbnail_path = book_data.get("thumbnail_path")
-        thumbnail_loaded = False
-        if thumbnail_path:
-            from pathlib import Path as _Path
-            from PySide6.QtGui import QPixmap
-            from urllib.parse import urlparse
-            from urllib.request import url2pathname
-            if thumbnail_path.startswith("file://"):
-                parsed = urlparse(thumbnail_path)
-                tp = _Path(url2pathname(parsed.path))
-            else:
-                tp = _Path(thumbnail_path)
-            if tp.exists():
-                pixmap = QPixmap(str(tp))
-                if not pixmap.isNull():
-                    scaled = pixmap.scaled(
-                        144, 170,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-                    cover.setPixmap(scaled)
-                    cover.setStyleSheet("border-radius: 4px;")
-                    thumbnail_loaded = True
-
-        if not thumbnail_loaded:
-            colors = ["#1565C0", "#2E7D32", "#B71C1C", "#E65100", "#4A148C"]
-            idx = int(hashlib.md5(title.encode("utf-8", errors="replace")).hexdigest(), 16) % len(colors)
-            color = colors[idx]
-            cover.setText(title[0].upper() if title else "?")
-            cover.setStyleSheet(
-                f"background-color: {color}; color: white; border-radius: 4px;"
-                " font-size: 28pt; font-weight: bold;"
-            )
-        layout.addWidget(cover)
-
-        lbl = QLabel()
-        lbl.setFixedWidth(144)
-        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl.setWordWrap(False)
-        lbl.setText(lbl.fontMetrics().elidedText(title, Qt.TextElideMode.ElideRight, 144))
-        lbl.setToolTip(title)
-        lbl.setStyleSheet("font-size: 11px; color: #333;")
-        layout.addWidget(lbl)
-
-        frame.setStyleSheet("""
-            QFrame#DetailBookCard { background-color: white; border: 1px solid #E0E0E0; border-radius: 6px; }
-            QFrame#DetailBookCard:hover { border: 1px solid #BDBDBD; }
-        """)
-
         book_id = book_data.get("id")
+        if not isinstance(book_id, int):
+            try:
+                book_id = self._repo.get_book_int_id(resource.resource_id)
+            except Exception:
+                book_id = None
         col_id = self._col_id
         repo = self._repo
 
@@ -375,6 +328,59 @@ class CollectionDetailPage(QWidget):
 
         frame.customContextMenuRequested.connect(show_ctx)
         return frame
+
+    @staticmethod
+    def _parse_tags(raw_value: object) -> list[str]:
+        if isinstance(raw_value, list):
+            return [str(item) for item in raw_value if str(item).strip()]
+        if isinstance(raw_value, str):
+            try:
+                loaded = json.loads(raw_value)
+            except json.JSONDecodeError:
+                return []
+            if isinstance(loaded, list):
+                return [str(item) for item in loaded if str(item).strip()]
+        return []
+
+    def _record_to_resource(self, record: dict) -> ResourceItem:
+        resource_id = str(record.get("resource_id") or "").strip()
+        if not resource_id:
+            fallback_id = str(record.get("id") or "")
+            resource_id = f"collection-book-{self._col_id}-{fallback_id or 'unknown'}"
+
+        title = str(record.get("title") or "").strip()
+        if not title:
+            title = Path(str(record.get("file_name") or "")).stem or "Unknown"
+
+        return ResourceItem(
+            resource_id=resource_id,
+            title=title,
+            author=str(record.get("author") or ""),
+            status=str(record.get("status") or "UNREAD"),
+            tags=self._parse_tags(record.get("tags_json")),
+            resource_type=str(record.get("resource_type") or "book"),
+            path=str(record.get("path") or ""),
+            thumbnail_path=record.get("thumbnail_path"),
+            publisher=record.get("publisher"),
+            language=record.get("language"),
+            is_missing=bool(record.get("is_missing")),
+            file_name=str(record.get("file_name") or ""),
+            extension=str(record.get("extension") or ""),
+        )
+
+    def _open_external(self, path: str) -> None:
+        file_path = Path(path).expanduser()
+        if not str(file_path).strip() or not file_path.exists():
+            return
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(file_path))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(file_path)])
+            else:
+                subprocess.Popen(["xdg-open", str(file_path)])
+        except Exception as e:
+            print(f"[CollectionDetailPage] open external error: {e}")
 
 
 class CollectionsPage(QWidget):
