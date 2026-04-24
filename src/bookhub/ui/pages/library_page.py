@@ -97,6 +97,7 @@ class LibraryPage(QWidget):
         self.grid_layout.setHorizontalSpacing(UI_LAYOUT.card_spacing)
         self.grid_layout.setVerticalSpacing(UI_LAYOUT.card_spacing)
         self.grid_layout.setContentsMargins(0, 0, 0, 0)
+        self.grid_layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
 
         self.grid_scroll = QScrollArea()
         self.grid_scroll.setWidgetResizable(True)
@@ -166,6 +167,8 @@ class LibraryPage(QWidget):
     def _render_grid(self, items: list[ResourceItem]) -> None:
         self.grid_layout.setHorizontalSpacing(UI_LAYOUT.card_spacing)
         self.grid_layout.setVerticalSpacing(UI_LAYOUT.card_spacing)
+        self.grid_layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        previous_columns = self._last_grid_columns
         columns = self._calculate_grid_columns()
         self._last_grid_columns = columns
 
@@ -198,6 +201,11 @@ class LibraryPage(QWidget):
                 len(items) % columns,
                 alignment=Qt.AlignLeft | Qt.AlignTop,
             )
+
+        max_columns_to_reset = max(previous_columns, columns) + 1
+        for col in range(max_columns_to_reset + 1):
+            self.grid_layout.setColumnStretch(col, 0)
+        self.grid_layout.setColumnStretch(columns, 1)
 
     def _render_list(self, items: list[ResourceItem]) -> None:
         self.list_table.setRowCount(len(items))

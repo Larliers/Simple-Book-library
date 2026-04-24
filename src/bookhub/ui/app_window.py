@@ -32,6 +32,8 @@ from bookhub.ui.pages.favorites_page import FavoritesPage
 
 
 class AppWindow(QMainWindow):
+    SEARCH_RENDER_DEBOUNCE_MS = 150
+
     def __init__(self) -> None:
         super().__init__()
         language_manager.set_language("en")
@@ -46,6 +48,12 @@ class AppWindow(QMainWindow):
         self._thumbnail_worker: ThumbnailTaskWorker | None = None
         self._active_thumbnail_task_kind: str | None = None
         self._scan_conflict_toast = SlideToast(self)
+        self._search_render_timer = QTimer(self)
+        self._search_render_timer.setSingleShot(True)
+        self._search_render_timer.setInterval(self.SEARCH_RENDER_DEBOUNCE_MS)
+        self._search_render_timer.timeout.connect(self._commit_search_query)
+        self._pending_query = ""
+        self._last_committed_query = ""
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -99,6 +107,7 @@ class AppWindow(QMainWindow):
         self._reload_resources_from_repository()
         self._refresh_settings_state()
         self._refresh_search_suggestions()
+        self._last_committed_query = self._library_vm.ui_state.filter
         self._show_page("library")
         QTimer.singleShot(100, lambda: self._start_scan("startup"))
 
@@ -116,18 +125,34 @@ class AppWindow(QMainWindow):
         refresh_fn = getattr(current, "refresh", None)
         if callable(refresh_fn):
             refresh_fn()
-        if current in {self.library_page, self.missed_page}:
+        if current is self.library_page:
             self.library_page.render()
+        elif current is self.missed_page:
             self.missed_page.render()
+        self._stabilize_dropdown_layer()
 
     def _on_query_changed(self, query: str) -> None:
-        self._library_vm.set_query(query)
-        self._refresh_search_suggestions()
+        self._pending_query = query
+        self._refresh_search_suggestions(query)
+        self._search_render_timer.start()
+
+    def _commit_search_query(self) -> None:
+        normalized = self._pending_query.strip().lower()
+        if normalized == self._last_committed_query:
+            self._stabilize_dropdown_layer()
+            return
+
+        self._library_vm.set_query(self._pending_query)
+        self._last_committed_query = normalized
         current_page = self.page_stack.currentWidget()
         if current_page in {self.library_page, self.missed_page}:
             current_page.render()  # type: ignore[call-arg]
+        self._stabilize_dropdown_layer()
 
-    def _refresh_search_suggestions(self) -> None:
+    def _refresh_search_suggestions(self, query: str | None = None) -> None:
+        raw_query = self._library_vm.ui_state.filter if query is None else query
+        suggestion_items = self._library_vm.search_suggestions_for_query(raw_query)
+        self._library_vm.ui_state.search_suggestions = suggestion_items
         suggestions = [
             SearchSuggestion(
                 group=item["group"],
@@ -135,9 +160,12 @@ class AppWindow(QMainWindow):
                 description=item["description"],
                 query_value=item["query_value"],
             )
-            for item in self._library_vm.ui_state.search_suggestions
+            for item in suggestion_items
         ]
         self.topbar.set_search_suggestions(suggestions)
+
+    def _stabilize_dropdown_layer(self) -> None:
+        QTimer.singleShot(0, self.topbar.ensure_dropdown_on_top)
 
     def _reload_resources_from_repository(self) -> None:
         records = self._repository.list_books(include_missing=None)
@@ -161,6 +189,7 @@ class AppWindow(QMainWindow):
                 )
             )
         self._library_vm.set_resources(resources)
+        self._last_committed_query = self._library_vm.ui_state.filter
         self.library_page.render()
         self.missed_page.render()
         self._refresh_search_suggestions()
@@ -376,6 +405,7 @@ class AppWindow(QMainWindow):
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._scan_conflict_toast.reposition()
+        self._stabilize_dropdown_layer()
 
     def retranslate_ui(self) -> None:
         self.setWindowTitle(tr("app.window_title", "Simple Book Library - UI Outline"))

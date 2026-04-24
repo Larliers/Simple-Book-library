@@ -401,3 +401,72 @@ main.py
   - 移除手写详情卡片构造逻辑，统一为 `BookCardWidget`。
   - 新增 `_parse_tags()` 与 `_record_to_resource()`，对齐 Library/Favorites 的模型结构。
   - 新增 `_open_external()`，详情页行为与其他书籍卡片页一致。
+
+
+## 顶部搜索浮层与搜索结果网格紧凑修复（2026-04-24）
+
+### 核心变更
+- 修复关键词搜索后少量结果网格横向拉散问题，统一为左上紧凑排列。
+- 搜索建议下拉从 TopBar 内嵌布局改为 `Qt.Popup` 浮层，不再挤压下方书籍展示区。
+- 浮层宽度采用整行宽度，定位到 TopBar 下边缘，并在窗口缩放/切页时重定位。
+
+### 影响文件
+- `src/bookhub/ui/pages/library_page.py`
+  - 网格布局增加 `AlignLeft | AlignTop`。
+  - 增加尾列 `setColumnStretch()` 吸收剩余空白，保证卡片紧凑罗列。
+- `src/bookhub/ui/widgets/topbar.py`
+  - 搜索建议容器改为 `Qt.Popup` 独立浮层。
+  - 新增浮层定位与重定位方法，打开时按整行宽度计算几何。
+- `src/bookhub/ui/app_window.py`
+  - 在页面切换与窗口缩放时调用 TopBar 浮层重定位。
+
+
+## 搜索首字符输入失焦修复（2026-04-24）
+
+### 核心变更
+- 修复搜索框输入首字符时因浮层打开抢焦点导致的失焦问题。
+- 搜索浮层改为非激活工具窗（`Qt.Tool` + `WA_ShowWithoutActivating`），并将建议项设为不抢焦点。
+- 每次展开建议浮层后将输入焦点归还给 `TopSearchInput`，保障连续输入。
+
+### 影响文件
+- `src/bookhub/ui/widgets/topbar.py`
+  - 浮层窗口标志由 `Qt.Popup` 调整为 `Qt.Tool`。
+  - 增加 `WA_ShowWithoutActivating` 与 `NoFocus` 配置。
+  - `_open_dropdown()` 末尾显式执行 `search_input.setFocus(...)`。
+
+
+## 搜索刷新链路解耦与层级稳定化（2026-04-24）
+
+### 核心变更
+- 将搜索输入链路拆分为“建议即时刷新”与“书单延迟提交刷新（150ms）”，避免每键同步重绘书单。
+- 增加查询去重（`last_committed_query`），相同查询不重复触发页面渲染。
+- 下拉建议列表新增差异判断，内容未变化时不重建项，减少闪烁。
+- 书单渲染后统一执行一次 `singleShot(0)` 的下拉层级校正（`reposition + raise`），消除短暂层级颠倒。
+
+### 影响文件
+- `src/bookhub/ui/viewmodels/library_viewmodel.py`
+  - 新增建议纯计算入口 `search_suggestions_for_query()`。
+  - `set_query()` 仅更新过滤条件，不再耦合建议重建。
+- `src/bookhub/ui/app_window.py`
+  - 新增 150ms 搜索渲染节流定时器与 `_commit_search_query()`。
+  - 输入阶段仅刷新建议；提交阶段才渲染当前 `Library/Missed` 页面。
+  - 新增 `_stabilize_dropdown_layer()` 在重排后保持下拉置顶。
+- `src/bookhub/ui/widgets/topbar.py`
+  - `set_search_suggestions()` 增加列表差异判断。
+  - 新增 `ensure_dropdown_on_top()` 供外部强制校正下拉层级。
+
+
+## 搜索下拉常驻容器与单次更新优化（2026-04-24）
+
+### 核心变更
+- 修复搜索输入过程中下拉“像关闭再打开”的视觉闪动问题。
+- 去除键程内重复重建：`_open_dropdown()` 仅负责显示/定位，不再执行内容渲染。
+- 下拉内容改为行复用池（`_SuggestionRow`），更新时只改文本/绑定，超出行直接隐藏。
+- 批量更新期间关闭重绘（`setUpdatesEnabled(False/True)`），减少中间帧抖动。
+
+### 影响文件
+- `src/bookhub/ui/widgets/topbar.py`
+  - 新增 `_SuggestionRow` 复用行组件与 `_row_pool`。
+  - 新增 `_ensure_row_capacity()`，按需扩容，不再全量销毁重建。
+  - `set_search_suggestions()` 在建议未变化时仅做层级校正。
+  - `_open_dropdown()` 改为只执行显示与焦点保持。

@@ -32,15 +32,14 @@ class LibraryViewModel:
         self.view_mode = "waterfall"
         self.ui_state = UiState()
         self.resources: list[ResourceItem] = []
-        self._refresh_search_suggestions("")
+        self.set_search_suggestions_for_query("")
 
     def set_resources(self, resources: list[ResourceItem]) -> None:
         self.resources = list(resources)
-        self._refresh_search_suggestions(self.ui_state.filter)
+        self.set_search_suggestions_for_query(self.ui_state.filter)
 
     def set_query(self, query: str) -> None:
         self.ui_state.filter = query.strip().lower()
-        self._refresh_search_suggestions(query)
 
     def set_view_mode(self, mode: str) -> None:
         if mode in {"list", "waterfall"}:
@@ -79,7 +78,7 @@ class LibraryViewModel:
             trace_id="trace-ui-outline-001",
         )
 
-    def _refresh_search_suggestions(self, raw_query: str) -> None:
+    def search_suggestions_for_query(self, raw_query: str) -> list[dict[str, str]]:
         query = raw_query.strip().lower()
         suggestions: list[dict[str, str]] = [
             {
@@ -118,5 +117,7 @@ class LibraryViewModel:
                     "query_value": author,
                 }
             )
+        return suggestions[:10]
 
-        self.ui_state.search_suggestions = suggestions[:10]
+    def set_search_suggestions_for_query(self, raw_query: str) -> None:
+        self.ui_state.search_suggestions = self.search_suggestions_for_query(raw_query)

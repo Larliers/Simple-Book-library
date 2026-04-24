@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
@@ -25,6 +26,62 @@ class SearchSuggestion:
     query_value: str
 
 
+class _SuggestionRow(QWidget):
+    def __init__(self, on_selected: Callable[[str], None], parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._on_selected = on_selected
+        self._query_value = ""
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self._label = QLabel()
+        self._label.setFocusPolicy(Qt.NoFocus)
+        layout.addWidget(self._label)
+
+        self._button = QPushButton()
+        self._button.setObjectName("GhostButton")
+        self._button.setStyleSheet("text-align: left; border: none; padding: 6px 10px;")
+        self._button.setFocusPolicy(Qt.NoFocus)
+        self._button.clicked.connect(self._emit_selected)
+        layout.addWidget(self._button)
+
+        self._label.hide()
+        self._button.hide()
+        self.hide()
+
+    def _emit_selected(self) -> None:
+        if self._query_value:
+            self._on_selected(self._query_value)
+
+    def show_header(self, text: str) -> None:
+        self._query_value = ""
+        self._button.hide()
+        self._label.setText(text)
+        self._label.setStyleSheet(
+            "padding: 8px 10px 4px 10px; color: #6a7382; font-size: 10px; font-weight: 700;"
+        )
+        self._label.show()
+        self.show()
+
+    def show_empty(self, text: str) -> None:
+        self._query_value = ""
+        self._button.hide()
+        self._label.setText(text)
+        self._label.setStyleSheet("padding: 8px 10px 8px 10px; color: #6a7382; font-size: 12px;")
+        self._label.show()
+        self.show()
+
+    def show_item(self, suggestion: SearchSuggestion) -> None:
+        self._query_value = suggestion.query_value
+        self._label.hide()
+        self._button.setText(suggestion.label)
+        self._button.setToolTip(suggestion.description)
+        self._button.show()
+        self.show()
+
+
 class TopBarWidget(QWidget):
     query_changed = Signal(str)
     import_requested = Signal()
@@ -34,12 +91,14 @@ class TopBarWidget(QWidget):
         self.setObjectName("TopBar")
         self._suggestions: list[SearchSuggestion] = []
         self._is_dropdown_open = False
+        self._row_pool: list[_SuggestionRow] = []
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
         row = QWidget()
+        self._row = row
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(16, 10, 16, 10)
         row_layout.setSpacing(10)
@@ -89,6 +148,9 @@ class TopBarWidget(QWidget):
 
         self.dropdown = QFrame()
         self.dropdown.setObjectName("PageSection")
+        self.dropdown.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
+        self.dropdown.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.dropdown.setFocusPolicy(Qt.NoFocus)
         dropdown_layout = QVBoxLayout(self.dropdown)
         dropdown_layout.setContentsMargins(0, 0, 0, 0)
         dropdown_layout.setSpacing(0)
@@ -98,7 +160,6 @@ class TopBarWidget(QWidget):
         self.dropdown_content_layout.setSpacing(0)
         dropdown_layout.addWidget(self.dropdown_content)
         self.dropdown.hide()
-        root.addWidget(self.dropdown)
 
         self.retranslate_ui()
         self.set_search_suggestions([])
@@ -109,8 +170,18 @@ class TopBarWidget(QWidget):
         self.new_list_button.setText(tr("topbar.new_list", "NEW LIST"))
 
     def set_search_suggestions(self, suggestions: list[SearchSuggestion]) -> None:
+        if suggestions == self._suggestions and self._row_pool:
+            self.ensure_dropdown_on_top()
+            return
         self._suggestions = suggestions
         self._render_dropdown_items()
+        self.ensure_dropdown_on_top()
+
+    def ensure_dropdown_on_top(self) -> None:
+        if not self._is_dropdown_open:
+            return
+        self._place_dropdown()
+        self.dropdown.raise_()
 
     def _on_query_changed(self, query: str) -> None:
         self.query_changed.emit(query)
@@ -119,49 +190,69 @@ class TopBarWidget(QWidget):
         else:
             self._close_dropdown()
 
-    def _clear_layout_widgets(self) -> None:
-        while self.dropdown_content_layout.count():
-            item = self.dropdown_content_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+    def _ensure_row_capacity(self, count: int) -> None:
+        while len(self._row_pool) < count:
+            row = _SuggestionRow(self._select_suggestion, self.dropdown_content)
+            self.dropdown_content_layout.addWidget(row)
+            self._row_pool.append(row)
 
     def _render_dropdown_items(self) -> None:
-        self._clear_layout_widgets()
+        row_models: list[tuple[str, str | SearchSuggestion]] = []
         if not self._suggestions:
-            empty = QLabel(tr("topbar.search.empty", "No suggestions"))
-            empty.setContentsMargins(10, 8, 10, 8)
-            empty.setObjectName("PageSubtitle")
-            self.dropdown_content_layout.addWidget(empty)
-            return
+            row_models.append(("empty", tr("topbar.search.empty", "No suggestions")))
+        else:
+            current_group = ""
+            for suggestion in self._suggestions:
+                if suggestion.group != current_group:
+                    current_group = suggestion.group
+                    row_models.append(("header", current_group))
+                row_models.append(("item", suggestion))
 
-        current_group = ""
-        for suggestion in self._suggestions:
-            if suggestion.group != current_group:
-                current_group = suggestion.group
-                header = QLabel(current_group)
-                header.setStyleSheet("padding: 8px 10px 4px 10px; color: #6a7382; font-size: 10px; font-weight: 700;")
-                self.dropdown_content_layout.addWidget(header)
+        self.dropdown_content.setUpdatesEnabled(False)
+        self._ensure_row_capacity(len(row_models))
+        for idx, (kind, payload) in enumerate(row_models):
+            row = self._row_pool[idx]
+            if kind == "header":
+                row.show_header(str(payload))
+            elif kind == "item":
+                row.show_item(payload)  # type: ignore[arg-type]
+            else:
+                row.show_empty(str(payload))
 
-            item_button = QPushButton(suggestion.label)
-            item_button.setObjectName("GhostButton")
-            item_button.setStyleSheet("text-align: left; border: none; padding: 6px 10px;")
-            item_button.setToolTip(suggestion.description)
-            item_button.clicked.connect(
-                lambda _=False, value=suggestion.query_value: self._select_suggestion(value)
-            )
-            self.dropdown_content_layout.addWidget(item_button)
+        for row in self._row_pool[len(row_models):]:
+            row.hide()
+
+        self.dropdown_content.setUpdatesEnabled(True)
+        self.dropdown.adjustSize()
 
     def _select_suggestion(self, value: str) -> None:
         self.search_input.setText(value)
         self._close_dropdown()
 
+    def reposition_dropdown(self) -> None:
+        if not self._is_dropdown_open:
+            return
+        self._place_dropdown()
+
+    def _place_dropdown(self) -> None:
+        width = max(200, self._row.width())
+        height = min(max(40, self.dropdown.sizeHint().height()), 360)
+        global_pos = self._row.mapToGlobal(self._row.rect().bottomLeft())
+        self.dropdown.setGeometry(global_pos.x(), global_pos.y(), width, height)
+
     def _open_dropdown(self) -> None:
+        self._place_dropdown()
         if not self._is_dropdown_open:
             self.dropdown.show()
+            self.dropdown.raise_()
             self._is_dropdown_open = True
+        self.search_input.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _close_dropdown(self) -> None:
         if self._is_dropdown_open:
             self.dropdown.hide()
             self._is_dropdown_open = False
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self.reposition_dropdown()
