@@ -498,3 +498,18 @@ main.py
   - 新增 Library 双栏布局、详情栏、cover-only 卡片与选中底部条样式。
 - `src/bookhub/i18n/locales/zh-cn.json`
   - 新增详情栏空态与字段文案键。
+
+### 细节修复（2026-04-25）
+- 修复 Grid 在拖拽右侧详情栏宽度后“列数不及时更新导致右侧死空隙”的问题。
+- Grid 纯封面卡片进一步精简：移除底部额外条层，仅保留背景层与封面。
+- 右侧详情栏封面改为水平居中显示。
+
+### 额外影响文件
+- `src/bookhub/ui/pages/library_page.py`
+  - 监听 `QSplitter.splitterMoved`，拖拽时即时重算列数并重排网格。
+  - 详情封面挂载对齐从左对齐改为水平居中。
+  - 移除网格末尾 `columnStretch` 填充策略，避免形成固定大块空白。
+- `src/bookhub/ui/widgets/book_card.py`
+  - `cover_only` 模式移除底部条控件，卡片仅包含封面区域。
+- `src/bookhub/ui/resources/styles.py`
+  - 删除 `BookCardFooter` 样式，`cover_only` 选中态改为卡片背景/边框反馈。

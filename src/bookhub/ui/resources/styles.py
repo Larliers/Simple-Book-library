@@ -253,20 +253,13 @@ QPushButton#ViewToggleButton:checked {
     border: 1px solid #cfd4dc;
 }
 #BookCard[variant="cover_only"][selected="true"] {
+    background: #e6e9ee;
     border: 1px solid #8ea7c6;
 }
 #BookCover {
     background: #ffffff;
     color: #6b7280;
     border: none;
-}
-#BookCardFooter {
-    background: #d1d5dc;
-    border: 1px solid #bcc2cc;
-}
-#BookCardFooter[selected="true"] {
-    background: #9ca5b3;
-    border: 1px solid #7f8a99;
 }
 #BookTitle {
     font-size: 15px;

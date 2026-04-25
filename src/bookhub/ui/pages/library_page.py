@@ -60,7 +60,7 @@ class BookDetailPanel(QFrame):
         self._cover.setObjectName("DetailCover")
         self._cover.setFixedSize(220, 330)
         self._cover.setAlignment(Qt.AlignCenter)
-        content_layout.addWidget(self._cover, 0, Qt.AlignLeft)
+        content_layout.addWidget(self._cover, 0, Qt.AlignHCenter)
 
         self._title = QLabel()
         self._title.setObjectName("DetailTitle")
@@ -240,6 +240,7 @@ class LibraryPage(QWidget):
         self.main_splitter.setObjectName("LibraryContentSplitter")
         self.main_splitter.setChildrenCollapsible(False)
         self.main_splitter.setHandleWidth(6)
+        self.main_splitter.splitterMoved.connect(self._on_main_splitter_moved)
 
         self.main_pane = QWidget()
         self.main_pane.setObjectName("LibraryMainPane")
@@ -393,7 +394,6 @@ class LibraryPage(QWidget):
         max_columns_to_reset = max(previous_columns, columns) + 1
         for col in range(max_columns_to_reset + 1):
             self.grid_layout.setColumnStretch(col, 0)
-        self.grid_layout.setColumnStretch(columns, 1)
 
     def _render_list(self, items: list[ResourceItem]) -> None:
         self.list_table.setRowCount(len(items))
@@ -794,6 +794,13 @@ class LibraryPage(QWidget):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
+        if self.view_model.view_mode != "waterfall":
+            return
+        columns = self._calculate_grid_columns()
+        if columns != self._last_grid_columns:
+            self._render_grid(self.view_model.filtered_resources(include_missing=self.missing_mode))
+
+    def _on_main_splitter_moved(self, _pos: int, _index: int) -> None:
         if self.view_model.view_mode != "waterfall":
             return
         columns = self._calculate_grid_columns()

@@ -65,12 +65,7 @@ class BookCardWidget(QFrame):
         layout.addWidget(self.cover)
         self._render_cover()
 
-        if self.cover_only:
-            self.footer_bar = QFrame()
-            self.footer_bar.setObjectName("BookCardFooter")
-            self.footer_bar.setFixedHeight(14)
-            layout.addWidget(self.footer_bar)
-        else:
+        if not self.cover_only:
             title_text = resource.title or UNKNOWN_META_TEXT
             title = QLabel()
             title.setObjectName("BookTitle")
@@ -111,10 +106,6 @@ class BookCardWidget(QFrame):
     def set_selected(self, selected: bool) -> None:
         normalized = bool(selected)
         self.setProperty("selected", normalized)
-        if hasattr(self, "footer_bar"):
-            self.footer_bar.setProperty("selected", normalized)
-            self.footer_bar.style().unpolish(self.footer_bar)
-            self.footer_bar.style().polish(self.footer_bar)
         self.style().unpolish(self)
         self.style().polish(self)
         self.update()
