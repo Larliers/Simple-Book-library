@@ -248,10 +248,25 @@ QPushButton#ViewToggleButton:checked {
     background: #ffffff;
     border: 1px solid #d6dde9;
 }
+#BookCard[variant="cover_only"] {
+    background: #f7f7f7;
+    border: 1px solid #cfd4dc;
+}
+#BookCard[variant="cover_only"][selected="true"] {
+    border: 1px solid #8ea7c6;
+}
 #BookCover {
     background: #ffffff;
     color: #6b7280;
     border: none;
+}
+#BookCardFooter {
+    background: #d1d5dc;
+    border: 1px solid #bcc2cc;
+}
+#BookCardFooter[selected="true"] {
+    background: #9ca5b3;
+    border: 1px solid #7f8a99;
 }
 #BookTitle {
     font-size: 15px;
@@ -281,6 +296,49 @@ QPushButton#ViewToggleButton:checked {
     background: #f6f8fb;
     font-size: 11px;
     font-weight: 600;
+}
+#LibraryMainPane {
+    background: #ececec;
+    border: 1px solid #d1d5dd;
+}
+QScrollArea#LibraryGridScroll {
+    background: #ececec;
+    border: none;
+}
+QWidget#LibraryGridContainer {
+    background: #ececec;
+}
+#LibraryContentSplitter::handle {
+    background: #d4d8e0;
+}
+#LibraryContentSplitter::handle:hover {
+    background: #c0c6d2;
+}
+#LibraryDetailPanel {
+    background: #f6f7f9;
+    border: 1px solid #d5dae3;
+}
+#DetailEmpty {
+    color: #6d7685;
+    font-size: 12px;
+}
+#DetailCover {
+    background: #ffffff;
+    border: 1px solid #cfd6e1;
+    color: #6d7685;
+}
+#DetailTitle {
+    color: #1f2530;
+    font-size: 16px;
+    font-weight: 700;
+}
+#DetailMeta {
+    color: #4a5568;
+    font-size: 12px;
+}
+#DetailPath {
+    color: #5b6474;
+    font-size: 11px;
 }
 QHeaderView::section {
     background: #eef2f7;

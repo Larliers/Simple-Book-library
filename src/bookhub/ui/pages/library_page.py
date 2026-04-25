@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,8 +12,9 @@ from PySide6.QtWidgets import (
     QLabel,
     QMenu,
     QPushButton,
-    QSizePolicy,
     QScrollArea,
+    QSizePolicy,
+    QSplitter,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -30,7 +31,145 @@ from bookhub.ui.viewmodels.library_viewmodel import LibraryViewModel
 from bookhub.ui.widgets.book_card import BookCardWidget, format_author_publisher_meta
 
 
+class BookDetailPanel(QFrame):
+    """Always-visible right pane with selected book details."""
+
+    def __init__(self, repository=None, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._repository = repository
+        self._resource: ResourceItem | None = None
+        self.setObjectName("LibraryDetailPanel")
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(14, 14, 14, 14)
+        root.setSpacing(10)
+
+        self._empty_label = QLabel()
+        self._empty_label.setObjectName("DetailEmpty")
+        self._empty_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self._empty_label.setWordWrap(True)
+        root.addWidget(self._empty_label)
+
+        self._content = QWidget()
+        self._content.setObjectName("DetailContent")
+        content_layout = QVBoxLayout(self._content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(8)
+
+        self._cover = QLabel("COVER")
+        self._cover.setObjectName("DetailCover")
+        self._cover.setFixedSize(220, 330)
+        self._cover.setAlignment(Qt.AlignCenter)
+        content_layout.addWidget(self._cover, 0, Qt.AlignLeft)
+
+        self._title = QLabel()
+        self._title.setObjectName("DetailTitle")
+        self._title.setWordWrap(True)
+        content_layout.addWidget(self._title)
+
+        self._author = QLabel()
+        self._author.setObjectName("DetailMeta")
+        content_layout.addWidget(self._author)
+
+        self._publisher = QLabel()
+        self._publisher.setObjectName("DetailMeta")
+        content_layout.addWidget(self._publisher)
+
+        self._status = QLabel()
+        self._status.setObjectName("DetailMeta")
+        content_layout.addWidget(self._status)
+
+        self._tags = QLabel()
+        self._tags.setObjectName("DetailMeta")
+        self._tags.setWordWrap(True)
+        content_layout.addWidget(self._tags)
+
+        self._collections = QLabel()
+        self._collections.setObjectName("DetailMeta")
+        self._collections.setWordWrap(True)
+        content_layout.addWidget(self._collections)
+
+        self._path = QLabel()
+        self._path.setObjectName("DetailPath")
+        self._path.setWordWrap(True)
+        content_layout.addWidget(self._path)
+        content_layout.addStretch(1)
+
+        root.addWidget(self._content, 1)
+
+        self.retranslate_ui()
+        self.clear_selection()
+
+    def retranslate_ui(self) -> None:
+        self._empty_label.setText(
+            tr(
+                "library.detail.empty",
+                "未选择书籍\n\n单击左侧网格封面或列表行，可在此处查看详情。",
+            )
+        )
+
+    def clear_selection(self) -> None:
+        self._resource = None
+        self._content.hide()
+        self._empty_label.show()
+
+    def set_resource(self, resource: ResourceItem, collection_names: list[str]) -> None:
+        self._resource = resource
+        self._render_cover(resource.thumbnail_path)
+
+        title_text = resource.title.strip() if resource.title else "Unknown"
+        author_text = resource.author.strip() if resource.author else "Unknown"
+        publisher_text = (resource.publisher or "").strip() or "Unknown"
+        status_text = (resource.status or "").strip() or "Unknown"
+        tags_text = "、".join(resource.tags) if resource.tags else tr("library.detail.tags_empty", "无")
+        col_text = "、".join(collection_names) if collection_names else tr("library.detail.no_collections", "未加入任何自定义书单")
+
+        self._title.setText(title_text)
+        self._author.setText(tr("library.detail.author", "作者：{value}").format(value=author_text))
+        self._publisher.setText(tr("library.detail.publisher", "出版社：{value}").format(value=publisher_text))
+        self._status.setText(tr("library.detail.status", "状态：{value}").format(value=status_text))
+        self._tags.setText(tr("library.detail.tags", "标签：{value}").format(value=tags_text))
+        self._collections.setText(
+            tr("library.detail.collections", "所属书单：{value}").format(value=col_text)
+        )
+        self._path.setText(tr("library.detail.path", "文件：{value}").format(value=resource.path or "Unknown"))
+
+        self._empty_label.hide()
+        self._content.show()
+
+    def _render_cover(self, thumbnail_path: str | None) -> None:
+        self._cover.setText("COVER")
+        self._cover.setPixmap(QPixmap())
+        if not thumbnail_path:
+            return
+
+        if thumbnail_path.startswith("file://"):
+            from urllib.parse import urlparse
+            from urllib.request import url2pathname
+
+            parsed = urlparse(thumbnail_path)
+            file_path = Path(url2pathname(parsed.path))
+        else:
+            file_path = Path(thumbnail_path)
+
+        if not file_path.exists():
+            return
+        pixmap = QPixmap(str(file_path))
+        if pixmap.isNull():
+            return
+        scaled = pixmap.scaled(
+            self._cover.width(),
+            self._cover.height(),
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation,
+        )
+        self._cover.setPixmap(scaled)
+        self._cover.setText("")
+
+
 class LibraryPage(QWidget):
+    CLICK_DELAY_MS = 500
+
     def __init__(
         self,
         view_model: LibraryViewModel,
@@ -46,6 +185,14 @@ class LibraryPage(QWidget):
         self._last_grid_columns = 0
         self._resource_by_id: dict[str, ResourceItem] = {}
         self._active_toasts: list[QLabel] = []
+        self._card_by_resource_id: dict[str, BookCardWidget] = {}
+        self._selected_resource_id: str | None = None
+        self._pending_selection_resource_id: str | None = None
+
+        self._selection_timer = QTimer(self)
+        self._selection_timer.setSingleShot(True)
+        self._selection_timer.setInterval(self.CLICK_DELAY_MS)
+        self._selection_timer.timeout.connect(self._commit_pending_selection)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 20, 24, 20)
@@ -89,10 +236,22 @@ class LibraryPage(QWidget):
         header_row.addWidget(self.view_toggle_panel, 0, Qt.AlignTop)
         root.addLayout(header_row)
 
+        self.main_splitter = QSplitter(Qt.Horizontal)
+        self.main_splitter.setObjectName("LibraryContentSplitter")
+        self.main_splitter.setChildrenCollapsible(False)
+        self.main_splitter.setHandleWidth(6)
+
+        self.main_pane = QWidget()
+        self.main_pane.setObjectName("LibraryMainPane")
+        pane_layout = QVBoxLayout(self.main_pane)
+        pane_layout.setContentsMargins(0, 0, 0, 0)
+        pane_layout.setSpacing(0)
+
         self.view_stack = QStackedWidget()
-        root.addWidget(self.view_stack, 1)
+        pane_layout.addWidget(self.view_stack, 1)
 
         self.grid_container = QWidget()
+        self.grid_container.setObjectName("LibraryGridContainer")
         self.grid_layout = QGridLayout(self.grid_container)
         self.grid_layout.setHorizontalSpacing(UI_LAYOUT.card_spacing)
         self.grid_layout.setVerticalSpacing(UI_LAYOUT.card_spacing)
@@ -100,6 +259,7 @@ class LibraryPage(QWidget):
         self.grid_layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
 
         self.grid_scroll = QScrollArea()
+        self.grid_scroll.setObjectName("LibraryGridScroll")
         self.grid_scroll.setWidgetResizable(True)
         self.grid_scroll.setFrameShape(QFrame.NoFrame)
         self.grid_scroll.setWidget(self.grid_container)
@@ -112,7 +272,20 @@ class LibraryPage(QWidget):
         self.list_table.customContextMenuRequested.connect(self._show_list_menu)
         self.list_table.horizontalHeader().setStretchLastSection(True)
         self.list_table.verticalHeader().setVisible(False)
+        self.list_table.cellClicked.connect(self._on_list_row_clicked)
+        self.list_table.cellDoubleClicked.connect(self._on_list_row_double_clicked)
         self.view_stack.addWidget(self.list_table)
+
+        self.detail_panel = BookDetailPanel(repository=self._repository)
+        self.detail_panel.setMinimumWidth(240)
+
+        self.main_splitter.addWidget(self.main_pane)
+        self.main_splitter.addWidget(self.detail_panel)
+        self.main_splitter.setStretchFactor(0, 1)
+        self.main_splitter.setStretchFactor(1, 0)
+        self.main_splitter.setSizes([1020, 320])
+
+        root.addWidget(self.main_splitter, 1)
 
         self.retranslate_ui()
         self.render()
@@ -133,6 +306,7 @@ class LibraryPage(QWidget):
                 tr("library.table.tags", "Tags"),
             ]
         )
+        self.detail_panel.retranslate_ui()
         self.render()
 
     def set_query(self, query: str) -> None:
@@ -148,6 +322,7 @@ class LibraryPage(QWidget):
     def render(self) -> None:
         items = self.view_model.filtered_resources(include_missing=self.missing_mode)
         self._resource_by_id = {item.resource_id: item for item in items}
+
         if self.missing_mode:
             self.subtitle.setText(
                 tr("missed.subtitle.count", "{count} missing books waiting restore").format(count=len(items))
@@ -156,6 +331,10 @@ class LibraryPage(QWidget):
             self.subtitle.setText(
                 tr("library.subtitle.count", "{count} books in your local collection").format(count=len(items))
             )
+
+        if self._selected_resource_id and self._selected_resource_id not in self._resource_by_id:
+            self._selected_resource_id = None
+
         self._render_grid(items)
         self._render_list(items)
 
@@ -163,6 +342,11 @@ class LibraryPage(QWidget):
         self.view_stack.setCurrentIndex(1 if is_list else 0)
         self.grid_btn.setChecked(not is_list)
         self.list_btn.setChecked(is_list)
+
+        if self._selected_resource_id:
+            self._update_detail_panel(self._selected_resource_id)
+        else:
+            self.detail_panel.clear_selection()
 
     def _render_grid(self, items: list[ResourceItem]) -> None:
         self.grid_layout.setHorizontalSpacing(UI_LAYOUT.card_spacing)
@@ -172,6 +356,7 @@ class LibraryPage(QWidget):
         columns = self._calculate_grid_columns()
         self._last_grid_columns = columns
 
+        self._card_by_resource_id.clear()
         while self.grid_layout.count():
             child = self.grid_layout.takeAt(0)
             if child and child.widget():
@@ -180,13 +365,16 @@ class LibraryPage(QWidget):
         for idx, item in enumerate(items):
             row = idx // columns
             col = idx % columns
-            card = BookCardWidget(item)
+            card = BookCardWidget(item, cover_only=True)
+            self._card_by_resource_id[item.resource_id] = card
+            card.set_selected(item.resource_id == self._selected_resource_id)
             card.setContextMenuPolicy(Qt.CustomContextMenu)
             card.customContextMenuRequested.connect(
                 lambda pos, resource=item, widget=card: self._show_card_menu(resource, widget.mapToGlobal(pos))
             )
+            card.clicked.connect(lambda resource_id=item.resource_id: self._queue_resource_selection(resource_id))
             card.open_requested.connect(
-                lambda global_pos, resource=item: self._open_book_external(resource, global_pos)
+                lambda global_pos, resource=item: self._handle_card_double_click(resource, global_pos)
             )
             self.grid_layout.addWidget(card, row, col, alignment=Qt.AlignLeft | Qt.AlignTop)
 
@@ -225,6 +413,7 @@ class LibraryPage(QWidget):
 
         self.list_table.resizeColumnsToContents()
         self.list_table.setColumnWidth(1, 260)
+        self._sync_list_selection()
 
     def _build_thumbnail_icon(self, item: ResourceItem) -> QIcon:
         if item.thumbnail_path:
@@ -233,6 +422,7 @@ class LibraryPage(QWidget):
             if thumb.startswith("file://"):
                 from urllib.parse import urlparse
                 from urllib.request import url2pathname
+
                 parsed = urlparse(thumb)
                 file_path = Path(url2pathname(parsed.path))
             else:
@@ -246,6 +436,93 @@ class LibraryPage(QWidget):
         fallback = QPixmap(26, 38)
         fallback.fill(Qt.lightGray)
         return QIcon(fallback)
+
+    def _queue_resource_selection(self, resource_id: str) -> None:
+        if not resource_id or resource_id not in self._resource_by_id:
+            return
+        self._pending_selection_resource_id = resource_id
+        self._selection_timer.start()
+
+    def _commit_pending_selection(self) -> None:
+        resource_id = self._pending_selection_resource_id
+        self._pending_selection_resource_id = None
+        if not resource_id:
+            return
+        self._select_resource(resource_id)
+
+    def _cancel_pending_selection(self, resource_id: str | None = None) -> None:
+        if not self._selection_timer.isActive():
+            self._pending_selection_resource_id = None
+            return
+        if resource_id is not None and self._pending_selection_resource_id != resource_id:
+            return
+        self._selection_timer.stop()
+        self._pending_selection_resource_id = None
+
+    def _select_resource(self, resource_id: str) -> None:
+        if resource_id not in self._resource_by_id:
+            return
+        self._selected_resource_id = resource_id
+        self._sync_card_selection()
+        self._sync_list_selection()
+        self._update_detail_panel(resource_id)
+
+    def _sync_card_selection(self) -> None:
+        for resource_id, card in self._card_by_resource_id.items():
+            card.set_selected(resource_id == self._selected_resource_id)
+
+    def _sync_list_selection(self) -> None:
+        if not self._selected_resource_id:
+            self.list_table.clearSelection()
+            return
+        for row in range(self.list_table.rowCount()):
+            item = self.list_table.item(row, 0)
+            if item is None:
+                continue
+            if str(item.data(Qt.UserRole) or "") == self._selected_resource_id:
+                self.list_table.selectRow(row)
+                return
+
+    def _update_detail_panel(self, resource_id: str) -> None:
+        resource = self._resource_by_id.get(resource_id)
+        if resource is None:
+            self.detail_panel.clear_selection()
+            return
+
+        collection_names: list[str] = []
+        if self._repository is not None:
+            try:
+                book_id = self._repository.get_book_int_id(resource.resource_id)
+                if isinstance(book_id, int):
+                    collections = self._repository.get_collections_for_book(book_id)
+                    collection_names = [
+                        str(item.get("name") or "").strip() for item in collections if str(item.get("name") or "").strip()
+                    ]
+            except Exception as e:
+                print(f"[LibraryPage] load collections for detail error: {e}")
+
+        self.detail_panel.set_resource(resource, collection_names)
+
+    def _on_list_row_clicked(self, row: int, _column: int) -> None:
+        item = self.list_table.item(row, 0)
+        if item is None:
+            return
+        resource_id = str(item.data(Qt.UserRole) or "")
+        self._queue_resource_selection(resource_id)
+
+    def _on_list_row_double_clicked(self, row: int, _column: int) -> None:
+        item = self.list_table.item(row, 0)
+        if item is None:
+            return
+        resource_id = str(item.data(Qt.UserRole) or "")
+        resource = self._resource_by_id.get(resource_id)
+        self._cancel_pending_selection(resource_id)
+        if resource is not None:
+            self._open_book_external(resource)
+
+    def _handle_card_double_click(self, resource: ResourceItem, global_pos: QPoint) -> None:
+        self._cancel_pending_selection(resource.resource_id)
+        self._open_book_external(resource, global_pos)
 
     def _show_card_menu(self, resource: ResourceItem, global_pos) -> None:
         menu = QMenu(self)
@@ -285,20 +562,14 @@ class LibraryPage(QWidget):
             self._edit_cover(resource)
 
     def _edit_cover(self, resource: ResourceItem) -> None:
-        """Right-click → 编辑封面 flow:
-        1. Open file dialog (upload接口 equivalent)
-        2. Convert picked image to WebP, save to img_preview/
-        3. Build file:// URL (returned URL from upload接口)
-        4. Update DB thumbnail_path (coverUrl update)
-        5. Refresh UI card
-        """
-        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        """Right-click -> 编辑封面 flow."""
         from pathlib import Path as _Path
+
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
 
         if self._repository is None:
             return
 
-        # Step 1: File picker (the "upload" entry point)
         image_path, _ = QFileDialog.getOpenFileName(
             self,
             "选择封面图片",
@@ -313,14 +584,14 @@ class LibraryPage(QWidget):
             QMessageBox.warning(self, "错误", f"文件不存在：{src}")
             return
 
-        # Step 2: Convert to WebP and save to img_preview/
         try:
-            from PIL import Image as _Image
-            from bookhub.library.repository import DEFAULT_PREVIEW_DIR
             import hashlib as _hashlib
 
+            from PIL import Image as _Image
+
+            from bookhub.library.repository import DEFAULT_PREVIEW_DIR
+
             DEFAULT_PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
-            # Stable collision-free filename from source path hash
             name_hash = _hashlib.md5(str(src).encode("utf-8", errors="replace")).hexdigest()[:16]
             out_path = DEFAULT_PREVIEW_DIR / f"cover_{name_hash}.webp"
 
@@ -329,10 +600,10 @@ class LibraryPage(QWidget):
             img.save(str(out_path), format="WebP", quality=80)
 
         except ImportError:
-            # Pillow not available — copy file as-is
-            import shutil as _shutil
-            from bookhub.library.repository import DEFAULT_PREVIEW_DIR
             import hashlib as _hashlib
+            import shutil as _shutil
+
+            from bookhub.library.repository import DEFAULT_PREVIEW_DIR
 
             DEFAULT_PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
             name_hash = _hashlib.md5(str(src).encode("utf-8", errors="replace")).hexdigest()[:16]
@@ -343,10 +614,8 @@ class LibraryPage(QWidget):
             QMessageBox.critical(self, "封面更新失败", f"图片处理错误：{exc}")
             return
 
-        # Step 3: Build file:// URL (the value returned by the upload接口)
         file_url = out_path.as_uri()
 
-        # Step 4: Update DB — coverUrl update
         try:
             book_id = self._repository.get_book_int_id(resource.resource_id)
             if book_id is None:
@@ -357,10 +626,7 @@ class LibraryPage(QWidget):
             QMessageBox.critical(self, "封面更新失败", f"数据库写入错误：{exc}")
             return
 
-        # Step 5: Update in-memory ResourceItem so render() picks it up immediately
         resource.thumbnail_path = file_url
-
-        # Refresh the view
         self.render()
 
     def _open_book_external(self, resource: ResourceItem, global_pos: QPoint | None = None) -> None:
@@ -375,6 +641,7 @@ class LibraryPage(QWidget):
         import os
         import subprocess
         import sys
+
         file_path = Path(path).expanduser()
         if not str(file_path).strip() or not file_path.exists():
             self._show_open_error_toast(
@@ -402,6 +669,7 @@ class LibraryPage(QWidget):
         import subprocess
         import sys
         from pathlib import Path as _Path
+
         try:
             folder = str(_Path(resource.path).parent)
             if sys.platform == "win32":
@@ -426,7 +694,6 @@ class LibraryPage(QWidget):
             print(f"[LibraryPage] QuickAddDialog import error: {e}")
             return
         dlg = QuickAddDialog(book_id, resource.title, self._repository, self)
-        # Position near the cursor
         dlg.move(global_pos)
         dlg.exec()
 

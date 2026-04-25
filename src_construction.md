@@ -470,3 +470,31 @@ main.py
   - 新增 `_ensure_row_capacity()`，按需扩容，不再全量销毁重建。
   - `set_search_suggestions()` 在建议未变化时仅做层级校正。
   - `_open_dropdown()` 改为只执行显示与焦点保持。
+
+
+## Library 主区压缩 + 右侧常驻详情栏（2026-04-25）
+
+### 核心变更
+- Library 页面主内容从单栏改为 `QSplitter` 双栏：左侧为书籍展示区，右侧为常驻详情栏（可拖拽调宽）。
+- 左侧侧边栏导航保持不变，仅压缩中间书籍展示区域以给右栏留出空间。
+- 网格卡片新增 `cover_only` 模式：仅展示封面；元数据不再在网格卡片中显示。
+- 网格展示区背景统一为浅灰；卡片底部条默认浅灰，选中态改为更深灰。
+- 单击与双击采用 `500ms` 判定窗口：
+  - 单击：延迟提交选中，更新右侧详情栏；
+  - 双击：取消待提交单击，继续执行外部打开。
+- 右侧详情栏常驻显示放大封面与元数据（标题、作者、出版社、状态、标签、文件路径）以及所属自定义书单列表。
+
+### 影响文件
+- `src/bookhub/ui/pages/library_page.py`
+  - 新增 `BookDetailPanel` 常驻详情组件与 `QSplitter` 主布局。
+  - 新增选中态管理、500ms 单/双击判定、grid/list 统一详情更新链路。
+  - 网格改为 `BookCardWidget(..., cover_only=True)`，并维护卡片选中态同步。
+- `src/bookhub/ui/widgets/book_card.py`
+  - 新增 `clicked` 信号、`cover_only` 参数与 `set_selected()` 选中态 API。
+  - 保留 `open_requested` 双击外部打开信号，保证原交互链路兼容。
+- `src/bookhub/library/repository.py`
+  - 新增 `get_collections_for_book(book_id)`，用于详情栏读取书籍所属自定义书单。
+- `src/bookhub/ui/resources/styles.py`
+  - 新增 Library 双栏布局、详情栏、cover-only 卡片与选中底部条样式。
+- `src/bookhub/i18n/locales/zh-cn.json`
+  - 新增详情栏空态与字段文案键。

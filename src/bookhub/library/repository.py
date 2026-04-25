@@ -641,6 +641,26 @@ class LibraryRepository:
             except Exception:
                 return []
 
+    def get_collections_for_book(self, book_id: int) -> list[dict]:
+        """Return all collections that contain the given book."""
+        self._init_collections_tables()
+        with self._connection() as conn:
+            conn.row_factory = __import__("sqlite3").Row
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT c.id, c.name, c.description, c.created_at, cb.added_at
+                    FROM collections c
+                    INNER JOIN collection_books cb ON cb.collection_id = c.id
+                    WHERE cb.book_id = ?
+                    ORDER BY lower(c.name)
+                    """,
+                    (int(book_id),),
+                ).fetchall()
+                return [dict(r) for r in rows]
+            except Exception:
+                return []
+
     def is_favorite(self, book_id: int) -> bool:
         """Return True if book is in favorites."""
         self._init_collections_tables()

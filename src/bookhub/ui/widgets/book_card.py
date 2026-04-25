@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 
@@ -24,16 +24,27 @@ def format_author_publisher_meta(author: str | None, publisher: str | None) -> s
 
 
 class BookCardWidget(QFrame):
+    clicked = Signal()
     open_requested = Signal(QPoint)
 
-    def __init__(self, resource: ResourceItem, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        resource: ResourceItem,
+        parent: QWidget | None = None,
+        cover_only: bool = False,
+    ) -> None:
         super().__init__(parent)
         self.resource = resource
+        self.cover_only = bool(cover_only)
+
         self.setObjectName("BookCard")
         self.setFrameShape(QFrame.StyledPanel)
         self.setCursor(Qt.PointingHandCursor)
         self.setFixedWidth(UI_LAYOUT.card_width)
         self._text_width = UI_LAYOUT.card_width - UI_LAYOUT.card_inner_padding * 2
+
+        if self.cover_only:
+            self.setProperty("variant", "cover_only")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(
@@ -50,45 +61,63 @@ class BookCardWidget(QFrame):
         self.cover.setAlignment(Qt.AlignCenter)
         self.cover.setObjectName("BookCover")
         self.cover.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.cover.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         layout.addWidget(self.cover)
         self._render_cover()
 
-        title_text = resource.title or UNKNOWN_META_TEXT
-        title = QLabel()
-        title.setObjectName("BookTitle")
-        title.setWordWrap(False)
-        title.setText(self._elide_text(title_text, title.fontMetrics()))
-        title.setToolTip(title_text)
-        layout.addWidget(title)
+        if self.cover_only:
+            self.footer_bar = QFrame()
+            self.footer_bar.setObjectName("BookCardFooter")
+            self.footer_bar.setFixedHeight(14)
+            layout.addWidget(self.footer_bar)
+        else:
+            title_text = resource.title or UNKNOWN_META_TEXT
+            title = QLabel()
+            title.setObjectName("BookTitle")
+            title.setWordWrap(False)
+            title.setText(self._elide_text(title_text, title.fontMetrics()))
+            title.setToolTip(title_text)
+            layout.addWidget(title)
 
-        meta_text = format_author_publisher_meta(resource.author, resource.publisher)
-        author = QLabel()
-        author.setObjectName("BookMeta")
-        author.setWordWrap(False)
-        author.setText(self._elide_text(meta_text, author.fontMetrics()))
-        author.setToolTip(meta_text)
-        layout.addWidget(author)
+            meta_text = format_author_publisher_meta(resource.author, resource.publisher)
+            author = QLabel()
+            author.setObjectName("BookMeta")
+            author.setWordWrap(False)
+            author.setText(self._elide_text(meta_text, author.fontMetrics()))
+            author.setToolTip(meta_text)
+            layout.addWidget(author)
 
-        status = QLabel(resource.status)
-        status.setObjectName("BookStatus")
-        status.setAlignment(Qt.AlignCenter)
-        status.setFixedWidth(58)
+            status = QLabel(resource.status)
+            status.setObjectName("BookStatus")
+            status.setAlignment(Qt.AlignCenter)
+            status.setFixedWidth(58)
 
-        row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
-        row.addWidget(status, 0)
-        row.addStretch(1)
-        layout.addLayout(row)
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.addWidget(status, 0)
+            row.addStretch(1)
+            layout.addLayout(row)
 
-        tags_row = QHBoxLayout()
-        tags_row.setContentsMargins(0, 0, 0, 0)
-        tags_row.setSpacing(4)
-        for tag in resource.tags[:2]:
-            tag_label = QLabel(tag)
-            tag_label.setObjectName("BookTags")
-            tags_row.addWidget(tag_label)
-        tags_row.addStretch(1)
-        layout.addLayout(tags_row)
+            tags_row = QHBoxLayout()
+            tags_row.setContentsMargins(0, 0, 0, 0)
+            tags_row.setSpacing(4)
+            for tag in resource.tags[:2]:
+                tag_label = QLabel(tag)
+                tag_label.setObjectName("BookTags")
+                tags_row.addWidget(tag_label)
+            tags_row.addStretch(1)
+            layout.addLayout(tags_row)
+
+    def set_selected(self, selected: bool) -> None:
+        normalized = bool(selected)
+        self.setProperty("selected", normalized)
+        if hasattr(self, "footer_bar"):
+            self.footer_bar.setProperty("selected", normalized)
+            self.footer_bar.style().unpolish(self.footer_bar)
+            self.footer_bar.style().polish(self.footer_bar)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
 
     def _render_cover(self) -> None:
         thumb = self.resource.thumbnail_path
@@ -96,9 +125,9 @@ class BookCardWidget(QFrame):
             return
         # Support both file:// URLs (new format) and legacy bare filesystem paths
         if thumb.startswith("file://"):
-            # Convert file:// URL to local path
-            from urllib.request import url2pathname
             from urllib.parse import urlparse
+            from urllib.request import url2pathname
+
             parsed = urlparse(thumb)
             local_path = Path(url2pathname(parsed.path))
         else:
@@ -122,6 +151,13 @@ class BookCardWidget(QFrame):
             return text
         return metrics.elidedText(text, Qt.ElideRight, self._text_width)
 
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
     def mouseDoubleClickEvent(self, event) -> None:
         if event.button() == Qt.LeftButton:
             self.open_requested.emit(self.mapToGlobal(event.position().toPoint()))
@@ -138,38 +174,38 @@ class BookCardWidget(QFrame):
 def install_book_context_menu(card_widget, repository) -> None:
     """
     Install a right-click context menu on a BookCard widget.
-    
+
     Usage:
         card = BookCardWidget(resource)
         install_book_context_menu(card, repository)
     """
-    from PySide6.QtWidgets import QMenu
-    from PySide6.QtGui import QAction
     from PySide6.QtCore import Qt
+    from PySide6.QtGui import QAction
+    from PySide6.QtWidgets import QMenu
 
     def _get_book_id():
         # ResourceItem-based cards
-        res = getattr(card_widget, 'resource', None) or getattr(card_widget, '_resource', None)
+        res = getattr(card_widget, "resource", None) or getattr(card_widget, "_resource", None)
         if res is not None:
-            return getattr(res, 'id', None) or getattr(res, 'book_id', None)
+            return getattr(res, "id", None) or getattr(res, "book_id", None)
         # dict-based
-        book = getattr(card_widget, 'book', None) or getattr(card_widget, '_book', None)
+        book = getattr(card_widget, "book", None) or getattr(card_widget, "_book", None)
         if isinstance(book, dict):
-            return book.get('id')
+            return book.get("id")
         if book is not None:
-            return getattr(book, 'id', None)
+            return getattr(book, "id", None)
         return None
 
     def _get_book_title():
-        res = getattr(card_widget, 'resource', None) or getattr(card_widget, '_resource', None)
+        res = getattr(card_widget, "resource", None) or getattr(card_widget, "_resource", None)
         if res is not None:
-            return getattr(res, 'title', None) or 'Unknown'
-        book = getattr(card_widget, 'book', None) or getattr(card_widget, '_book', None)
+            return getattr(res, "title", None) or "Unknown"
+        book = getattr(card_widget, "book", None) or getattr(card_widget, "_book", None)
         if isinstance(book, dict):
-            return book.get('title', 'Unknown')
+            return book.get("title", "Unknown")
         if book is not None:
-            return getattr(book, 'title', 'Unknown')
-        return 'Unknown'
+            return getattr(book, "title", "Unknown")
+        return "Unknown"
 
     def show_context_menu(pos) -> None:
         book_id = _get_book_id()
@@ -185,14 +221,10 @@ def install_book_context_menu(card_widget, repository) -> None:
 
             if is_fav:
                 fav_act = QAction("★ Remove from Favorites", card_widget)
-                fav_act.triggered.connect(
-                    lambda: _do_remove_favorite(book_id, repository, card_widget)
-                )
+                fav_act.triggered.connect(lambda: _do_remove_favorite(book_id, repository, card_widget))
             else:
                 fav_act = QAction("☆ Add to Favorites", card_widget)
-                fav_act.triggered.connect(
-                    lambda: _do_add_favorite(book_id, repository, card_widget)
-                )
+                fav_act.triggered.connect(lambda: _do_add_favorite(book_id, repository, card_widget))
             menu.addAction(fav_act)
 
             # Add to Collection
@@ -212,8 +244,9 @@ def install_book_context_menu(card_widget, repository) -> None:
 def _do_add_favorite(book_id: int, repository, parent_widget) -> None:
     try:
         repository.add_to_favorites(book_id)
-        from PySide6.QtWidgets import QToolTip
         from PySide6.QtCore import QPoint
+        from PySide6.QtWidgets import QToolTip
+
         QToolTip.showText(
             parent_widget.mapToGlobal(QPoint(0, 0)),
             "Added to Favorites ★",
@@ -228,8 +261,9 @@ def _do_add_favorite(book_id: int, repository, parent_widget) -> None:
 def _do_remove_favorite(book_id: int, repository, parent_widget) -> None:
     try:
         repository.remove_from_favorites(book_id)
-        from PySide6.QtWidgets import QToolTip
         from PySide6.QtCore import QPoint
+        from PySide6.QtWidgets import QToolTip
+
         QToolTip.showText(
             parent_widget.mapToGlobal(QPoint(0, 0)),
             "Removed from Favorites",
