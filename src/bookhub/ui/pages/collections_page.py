@@ -13,16 +13,30 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QFrame, QGridLayout, QInputDialog,
-    QMessageBox, QMenu
+    QMessageBox, QMenu, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem,
+    QSizePolicy,
 )
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QAction
+from PySide6.QtCore import QEvent, QSize, Qt, Signal
+from PySide6.QtGui import QAction, QFont, QIcon, QPixmap
 
 import hashlib
 
+from bookhub.i18n import tr
 from bookhub.ui.models.resource import ResourceItem
+from bookhub.ui.pages.library_page import BookDetailPanel
+from bookhub.ui.resources.assets import load_icon
 from bookhub.ui.resources.layout_config import UI_LAYOUT
 from bookhub.ui.widgets.book_card import BookCardWidget
+from bookhub.ui.widgets.book_card import format_author_publisher_meta
+
+COLLECTIONS_DETAIL_VIEW_MODE_KEY = "collections_detail_view_mode"
+VIEW_MODE_WATERFALL = "waterfall"
+VIEW_MODE_LIST = "list"
+
+
+def _normalize_view_mode(value: object) -> str:
+    text = str(value or "").strip().lower()
+    return VIEW_MODE_LIST if text == VIEW_MODE_LIST else VIEW_MODE_WATERFALL
 
 
 class CollectionCard(QFrame):
@@ -196,6 +210,13 @@ class CollectionDetailPage(QWidget):
         self._col_id = collection_id
         self._col_name = collection_name
         self._repo = repository
+        self._view_mode = self._load_view_mode()
+        self._book_id_by_resource_id: dict[str, int] = {}
+        self._resource_by_id: dict[str, ResourceItem] = {}
+        self._resources: list[ResourceItem] = []
+        self._card_by_resource_id: dict[str, BookCardWidget] = {}
+        self._selected_resource_id: str | None = None
+        self._last_columns = 0
         self._setup_ui()
         self.refresh()
 
@@ -218,13 +239,53 @@ class CollectionDetailPage(QWidget):
         title_label.setFont(title_font)
         title_label.setObjectName("detailTitle")
         header.addWidget(title_label, 1)
+
+        self._view_toggle_panel = QFrame()
+        self._view_toggle_panel.setObjectName("ViewTogglePanel")
+        view_toggle_layout = QHBoxLayout(self._view_toggle_panel)
+        view_toggle_layout.setContentsMargins(0, 0, 0, 0)
+        view_toggle_layout.setSpacing(2)
+
+        self._grid_btn = QPushButton()
+        self._grid_btn.setObjectName("ViewToggleButton")
+        self._grid_btn.setCheckable(True)
+        self._grid_btn.setIcon(load_icon("view_grid.svg"))
+        self._grid_btn.setIconSize(QSize(14, 14))
+        self._grid_btn.setToolTip(tr("library.grid", "Grid"))
+        self._grid_btn.clicked.connect(lambda: self._set_view_mode(VIEW_MODE_WATERFALL))
+        view_toggle_layout.addWidget(self._grid_btn)
+
+        self._list_btn = QPushButton()
+        self._list_btn.setObjectName("ViewToggleButton")
+        self._list_btn.setCheckable(True)
+        self._list_btn.setIcon(load_icon("view_list.svg"))
+        self._list_btn.setIconSize(QSize(14, 14))
+        self._list_btn.setToolTip(tr("library.list", "List"))
+        self._list_btn.clicked.connect(lambda: self._set_view_mode(VIEW_MODE_LIST))
+        view_toggle_layout.addWidget(self._list_btn)
+        header.addWidget(self._view_toggle_panel, 0, Qt.AlignVCenter)
         layout.addLayout(header)
         layout.addSpacing(24)
 
         self._count_label = QLabel("")
         self._count_label.setObjectName("countLabel")
+        self._count_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         layout.addWidget(self._count_label)
         layout.addSpacing(16)
+
+        self.main_splitter = QSplitter(Qt.Horizontal)
+        self.main_splitter.setObjectName("LibraryContentSplitter")
+        self.main_splitter.setChildrenCollapsible(False)
+        self.main_splitter.setHandleWidth(6)
+        self.main_splitter.splitterMoved.connect(self._on_main_splitter_moved)
+
+        self.main_pane = QWidget()
+        self.main_pane.setObjectName("LibraryMainPane")
+        pane_layout = QVBoxLayout(self.main_pane)
+        pane_layout.setContentsMargins(0, 0, 0, 0)
+        pane_layout.setSpacing(0)
+
+        self._view_stack = QStackedWidget()
 
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
@@ -238,7 +299,28 @@ class CollectionDetailPage(QWidget):
         self._grid.setVerticalSpacing(UI_LAYOUT.card_spacing)
         self._grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self._scroll.setWidget(self._container)
-        layout.addWidget(self._scroll)
+        self._view_stack.addWidget(self._scroll)
+
+        self._list_table = QTableWidget(0, 5)
+        self._list_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self._list_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self._list_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._list_table.customContextMenuRequested.connect(self._show_list_menu)
+        self._list_table.horizontalHeader().setStretchLastSection(True)
+        self._list_table.verticalHeader().setVisible(False)
+        self._list_table.cellClicked.connect(self._on_list_row_clicked)
+        self._list_table.cellDoubleClicked.connect(self._on_list_row_double_clicked)
+        self._list_table.setHorizontalHeaderLabels(
+            [
+                tr("library.table.cover", "Cover"),
+                tr("library.table.title", "Title"),
+                tr("library.table.author", "Author"),
+                tr("library.table.status", "Status"),
+                tr("library.table.tags", "Tags"),
+            ]
+        )
+        self._view_stack.addWidget(self._list_table)
+        pane_layout.addWidget(self._view_stack, 1)
 
         self._empty_label = QLabel(
             "No books in this collection yet.\n\nAdd books by right-clicking on them in the Library."
@@ -246,7 +328,17 @@ class CollectionDetailPage(QWidget):
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_label.setObjectName("emptyLabel")
         self._empty_label.hide()
-        layout.addWidget(self._empty_label)
+        pane_layout.addWidget(self._empty_label, 1)
+
+        self.detail_panel = BookDetailPanel(repository=self._repo)
+        self.detail_panel.setMinimumWidth(240)
+
+        self.main_splitter.addWidget(self.main_pane)
+        self.main_splitter.addWidget(self.detail_panel)
+        self.main_splitter.setStretchFactor(0, 1)
+        self.main_splitter.setStretchFactor(1, 0)
+        self.main_splitter.setSizes([1020, 320])
+        layout.addWidget(self.main_splitter, 1)
 
         self.setStyleSheet("""
             CollectionDetailPage { background-color: #F5F5F5; }
@@ -260,12 +352,21 @@ class CollectionDetailPage(QWidget):
             QLabel#countLabel { color: #757575; font-size: 13px; }
             QLabel#emptyLabel { color: #9E9E9E; font-size: 14px; padding: 40px; }
         """)
+        self._apply_view_mode()
+
+        for watched in (self, self._scroll.viewport(), self._list_table.viewport(), self._view_stack):
+            watched.installEventFilter(self)
 
     def refresh(self) -> None:
+        self._card_by_resource_id.clear()
         while self._grid.count():
             item = self._grid.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+        self._list_table.setRowCount(0)
+        self._book_id_by_resource_id.clear()
+        self._resource_by_id.clear()
+        self._resources = []
 
         try:
             books = self._repo.get_books_in_collection(self._col_id)
@@ -278,16 +379,80 @@ class CollectionDetailPage(QWidget):
 
         if not books:
             self._empty_label.show()
-            self._scroll.hide()
+            self._view_stack.hide()
+            self._selected_resource_id = None
+            self.detail_panel.clear_selection()
         else:
             self._empty_label.hide()
-            self._scroll.show()
-            self._grid.setHorizontalSpacing(UI_LAYOUT.card_spacing)
-            self._grid.setVerticalSpacing(UI_LAYOUT.card_spacing)
-            cols_per_row = self._calculate_grid_columns()
-            for i, book_data in enumerate(books):
-                card = self._make_book_card(book_data)
-                self._grid.addWidget(card, i // cols_per_row, i % cols_per_row)
+            self._view_stack.show()
+            for book_data in books:
+                resource = self._record_to_resource(book_data)
+                self._resources.append(resource)
+                self._resource_by_id[resource.resource_id] = resource
+                raw_book_id = book_data.get("id")
+                if isinstance(raw_book_id, int):
+                    self._book_id_by_resource_id[resource.resource_id] = raw_book_id
+                else:
+                    try:
+                        book_id = self._repo.get_book_int_id(resource.resource_id)
+                        if isinstance(book_id, int):
+                            self._book_id_by_resource_id[resource.resource_id] = book_id
+                    except Exception:
+                        pass
+            if self._selected_resource_id and self._selected_resource_id not in self._resource_by_id:
+                self._selected_resource_id = None
+            self._render_grid()
+            self._render_list()
+            self._apply_view_mode()
+            self._sync_list_selection()
+            if self._selected_resource_id:
+                self._update_detail_panel(self._selected_resource_id)
+            else:
+                self.detail_panel.clear_selection()
+
+    def _render_grid(self) -> None:
+        self._grid.setHorizontalSpacing(UI_LAYOUT.card_spacing)
+        self._grid.setVerticalSpacing(UI_LAYOUT.card_spacing)
+        self._card_by_resource_id.clear()
+        while self._grid.count():
+            item = self._grid.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        columns = self._calculate_grid_columns()
+        self._last_columns = columns
+        for idx, resource in enumerate(self._resources):
+            row = idx // columns
+            col = idx % columns
+            card = BookCardWidget(resource, cover_only=True)
+            self._card_by_resource_id[resource.resource_id] = card
+            card.set_selected(resource.resource_id == self._selected_resource_id)
+            card.clicked.connect(lambda rid=resource.resource_id: self._select_resource(rid))
+            card.open_requested.connect(lambda _pos, path=resource.path: self._open_external(path))
+            card.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            card.customContextMenuRequested.connect(
+                lambda pos, rid=resource.resource_id, widget=card: self._show_card_menu(
+                    rid, widget.mapToGlobal(pos)
+                )
+            )
+            self._grid.addWidget(card, row, col, alignment=Qt.AlignLeft | Qt.AlignTop)
+
+    def _render_list(self) -> None:
+        self._list_table.setRowCount(len(self._resources))
+        for row, resource in enumerate(self._resources):
+            cover_item = QTableWidgetItem("  ")
+            cover_item.setData(Qt.UserRole, resource.resource_id)
+            cover_item.setIcon(self._build_thumbnail_icon(resource))
+            self._list_table.setItem(row, 0, cover_item)
+            self._list_table.setItem(row, 1, QTableWidgetItem(resource.title))
+            self._list_table.setItem(
+                row,
+                2,
+                QTableWidgetItem(format_author_publisher_meta(resource.author, resource.publisher)),
+            )
+            self._list_table.setItem(row, 3, QTableWidgetItem(resource.status))
+            self._list_table.setItem(row, 4, QTableWidgetItem(", ".join(resource.tags)))
+        self._list_table.resizeColumnsToContents()
+        self._list_table.setColumnWidth(1, 260)
 
     def _calculate_grid_columns(self) -> int:
         available_width = max(1, self._scroll.viewport().width())
@@ -297,37 +462,100 @@ class CollectionDetailPage(QWidget):
     def apply_card_spacing(self, _spacing: int) -> None:
         self._grid.setHorizontalSpacing(UI_LAYOUT.card_spacing)
         self._grid.setVerticalSpacing(UI_LAYOUT.card_spacing)
-        self.refresh()
+        if self._view_mode == VIEW_MODE_WATERFALL and self._resources:
+            self._render_grid()
 
-    def _make_book_card(self, book_data: dict) -> BookCardWidget:
-        resource = self._record_to_resource(book_data)
-        frame = BookCardWidget(resource)
-        frame.open_requested.connect(lambda _pos, path=resource.path: self._open_external(path))
-        frame.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    def _show_card_menu(self, resource_id: str, global_pos) -> None:
+        resource = self._resource_by_id.get(resource_id)
+        if resource is None:
+            return
+        menu = QMenu(self)
+        open_act = menu.addAction(tr("library.menu.open_external", "Open External"))
+        remove_act = menu.addAction("Remove from Collection")
+        act = menu.exec(global_pos)
+        if act == open_act:
+            self._open_external(resource.path)
+        elif act == remove_act:
+            self._remove_book_from_collection(resource_id)
 
-        book_id = book_data.get("id")
-        if not isinstance(book_id, int):
-            try:
-                book_id = self._repo.get_book_int_id(resource.resource_id)
-            except Exception:
-                book_id = None
-        col_id = self._col_id
-        repo = self._repo
+    def _show_list_menu(self, pos) -> None:
+        row = self._list_table.rowAt(pos.y())
+        if row < 0:
+            return
+        item = self._list_table.item(row, 0)
+        if item is None:
+            return
+        resource_id = str(item.data(Qt.UserRole) or "")
+        self._show_card_menu(resource_id, self._list_table.viewport().mapToGlobal(pos))
 
-        def show_ctx(pos) -> None:
-            menu = QMenu(frame)
-            rem_act = menu.addAction("Remove from Collection")
-            act = menu.exec(frame.mapToGlobal(pos))
-            if act == rem_act and book_id is not None:
-                try:
-                    repo.remove_book_from_collection(book_id, col_id)
-                    self.book_removed.emit(book_id, col_id)
-                    self.refresh()
-                except Exception as exc:
-                    QMessageBox.critical(self, "Error", f"Failed to remove: {exc}")
+    def _on_list_row_double_clicked(self, row: int, _column: int) -> None:
+        item = self._list_table.item(row, 0)
+        if item is None:
+            return
+        resource_id = str(item.data(Qt.UserRole) or "")
+        resource = self._resource_by_id.get(resource_id)
+        if resource is not None:
+            self._open_external(resource.path)
 
-        frame.customContextMenuRequested.connect(show_ctx)
-        return frame
+    def _on_list_row_clicked(self, row: int, _column: int) -> None:
+        item = self._list_table.item(row, 0)
+        if item is None:
+            return
+        self._select_resource(str(item.data(Qt.UserRole) or ""))
+
+    def _select_resource(self, resource_id: str) -> None:
+        if resource_id not in self._resource_by_id:
+            return
+        self._selected_resource_id = resource_id
+        self._sync_card_selection()
+        self._sync_list_selection()
+        self._update_detail_panel(resource_id)
+
+    def _sync_card_selection(self) -> None:
+        for resource_id, card in self._card_by_resource_id.items():
+            card.set_selected(resource_id == self._selected_resource_id)
+
+    def _sync_list_selection(self) -> None:
+        if not self._selected_resource_id:
+            self._list_table.clearSelection()
+            return
+        for row in range(self._list_table.rowCount()):
+            item = self._list_table.item(row, 0)
+            if item is None:
+                continue
+            if str(item.data(Qt.UserRole) or "") == self._selected_resource_id:
+                self._list_table.selectRow(row)
+                return
+
+    def _update_detail_panel(self, resource_id: str) -> None:
+        resource = self._resource_by_id.get(resource_id)
+        if resource is None:
+            self.detail_panel.clear_selection()
+            return
+        collection_names: list[str] = []
+        try:
+            book_id = self._repo.get_book_int_id(resource.resource_id)
+            if isinstance(book_id, int):
+                collections = self._repo.get_collections_for_book(book_id)
+                collection_names = [
+                    str(item.get("name") or "").strip()
+                    for item in collections
+                    if str(item.get("name") or "").strip()
+                ]
+        except Exception as e:
+            print(f"[CollectionDetailPage] load collections for detail error: {e}")
+        self.detail_panel.set_resource(resource, collection_names)
+
+    def _remove_book_from_collection(self, resource_id: str) -> None:
+        book_id = self._book_id_by_resource_id.get(resource_id)
+        if book_id is None:
+            return
+        try:
+            self._repo.remove_book_from_collection(book_id, self._col_id)
+            self.book_removed.emit(book_id, self._col_id)
+            self.refresh()
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"Failed to remove: {exc}")
 
     @staticmethod
     def _parse_tags(raw_value: object) -> list[str]:
@@ -381,6 +609,79 @@ class CollectionDetailPage(QWidget):
                 subprocess.Popen(["xdg-open", str(file_path)])
         except Exception as e:
             print(f"[CollectionDetailPage] open external error: {e}")
+
+    def _build_thumbnail_icon(self, item: ResourceItem) -> QIcon:
+        if item.thumbnail_path:
+            thumb = item.thumbnail_path
+            if thumb.startswith("file://"):
+                from urllib.parse import urlparse
+                from urllib.request import url2pathname
+
+                parsed = urlparse(thumb)
+                file_path = Path(url2pathname(parsed.path))
+            else:
+                file_path = Path(thumb)
+            if file_path.exists():
+                pixmap = QPixmap(str(file_path))
+                if not pixmap.isNull():
+                    return QIcon(
+                        pixmap.scaled(26, 38, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    )
+        fallback = QPixmap(26, 38)
+        fallback.fill(Qt.lightGray)
+        return QIcon(fallback)
+
+    def _load_view_mode(self) -> str:
+        raw = self._repo.get_setting(COLLECTIONS_DETAIL_VIEW_MODE_KEY, VIEW_MODE_WATERFALL)
+        return _normalize_view_mode(raw)
+
+    def _save_view_mode(self, mode: str) -> None:
+        self._repo.set_setting(COLLECTIONS_DETAIL_VIEW_MODE_KEY, _normalize_view_mode(mode))
+
+    def _set_view_mode(self, mode: str) -> None:
+        normalized = _normalize_view_mode(mode)
+        if normalized == self._view_mode:
+            return
+        self._view_mode = normalized
+        self._save_view_mode(normalized)
+        self._apply_view_mode()
+
+    def _apply_view_mode(self) -> None:
+        is_list = self._view_mode == VIEW_MODE_LIST
+        self._view_stack.setCurrentIndex(1 if is_list else 0)
+        self._grid_btn.setChecked(not is_list)
+        self._list_btn.setChecked(is_list)
+
+    @staticmethod
+    def _is_back_button(button: object) -> bool:
+        candidates = ("BackButton", "XButton1", "XButton2")
+        for name in candidates:
+            value = getattr(Qt.MouseButton, name, None)
+            if value is not None and button == value:
+                return True
+        return False
+
+    def eventFilter(self, watched, event) -> bool:
+        if event.type() == QEvent.Type.MouseButtonPress and self._is_back_button(event.button()):
+            self.back_requested.emit()
+            event.accept()
+            return True
+        return super().eventFilter(watched, event)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if self._view_mode != VIEW_MODE_WATERFALL:
+            return
+        columns = self._calculate_grid_columns()
+        if columns != self._last_columns and self._resources:
+            self._render_grid()
+
+    def _on_main_splitter_moved(self, _pos: int, _index: int) -> None:
+        if self._view_mode != VIEW_MODE_WATERFALL:
+            return
+        columns = self._calculate_grid_columns()
+        if columns != self._last_columns and self._resources:
+            self._render_grid()
 
 
 class CollectionsPage(QWidget):
@@ -527,7 +828,7 @@ class CollectionsPage(QWidget):
         detail = CollectionDetailPage(collection_id, collection_name, self._repo)
         detail.back_requested.connect(self._on_detail_back)
         self._detail_view = detail
-        self._main_layout.addWidget(detail)
+        self._main_layout.addWidget(detail, 1)
         detail.show()
 
     def _hide_detail_view(self) -> None:

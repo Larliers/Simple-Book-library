@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QProgressBar,
     QPushButton,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -70,9 +71,20 @@ class SettingsPage(QWidget):
         self.nav = QListWidget()
         self.nav.setObjectName("SettingsNav")
         self.nav.setFixedWidth(210)
-        self.nav.addItems(["General", "Library", "Appearance", "About"])
+        self._nav_labels = [
+            ("settings.nav.general", "General"),
+            ("settings.nav.library", "Library"),
+            ("settings.nav.appearance", "Appearance"),
+            ("settings.nav.about", "About"),
+            ("settings.nav.shortcuts", "Shortcuts"),
+        ]
+        self.nav.addItems([label for _, label in self._nav_labels])
         self.nav.setCurrentRow(0)
+        self.nav.currentRowChanged.connect(self._on_nav_changed)
         shell.addWidget(self.nav)
+
+        self.content_stack = QStackedWidget()
+        shell.addWidget(self.content_stack, 1)
 
         content = QWidget()
         content_layout = QVBoxLayout(content)
@@ -261,12 +273,15 @@ class SettingsPage(QWidget):
         content_layout.addLayout(action_row)
         content_layout.addStretch(1)
 
-        shell.addWidget(content, 1)
+        self.content_stack.addWidget(content)
+        self.shortcuts_page = self._build_shortcuts_page()
+        self.content_stack.addWidget(self.shortcuts_page)
 
         self._set_language_options()
         self.set_language_selection("en")
         self.retranslate_ui()
         self.set_scan_summary({})
+        self._on_nav_changed(self.nav.currentRow())
 
     def set_language_selection(self, language_code: str) -> None:
         index = self.language_combo.findData(language_code)
@@ -365,6 +380,10 @@ class SettingsPage(QWidget):
             self.scan_btn.setText(tr("settings.scan_now", "Scan folders for new books now"))
 
     def retranslate_ui(self) -> None:
+        for idx, (key, fallback) in enumerate(self._nav_labels):
+            item = self.nav.item(idx)
+            if item is not None:
+                item.setText(tr(key, fallback))
         self.title.setText(tr("settings.title", "General Settings"))
         self.startup_label.setText(tr("settings.startup_options", "Startup Options"))
         self.launch_check.setText(tr("settings.launch_startup", "Launch at system startup"))
@@ -394,6 +413,16 @@ class SettingsPage(QWidget):
                 "Supported formats: PDF, EPUB. Unsupported formats are ignored and recorded in scan summary.",
             )
         )
+        self.shortcuts_title.setText(tr("settings.shortcuts.title", "Shortcuts"))
+        self.shortcuts_placeholder.setText(
+            tr(
+                "settings.shortcuts.placeholder",
+                "Shortcut customization will be available in a future update.",
+            )
+        )
+        self.shortcuts_modify_btn.setText(
+            tr("settings.shortcuts.modify_disabled", "Modify Shortcuts (Coming Soon)")
+        )
         if self._thumbnail_task_kind:
             self.thumbnail_task_status.setText(tr("settings.thumb.done", "Task completed"))
         self.set_library_roots(self._current_roots)
@@ -415,6 +444,32 @@ class SettingsPage(QWidget):
         if not directory:
             return
         self.add_root_requested.emit(directory)
+
+    def _build_shortcuts_page(self) -> QWidget:
+        page = QFrame()
+        page.setObjectName("PageSection")
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(12)
+        self.shortcuts_title = QLabel()
+        self.shortcuts_title.setObjectName("PageTitle")
+        layout.addWidget(self.shortcuts_title)
+        self.shortcuts_placeholder = QLabel()
+        self.shortcuts_placeholder.setObjectName("PageSubtitle")
+        self.shortcuts_placeholder.setWordWrap(True)
+        layout.addWidget(self.shortcuts_placeholder)
+        self.shortcuts_modify_btn = QPushButton()
+        self.shortcuts_modify_btn.setObjectName("GhostButton")
+        self.shortcuts_modify_btn.setEnabled(False)
+        layout.addWidget(self.shortcuts_modify_btn, 0)
+        layout.addStretch(1)
+        return page
+
+    def _on_nav_changed(self, row: int) -> None:
+        if row == len(self._nav_labels) - 1:
+            self.content_stack.setCurrentIndex(1)
+            return
+        self.content_stack.setCurrentIndex(0)
 
     def _append_path_item(self, path: str) -> None:
         item = QListWidgetItem()

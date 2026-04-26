@@ -1,6 +1,6 @@
 ﻿# src 结构说明书（精简且完整）
 
-更新时间：2026-04-25
+更新时间：2026-04-26
 
 ## 1. 文档目标
 - 保留字符串式文件路径结构。
@@ -121,9 +121,9 @@ src/
 ### 3.8 页面组件（bookhub/ui/pages）
 - `src/bookhub/ui/pages/__init__.py`：页面包入口。
 - `src/bookhub/ui/pages/library_page.py`：Library/Missed 页面；grid/list；右侧详情栏；单/双击交互。
-- `src/bookhub/ui/pages/collections_page.py`：书单页与书单详情页。
-- `src/bookhub/ui/pages/favorites_page.py`：收藏页。
-- `src/bookhub/ui/pages/settings_page.py`：设置页（扫描、匹配策略、卡片间距、缩略图任务）。
+- `src/bookhub/ui/pages/collections_page.py`：书单页与书单详情页；详情支持 grid/list 视图与侧键返回上一级。
+- `src/bookhub/ui/pages/favorites_page.py`：收藏页；支持 grid/list 视图与排序持久化。
+- `src/bookhub/ui/pages/settings_page.py`：设置页（扫描、匹配策略、卡片间距、缩略图任务、Shortcuts 占位标签页）。
 - `src/bookhub/ui/pages/plugins_page.py`：工具/插件页。
 - `src/bookhub/ui/pages/placeholder_page.py`：占位页通用实现。
 
@@ -148,6 +148,8 @@ src/
 - 缩略图：WebP 落盘，DB 保存 `file://` URL。
 - 数据能力：Collections、Favorites、Tags 已接入。
 - Library 展示：主区双栏，右侧详情栏常驻且可拖拽宽度。
+- Favorites/CollectionDetail 展示：支持与 Library 一致的 grid/list 切换；主区接入右侧详情栏；详情页主区布局采用与 Library 相同的伸展策略，避免分栏贴底；grid 卡片采用 cover-only 样式并支持选中态；模式持久化到 `app_settings`。
+- Settings 导航：新增 Shortcuts 占位标签页（后续用于快捷键自定义）。
 - 交互规则：单击看详情、双击外部打开，判定窗口 500ms。
 
 ## 5. 边界与约束
