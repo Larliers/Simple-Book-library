@@ -18,7 +18,11 @@ from bookhub.ui.pages.library_page import LibraryPage
 from bookhub.ui.pages.placeholder_page import PlaceholderPage
 from bookhub.ui.pages.plugins_page import PluginsPage
 from bookhub.ui.pages.settings_page import SettingsPage
-from bookhub.ui.resources.layout_config import UI_LAYOUT, normalize_card_spacing
+from bookhub.ui.resources.layout_config import (
+    UI_LAYOUT,
+    normalize_card_spacing,
+    normalize_topbar_search_font_size,
+)
 from bookhub.ui.resources.styles import APP_STYLE
 from bookhub.ui.viewmodels.library_viewmodel import LibraryViewModel
 from bookhub.ui.widgets.sidebar import SidebarWidget
@@ -42,6 +46,7 @@ class AppWindow(QMainWindow):
 
         self._repository = LibraryRepository()
         UI_LAYOUT.set_card_spacing(self._repository.get_card_spacing())
+        UI_LAYOUT.set_topbar_search_font_size(self._repository.get_topbar_search_font_size())
         self._library_vm = LibraryViewModel()
         self._pages: dict[str, int] = {}
         self._scan_worker: ScanWorker | None = None
@@ -73,8 +78,8 @@ class AppWindow(QMainWindow):
         panel_layout.setSpacing(0)
 
         self.topbar = TopBarWidget()
+        self.topbar.set_search_font_size(UI_LAYOUT.topbar_search_font_size)
         self.topbar.query_changed.connect(self._on_query_changed)
-        self.topbar.import_requested.connect(self._import_directory)
         panel_layout.addWidget(self.topbar)
 
         self.page_stack = QStackedWidget()
@@ -98,6 +103,7 @@ class AppWindow(QMainWindow):
         self.settings_page.scan_depth_changed.connect(self._on_scan_depth_changed)
         self.settings_page.hash_strategy_changed.connect(self._on_hash_strategy_changed)
         self.settings_page.card_spacing_changed.connect(self._on_card_spacing_changed)
+        self.settings_page.topbar_search_font_size_changed.connect(self._on_topbar_search_font_size_changed)
         self.settings_page.cleanup_all_thumbnails_requested.connect(self._start_cleanup_thumbnails)
         self.settings_page.regenerate_thumbnails_requested.connect(self._start_regenerate_thumbnails)
         self._register_page("settings", self.settings_page)
@@ -199,6 +205,7 @@ class AppWindow(QMainWindow):
         self.settings_page.set_scan_depth(self._repository.get_scan_depth())
         self.settings_page.set_hash_strategy(self._repository.get_hash_strategy())
         self.settings_page.set_card_spacing(self._repository.get_card_spacing())
+        self.settings_page.set_topbar_search_font_size(self._repository.get_topbar_search_font_size())
         self.settings_page.set_scan_summary(self._repository.read_scan_report())
 
     def _import_directory(self) -> None:
@@ -247,6 +254,12 @@ class AppWindow(QMainWindow):
             apply_spacing = getattr(widget, "apply_card_spacing", None)
             if callable(apply_spacing):
                 apply_spacing(normalized)
+
+    def _on_topbar_search_font_size_changed(self, size: int) -> None:
+        normalized = normalize_topbar_search_font_size(size)
+        self._repository.set_topbar_search_font_size(normalized)
+        UI_LAYOUT.set_topbar_search_font_size(normalized)
+        self.topbar.set_search_font_size(normalized)
 
     def _start_scan(self, trigger: str) -> None:
         if self._thumbnail_worker is not None and self._thumbnail_worker.isRunning():

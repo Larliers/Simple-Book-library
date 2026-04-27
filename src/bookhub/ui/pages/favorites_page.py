@@ -154,7 +154,7 @@ class FavoritesPage(QWidget):
         self._grid = QGridLayout(self._container)
         self._grid.setHorizontalSpacing(UI_LAYOUT.card_spacing)
         self._grid.setVerticalSpacing(UI_LAYOUT.card_spacing)
-        self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setContentsMargins(UI_LAYOUT.grid_left_inset, 0, 0, 0)
         self._grid.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self._scroll.setWidget(self._container)
         self._view_stack.addWidget(self._scroll)

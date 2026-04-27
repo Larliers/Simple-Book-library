@@ -18,6 +18,9 @@ from bookhub.library.models import (
 DEFAULT_CARD_SPACING = 14
 CARD_SPACING_MIN = 6
 CARD_SPACING_MAX = 40
+DEFAULT_TOPBAR_SEARCH_FONT_SIZE = 15
+TOPBAR_SEARCH_FONT_SIZE_MIN = 12
+TOPBAR_SEARCH_FONT_SIZE_MAX = 20
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -36,6 +39,14 @@ def _normalize_card_spacing(value: int | str | None) -> int:
     except (TypeError, ValueError):
         spacing = DEFAULT_CARD_SPACING
     return min(CARD_SPACING_MAX, max(CARD_SPACING_MIN, spacing))
+
+
+def _normalize_topbar_search_font_size(value: int | str | None) -> int:
+    try:
+        size = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        size = DEFAULT_TOPBAR_SEARCH_FONT_SIZE
+    return min(TOPBAR_SEARCH_FONT_SIZE_MAX, max(TOPBAR_SEARCH_FONT_SIZE_MIN, size))
 
 
 class LibraryRepository:
@@ -120,6 +131,8 @@ class LibraryRepository:
             self.set_setting("hash_strategy", HASH_STRATEGY_SIZE_MTIME)
         if self.get_setting("card_spacing", None) is None:
             self.set_setting("card_spacing", DEFAULT_CARD_SPACING)
+        if self.get_setting("topbar_search_font_size", None) is None:
+            self.set_setting("topbar_search_font_size", DEFAULT_TOPBAR_SEARCH_FONT_SIZE)
 
     @staticmethod
     def normalize_path(path: str | Path) -> str:
@@ -178,6 +191,13 @@ class LibraryRepository:
 
     def set_card_spacing(self, spacing: int) -> None:
         self.set_setting("card_spacing", _normalize_card_spacing(spacing))
+
+    def get_topbar_search_font_size(self) -> int:
+        raw = self.get_setting("topbar_search_font_size", DEFAULT_TOPBAR_SEARCH_FONT_SIZE)
+        return _normalize_topbar_search_font_size(raw)
+
+    def set_topbar_search_font_size(self, size: int) -> None:
+        self.set_setting("topbar_search_font_size", _normalize_topbar_search_font_size(size))
 
     def list_roots(self) -> list[str]:
         with self._connection() as conn:

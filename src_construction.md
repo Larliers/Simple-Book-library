@@ -150,6 +150,9 @@ src/
 - Library 展示：主区双栏，右侧详情栏常驻且可拖拽宽度。
 - Favorites/CollectionDetail 展示：支持与 Library 一致的 grid/list 切换；主区接入右侧详情栏；详情页主区布局采用与 Library 相同的伸展策略，避免分栏贴底；grid 卡片采用 cover-only 样式并支持选中态；模式持久化到 `app_settings`。
 - Settings 导航：新增 Shortcuts 占位标签页（后续用于快捷键自定义）。
+- TopBar：移除右侧 IMPORT/NEW LIST/刷新/菜单占位区，搜索栏填充顶部可用宽度。
+- TopBar：搜索框支持最小高度与字号放大；搜索输入与建议下拉字号可在 Settings 调节并持久化（默认 15px）。
+- 网格布局：Library/Missed/Favorites/CollectionDetail 的书籍网格统一左内边距 12px，避免左侧贴边溢出观感。
 - 交互规则：单击看详情（无门控延迟）、双击外部打开。
 
 ## 5. 边界与约束

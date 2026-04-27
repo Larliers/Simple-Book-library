@@ -79,6 +79,7 @@
   "settings.scan_depth": "扫描层级",
   "settings.hash_strategy": "失联匹配策略",
   "settings.card_spacing": "卡片间距",
+  "settings.topbar_search_font_size": "搜索字号",
   "settings.thumb.clean_all": "清理所有缩略图",
   "settings.thumb.regenerate": "重新生成缩略图",
   "settings.thumb.progress": "第{current}个/共{total}个",

@@ -294,7 +294,7 @@ class CollectionDetailPage(QWidget):
 
         self._container = QWidget()
         self._grid = QGridLayout(self._container)
-        self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setContentsMargins(UI_LAYOUT.grid_left_inset, 0, 0, 0)
         self._grid.setHorizontalSpacing(UI_LAYOUT.card_spacing)
         self._grid.setVerticalSpacing(UI_LAYOUT.card_spacing)
         self._grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)

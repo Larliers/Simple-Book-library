@@ -24,7 +24,11 @@ from bookhub.ui.resources.layout_config import (
     CARD_SPACING_MAX,
     CARD_SPACING_MIN,
     DEFAULT_CARD_SPACING,
+    DEFAULT_TOPBAR_SEARCH_FONT_SIZE,
+    TOPBAR_SEARCH_FONT_SIZE_MAX,
+    TOPBAR_SEARCH_FONT_SIZE_MIN,
     normalize_card_spacing,
+    normalize_topbar_search_font_size,
 )
 
 
@@ -36,6 +40,7 @@ class SettingsPage(QWidget):
     scan_depth_changed = Signal(int)
     hash_strategy_changed = Signal(str)
     card_spacing_changed = Signal(int)
+    topbar_search_font_size_changed = Signal(int)
     cleanup_all_thumbnails_requested = Signal()
     regenerate_thumbnails_requested = Signal()
     font_changed = Signal(str, str)
@@ -215,6 +220,17 @@ class SettingsPage(QWidget):
             self.card_spacing_combo.addItem(f"{spacing}px", spacing)
         self.card_spacing_combo.currentIndexChanged.connect(self._emit_card_spacing_changed)
         options_row.addWidget(self.card_spacing_combo, 1)
+
+        self.topbar_search_font_size_label = QLabel("Search font size")
+        options_row.addWidget(self.topbar_search_font_size_label)
+        self.topbar_search_font_size_combo = QComboBox()
+        self.topbar_search_font_size_combo.setObjectName("SettingsLanguageCombo")
+        for size in range(TOPBAR_SEARCH_FONT_SIZE_MIN, TOPBAR_SEARCH_FONT_SIZE_MAX + 1):
+            self.topbar_search_font_size_combo.addItem(f"{size}px", size)
+        self.topbar_search_font_size_combo.currentIndexChanged.connect(
+            self._emit_topbar_search_font_size_changed
+        )
+        options_row.addWidget(self.topbar_search_font_size_combo, 1)
         library_layout.addLayout(options_row)
 
         self.formats_hint = QLabel(
@@ -317,6 +333,17 @@ class SettingsPage(QWidget):
         self.card_spacing_combo.setCurrentIndex(index)
         self.card_spacing_combo.blockSignals(False)
 
+    def set_topbar_search_font_size(self, size: int) -> None:
+        value = normalize_topbar_search_font_size(size)
+        index = self.topbar_search_font_size_combo.findData(value)
+        if index < 0:
+            index = self.topbar_search_font_size_combo.findData(DEFAULT_TOPBAR_SEARCH_FONT_SIZE)
+        if index < 0:
+            index = 0
+        self.topbar_search_font_size_combo.blockSignals(True)
+        self.topbar_search_font_size_combo.setCurrentIndex(index)
+        self.topbar_search_font_size_combo.blockSignals(False)
+
     def set_available_project_fonts(self, families: list[str]) -> None:
         self._project_font_families = sorted({str(item).strip() for item in families if str(item).strip()})
         self._rebuild_font_family_options()
@@ -398,6 +425,7 @@ class SettingsPage(QWidget):
         self.scan_depth_label.setText(tr("settings.scan_depth", "Scan depth"))
         self.hash_strategy_label.setText(tr("settings.hash_strategy", "Missed hash matching"))
         self.card_spacing_label.setText(tr("settings.card_spacing", "Card spacing"))
+        self.topbar_search_font_size_label.setText(tr("settings.topbar_search_font_size", "Search font size"))
         self.font_title.setText(tr("settings.font.title", "Font"))
         self.font_source_label.setText(tr("settings.font.source", "Font source"))
         self.font_family_label.setText(tr("settings.font.family", "Font family"))
@@ -507,6 +535,10 @@ class SettingsPage(QWidget):
     def _emit_card_spacing_changed(self) -> None:
         value = normalize_card_spacing(self.card_spacing_combo.currentData())
         self.card_spacing_changed.emit(value)
+
+    def _emit_topbar_search_font_size_changed(self) -> None:
+        value = normalize_topbar_search_font_size(self.topbar_search_font_size_combo.currentData())
+        self.topbar_search_font_size_changed.emit(value)
 
     def _on_reload_fonts_clicked(self) -> None:
         self._emit_font_changed()

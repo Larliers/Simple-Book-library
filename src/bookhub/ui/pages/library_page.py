@@ -248,7 +248,7 @@ class LibraryPage(QWidget):
         self.grid_layout = QGridLayout(self.grid_container)
         self.grid_layout.setHorizontalSpacing(UI_LAYOUT.card_spacing)
         self.grid_layout.setVerticalSpacing(UI_LAYOUT.card_spacing)
-        self.grid_layout.setContentsMargins(0, 0, 0, 0)
+        self.grid_layout.setContentsMargins(UI_LAYOUT.grid_left_inset, 0, 0, 0)
         self.grid_layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
 
         self.grid_scroll = QScrollArea()
