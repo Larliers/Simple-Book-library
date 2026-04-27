@@ -168,8 +168,6 @@ class BookDetailPanel(QFrame):
 
 
 class LibraryPage(QWidget):
-    CLICK_DELAY_MS = 500
-
     def __init__(
         self,
         view_model: LibraryViewModel,
@@ -187,12 +185,6 @@ class LibraryPage(QWidget):
         self._active_toasts: list[QLabel] = []
         self._card_by_resource_id: dict[str, BookCardWidget] = {}
         self._selected_resource_id: str | None = None
-        self._pending_selection_resource_id: str | None = None
-
-        self._selection_timer = QTimer(self)
-        self._selection_timer.setSingleShot(True)
-        self._selection_timer.setInterval(self.CLICK_DELAY_MS)
-        self._selection_timer.timeout.connect(self._commit_pending_selection)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 20, 24, 20)
@@ -373,7 +365,7 @@ class LibraryPage(QWidget):
             card.customContextMenuRequested.connect(
                 lambda pos, resource=item, widget=card: self._show_card_menu(resource, widget.mapToGlobal(pos))
             )
-            card.clicked.connect(lambda resource_id=item.resource_id: self._queue_resource_selection(resource_id))
+            card.clicked.connect(lambda resource_id=item.resource_id: self._select_resource(resource_id))
             card.open_requested.connect(
                 lambda global_pos, resource=item: self._handle_card_double_click(resource, global_pos)
             )
@@ -437,28 +429,6 @@ class LibraryPage(QWidget):
         fallback.fill(Qt.lightGray)
         return QIcon(fallback)
 
-    def _queue_resource_selection(self, resource_id: str) -> None:
-        if not resource_id or resource_id not in self._resource_by_id:
-            return
-        self._pending_selection_resource_id = resource_id
-        self._selection_timer.start()
-
-    def _commit_pending_selection(self) -> None:
-        resource_id = self._pending_selection_resource_id
-        self._pending_selection_resource_id = None
-        if not resource_id:
-            return
-        self._select_resource(resource_id)
-
-    def _cancel_pending_selection(self, resource_id: str | None = None) -> None:
-        if not self._selection_timer.isActive():
-            self._pending_selection_resource_id = None
-            return
-        if resource_id is not None and self._pending_selection_resource_id != resource_id:
-            return
-        self._selection_timer.stop()
-        self._pending_selection_resource_id = None
-
     def _select_resource(self, resource_id: str) -> None:
         if resource_id not in self._resource_by_id:
             return
@@ -508,7 +478,7 @@ class LibraryPage(QWidget):
         if item is None:
             return
         resource_id = str(item.data(Qt.UserRole) or "")
-        self._queue_resource_selection(resource_id)
+        self._select_resource(resource_id)
 
     def _on_list_row_double_clicked(self, row: int, _column: int) -> None:
         item = self.list_table.item(row, 0)
@@ -516,12 +486,10 @@ class LibraryPage(QWidget):
             return
         resource_id = str(item.data(Qt.UserRole) or "")
         resource = self._resource_by_id.get(resource_id)
-        self._cancel_pending_selection(resource_id)
         if resource is not None:
             self._open_book_external(resource)
 
     def _handle_card_double_click(self, resource: ResourceItem, global_pos: QPoint) -> None:
-        self._cancel_pending_selection(resource.resource_id)
         self._open_book_external(resource, global_pos)
 
     def _show_card_menu(self, resource: ResourceItem, global_pos) -> None:
