@@ -122,3 +122,30 @@
 1. 将 `titleBar` 背景与 `dialogBody` 统一；
 2. 去除 `titleBar` 下边框分割线；
 3. 若问题仍在，排查全局 QSS 通配规则优先级。
+
+---
+
+## 2026-05-03 - Settings 路径删除按钮遮挡修复
+
+### 任务
+修复 Settings 页面中 Library/Comic 路径列表右侧 Delete 按钮被遮挡的问题。
+
+### 实现内容
+
+**修改文件**:
+1. `src/bookhub/ui/pages/settings_page.py`
+   - 引入 `Qt` 与 `QAbstractItemView`。
+   - `folders` 与 `comic_folders` 统一设置滚动策略：
+     - 关闭横向滚动条 `ScrollBarAlwaysOff`
+     - 垂直滚动模式 `ScrollPerPixel`
+     - 垂直滚动条 `ScrollBarAsNeeded`
+   - 路径行构建重构为共享方法 `_append_root_row(...)`，避免 Library/Comic 两套逻辑漂移。
+   - 路径标签改为单行显示（`setWordWrap(False)`），并保留文本可选中与 tooltip。
+   - Delete 按钮设置最小宽度 `72` 且右对齐，行右侧内边距增加到 `12`，保证窄宽度下不被遮挡。
+
+2. `src_construction.md`
+   - 在 `settings_page.py` 条目中插入本次修复说明，更新当前事实文档。
+
+### 风险与验证
+- 风险较低：仅调整设置页路径行布局与列表滚动策略，不涉及扫描/存储逻辑。
+- 验证标准：窄窗口宽度下 Delete 按钮完整可见且可点击；Library/Comic 两个列表行为一致。

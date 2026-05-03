@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
-from PySide6.QtGui import QFontDatabase
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFontDatabase, QFontMetrics
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -10,6 +11,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QListWidget,
     QListWidgetItem,
     QProgressBar,
@@ -191,6 +193,10 @@ class SettingsPage(QWidget):
         self.folders = QListWidget()
         self.folders.setObjectName("LibraryPathList")
         self.folders.setSpacing(4)
+        self.folders.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.folders.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.folders.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.folders.setViewportMargins(0, 0, 0, 0)
         library_layout.addWidget(self.folders)
 
         comic_row = QHBoxLayout()
@@ -206,6 +212,10 @@ class SettingsPage(QWidget):
         self.comic_folders = QListWidget()
         self.comic_folders.setObjectName("LibraryPathList")
         self.comic_folders.setSpacing(4)
+        self.comic_folders.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.comic_folders.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.comic_folders.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.comic_folders.setViewportMargins(0, 0, 0, 0)
         library_layout.addWidget(self.comic_folders)
 
         options_row = QHBoxLayout()
@@ -533,46 +543,66 @@ class SettingsPage(QWidget):
         self.content_stack.setCurrentIndex(0)
 
     def _append_path_item(self, path: str) -> None:
-        item = QListWidgetItem()
-        row = QWidget()
-        layout = QHBoxLayout(row)
-        layout.setContentsMargins(8, 4, 8, 4)
-        layout.setSpacing(8)
-
-        path_label = QLabel(path)
-        path_label.setObjectName("PageSubtitle")
-        path_label.setWordWrap(True)
-        layout.addWidget(path_label, 1)
-
-        delete_btn = QPushButton(tr("settings.delete_path", "Delete"))
-        delete_btn.setObjectName("DangerButton")
-        delete_btn.clicked.connect(lambda _=False, target=path: self.remove_root_requested.emit(target))
-        layout.addWidget(delete_btn, 0)
-
-        item.setSizeHint(row.sizeHint())
-        self.folders.addItem(item)
-        self.folders.setItemWidget(item, row)
+        self._append_root_row(
+            list_widget=self.folders,
+            path=path,
+            remove_callback=lambda target: self.remove_root_requested.emit(target),
+        )
 
     def _append_comic_path_item(self, path: str) -> None:
+        self._append_root_row(
+            list_widget=self.comic_folders,
+            path=path,
+            remove_callback=lambda target: self.remove_comic_root_requested.emit(target),
+        )
+
+    def _append_root_row(self, list_widget: QListWidget, path: str, remove_callback) -> None:
         item = QListWidgetItem()
         row = QWidget()
         layout = QHBoxLayout(row)
-        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setContentsMargins(8, 4, 12, 4)
         layout.setSpacing(8)
+
+        delete_btn = QPushButton("X")
+        delete_btn.setObjectName("DangerButton")
+        delete_btn.setToolTip(tr("settings.delete_path", "Delete"))
+        delete_btn.setFixedWidth(26)
+        delete_btn.clicked.connect(
+            lambda _=False, target=path: self._confirm_and_remove_root(target, remove_callback)
+        )
+        layout.addWidget(delete_btn, 0, Qt.AlignLeft)
 
         path_label = QLabel(path)
         path_label.setObjectName("PageSubtitle")
-        path_label.setWordWrap(True)
+        path_label.setWordWrap(False)
+        path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        path_label.setToolTip(path)
+        path_label.setMinimumWidth(120)
+
+        metrics = QFontMetrics(path_label.font())
+        available_width = max(120, list_widget.viewport().width() - 80)
+        path_label.setText(metrics.elidedText(path, Qt.ElideRight, available_width))
         layout.addWidget(path_label, 1)
 
-        delete_btn = QPushButton(tr("settings.delete_path", "Delete"))
-        delete_btn.setObjectName("DangerButton")
-        delete_btn.clicked.connect(lambda _=False, target=path: self.remove_comic_root_requested.emit(target))
-        layout.addWidget(delete_btn, 0)
-
         item.setSizeHint(row.sizeHint())
-        self.comic_folders.addItem(item)
-        self.comic_folders.setItemWidget(item, row)
+        list_widget.addItem(item)
+        list_widget.setItemWidget(item, row)
+
+    def _confirm_and_remove_root(self, target: str, remove_callback) -> None:
+        title = tr("settings.delete_confirm_title", "Confirm Delete")
+        text = tr(
+            "settings.delete_confirm_text",
+            "Delete this folder path?\n{path}",
+        ).format(path=target)
+        result = QMessageBox.question(
+            self,
+            title,
+            text,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if result == QMessageBox.Yes:
+            remove_callback(target)
 
     def _emit_language_changed(self) -> None:
         code = self.language_combo.currentData() or "en"

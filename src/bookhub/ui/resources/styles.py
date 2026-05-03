@@ -131,12 +131,17 @@ QLineEdit#TopSearchInput:focus {
 QLineEdit,
 QComboBox,
 QTextEdit,
-QListWidget,
 QTableWidget {
     background: #ffffff;
     border: 1px solid #c8d0dc;
     border-radius: 0px;
     padding: 5px 8px;
+}
+QListWidget {
+    background: #ffffff;
+    border: 1px solid #c8d0dc;
+    border-radius: 0px;
+    padding: 0px;
 }
 QLineEdit:focus,
 QComboBox:focus,
@@ -193,12 +198,13 @@ QComboBox#SettingsLanguageCombo::drop-down {
 QListWidget#LibraryPathList {
     background: #f8fafd;
     border: 1px solid #d7dfeb;
-    padding: 6px;
+    padding: 0px;
 }
 QListWidget#LibraryPathList::item {
     border: 1px solid #d6ddea;
     background: #ffffff;
     margin: 2px 0px;
+    padding: 0px;
 }
 QProgressBar {
     border: 1px solid #c8d0dc;

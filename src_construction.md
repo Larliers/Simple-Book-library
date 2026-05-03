@@ -123,7 +123,7 @@ src/
 - `src/bookhub/ui/pages/library_page.py`：Library/Missed 页面；grid/list；右侧详情栏；单/双击交互。
 - `src/bookhub/ui/pages/collections_page.py`：书单页与书单详情页；详情支持 grid/list 视图与侧键返回上一级。
 - `src/bookhub/ui/pages/favorites_page.py`：收藏页；支持 grid/list 视图与排序持久化。
-- `src/bookhub/ui/pages/settings_page.py`：设置页（扫描、匹配策略、卡片间距、缩略图任务、Shortcuts 占位标签页）。
+- `src/bookhub/ui/pages/settings_page.py`：设置页（扫描、匹配策略、卡片间距、缩略图任务、Shortcuts 占位标签页）；Library/Comic 路径列表项统一为“左侧单行路径+右侧固定删除按钮”布局，关闭横向滚动并确保窄宽度下删除按钮不被遮挡。
 - `src/bookhub/ui/pages/plugins_page.py`：工具/插件页。
 - `src/bookhub/ui/pages/placeholder_page.py`：占位页通用实现。
 
