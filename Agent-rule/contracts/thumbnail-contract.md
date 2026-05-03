@@ -12,7 +12,8 @@
     {
       "resource_id": "string",
       "resource_type": "string",
-      "path": "string"
+      "path": "string",
+      "cover_image_path": "string|null"
     }
   ],
   "thumbnail_profile": {
@@ -34,6 +35,7 @@
       {
         "resource_id": "string",
         "thumbnail_path": "string",
+        "cover_image_path": "string|null",
         "cache_key": "string",
         "generated_at": "ISO-8601"
       }
@@ -54,6 +56,7 @@
 - 保证返回可访问的本地 `thumbnail_path`。
 - 保证延迟任务进入 `deferred_queue`。
 - 保证缓存命中与生成统计可追踪。
+- 保证 `comic_folder` 的 `cover_image_path` 与缩略图绑定。
 
 ## Error Shape
 ```json

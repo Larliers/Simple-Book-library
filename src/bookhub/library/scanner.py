@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 
 from bookhub.library.metadata import (
@@ -16,7 +17,9 @@ from bookhub.library.metadata import (
     generate_pdf_thumbnail,
 )
 from bookhub.library.models import (
+    COMIC_IMAGE_EXTENSIONS,
     SUPPORTED_EXTENSIONS,
+    ComicScanRequest,
     HashStrategy,
     ScanConflict,
     ScanRequest,
@@ -88,6 +91,136 @@ def _build_payload(
         "fingerprint_size_mtime": fingerprints.size_mtime,
         "fingerprint_quick": fingerprints.quick,
     }
+
+
+def _natural_sort_key(path: Path) -> list[object]:
+    parts = re.split(r"(\d+)", path.name.lower())
+    return [int(part) if part.isdigit() else part for part in parts]
+
+
+def _select_comic_cover_and_count(folder: Path) -> tuple[Path | None, int]:
+    image_paths = [
+        child
+        for child in folder.iterdir()
+        if child.is_file() and child.suffix.lower() in COMIC_IMAGE_EXTENSIONS
+    ]
+    if not image_paths:
+        return None, 0
+    sorted_images = sorted(image_paths, key=_natural_sort_key)
+    return sorted_images[0], len(sorted_images)
+
+
+def _collect_comic_info_text(folder: Path) -> str | None:
+    txt_paths = sorted(
+        [child for child in folder.iterdir() if child.is_file() and child.suffix.lower() == ".txt"],
+        key=_natural_sort_key,
+    )
+    if not txt_paths:
+        return None
+    parts: list[str] = []
+    for txt_path in txt_paths:
+        try:
+            content = txt_path.read_text(encoding="utf-8", errors="ignore").strip()
+        except OSError:
+            continue
+        if content:
+            parts.append(content)
+    if not parts:
+        return None
+    return "\n\n".join(parts)
+
+
+def _iter_dirs_with_depth(root: Path, depth: int):
+    root_parts = len(root.parts)
+    for current_dir, dir_names, _file_names in os.walk(root):
+        current_path = Path(current_dir)
+        relative_depth = len(current_path.parts) - root_parts
+        if relative_depth >= depth:
+            dir_names[:] = []
+        dir_names[:] = sorted(dir_names)
+        yield current_path, relative_depth
+
+
+def _is_deepest_image_folder(folder: Path, max_depth: int) -> bool:
+    root_parts = len(folder.parts)
+    has_child_image_folder = False
+    for current_dir, _dir_names, file_names in os.walk(folder):
+        current_path = Path(current_dir)
+        relative_depth = len(current_path.parts) - root_parts
+        if relative_depth > max_depth:
+            continue
+        if current_path == folder:
+            continue
+        has_images = any(Path(name).suffix.lower() in COMIC_IMAGE_EXTENSIONS for name in file_names)
+        if has_images:
+            has_child_image_folder = True
+            break
+    return not has_child_image_folder
+
+
+def scan_comic_roots(repository: LibraryRepository, request: ComicScanRequest) -> ScanResult:
+    result = ScanResult()
+    max_depth = min(5, max(1, int(request.max_depth or 5)))
+    scanned_roots = [repository.normalize_path(path) for path in request.roots]
+
+    for raw_root in scanned_roots:
+        root = Path(raw_root)
+        if not root.exists() or not root.is_dir():
+            result.comic_errors.append(f"Comic root unavailable: {raw_root}")
+            continue
+
+        for folder_path, relative_depth in _iter_dirs_with_depth(root, max_depth):
+            result.comic_scanned_dirs += 1
+            if relative_depth > max_depth:
+                continue
+
+            try:
+                cover_path, image_count = _select_comic_cover_and_count(folder_path)
+            except OSError as exc:
+                result.comic_errors.append(f"Comic folder read failed for {folder_path}: {exc}")
+                continue
+
+            if image_count <= 0 or cover_path is None:
+                continue
+
+            if not _is_deepest_image_folder(folder_path, max_depth=max_depth):
+                continue
+
+            result.comic_detected_folders += 1
+            normalized_folder = repository.normalize_path(folder_path)
+            normalized_root = repository.normalize_path(root)
+            normalized_cover = repository.normalize_path(cover_path)
+            thumb_file = _thumbnail_path_for(repository, normalized_cover)
+            thumbnail_path: str | None = None
+            try:
+                from PIL import Image
+
+                with Image.open(str(cover_path)) as img:
+                    img = img.convert("RGB")
+                    img.thumbnail((420, 620))
+                    thumb_file.parent.mkdir(parents=True, exist_ok=True)
+                    img.save(thumb_file, format="PNG")
+                thumbnail_path = thumb_file.as_uri()
+            except Exception as exc:  # noqa: BLE001
+                result.comic_errors.append(f"Comic thumbnail failed for {normalized_cover}: {exc}")
+
+            info_text = _collect_comic_info_text(folder_path)
+            payload = {
+                "path": normalized_folder,
+                "title": folder_path.name,
+                "comic_root": normalized_root,
+                "cover_image_path": normalized_cover,
+                "thumbnail_path": thumbnail_path,
+                "image_count": image_count,
+                "info_text": info_text,
+            }
+            inserted = repository.upsert_comic(payload)
+            if inserted:
+                result.comic_added_count += 1
+            else:
+                result.comic_updated_count += 1
+
+    return result
 
 
 def scan_roots(repository: LibraryRepository, request: ScanRequest) -> ScanResult:

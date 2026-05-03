@@ -6,10 +6,11 @@ from PySide6.QtCore import QThread, Signal
 
 from bookhub.library.models import (
     HASH_STRATEGY_SIZE_MTIME,
+    ComicScanRequest,
     ScanRequest,
 )
 from bookhub.library.repository import LibraryRepository
-from bookhub.library.scanner import scan_roots
+from bookhub.library.scanner import scan_comic_roots, scan_roots
 
 
 class ScanWorker(QThread):
@@ -21,6 +22,7 @@ class ScanWorker(QThread):
         db_path: str | Path,
         scan_report_path: str | Path,
         roots: list[str],
+        comic_roots: list[str],
         scan_depth: int,
         hash_strategy: str,
         trigger: str,
@@ -29,6 +31,7 @@ class ScanWorker(QThread):
         self._db_path = Path(db_path)
         self._scan_report_path = Path(scan_report_path)
         self._roots = list(roots)
+        self._comic_roots = list(comic_roots)
         self._scan_depth = scan_depth
         self._hash_strategy = (
             hash_strategy
@@ -47,7 +50,15 @@ class ScanWorker(QThread):
                 trigger=self._trigger,
             )
             result = scan_roots(repository, request)
+            comic_request = ComicScanRequest(roots=self._comic_roots, max_depth=5)
+            comic_result = scan_comic_roots(repository, comic_request)
             summary = result.to_summary()
+            comic_summary = comic_result.to_summary()
+            summary["comic_added_count"] = int(comic_summary.get("comic_added_count", 0) or 0)
+            summary["comic_updated_count"] = int(comic_summary.get("comic_updated_count", 0) or 0)
+            summary["comic_scanned_dirs"] = int(comic_summary.get("comic_scanned_dirs", 0) or 0)
+            summary["comic_detected_folders"] = int(comic_summary.get("comic_detected_folders", 0) or 0)
+            summary["comic_errors"] = list(comic_summary.get("comic_errors", []))
             summary["trigger"] = self._trigger
             repository.write_scan_report(summary)
             repository.record_scan_event(self._trigger, summary)

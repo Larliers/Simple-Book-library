@@ -81,3 +81,33 @@
   "notes": "UI 仅消费数据，不执行扫描"
 }
 ```
+
+### comic_cover_selector
+```json
+{
+  "module_name": "comic_cover_selector",
+  "owner_agent": "thumbnail-agent",
+  "status": "active",
+  "purpose": "按自然序选择漫画目录首图并生成缩略图缓存",
+  "input": ["comic_folder_path", "image_extensions", "thumbnail_profile"],
+  "output": ["cover_image_path", "thumbnail_path", "cache_key"],
+  "upstream": ["comic_folder_scanner"],
+  "downstream": ["comic_sidebar_binding"],
+  "notes": "支持 jpg/png/webp/jpeg；双击打开封面图依赖 cover_image_path"
+}
+```
+
+### comic_sidebar_binding
+```json
+{
+  "module_name": "comic_sidebar_binding",
+  "owner_agent": "ui-agent",
+  "status": "active",
+  "purpose": "在 Comic/Comic Fav 页面渲染 grid，并把同级 txt 文本绑定到右侧详情栏",
+  "input": ["comic_resources", "selected_resource", "view_mode=comic_grid"],
+  "output": ["render_plan", "interaction_events", "detail_sidebar_text"],
+  "upstream": ["comic_folder_scanner", "comic_cover_selector"],
+  "downstream": ["external_open_action"],
+  "notes": "页面仅 grid，无 list；文本区位于详情缩略图下方"
+}
+```

@@ -15,6 +15,7 @@ HashStrategy = Literal["sha256", "size_mtime", "quick"]
 ThumbnailTaskKind = Literal["cleanup", "regenerate"]
 
 SUPPORTED_EXTENSIONS = (".pdf", ".epub")
+COMIC_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
 
 
 @dataclass(slots=True)
@@ -64,6 +65,12 @@ class ScanRequest:
 
 
 @dataclass(slots=True)
+class ComicScanRequest:
+    roots: list[str]
+    max_depth: int = 5
+
+
+@dataclass(slots=True)
 class ScanResult:
     added_count: int = 0
     updated_count: int = 0
@@ -74,6 +81,11 @@ class ScanResult:
     unsupported_files: list[str] = field(default_factory=list)
     name_conflicts: list[ScanConflict] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    comic_added_count: int = 0
+    comic_updated_count: int = 0
+    comic_scanned_dirs: int = 0
+    comic_detected_folders: int = 0
+    comic_errors: list[str] = field(default_factory=list)
 
     def to_summary(self) -> dict[str, object]:
         return {
@@ -86,6 +98,11 @@ class ScanResult:
             "errors": list(self.errors),
             "unsupported_files": list(self.unsupported_files),
             "scanned_files": self.scanned_files,
+            "comic_added_count": self.comic_added_count,
+            "comic_updated_count": self.comic_updated_count,
+            "comic_scanned_dirs": self.comic_scanned_dirs,
+            "comic_detected_folders": self.comic_detected_folders,
+            "comic_errors": list(self.comic_errors),
         }
 
 

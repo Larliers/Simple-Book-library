@@ -8,6 +8,7 @@
 - 生成标准尺寸缩略图。
 - 管理缩略图缓存键、过期与重建。
 - 执行延迟生成与后台补全。
+- 对 `comic_folder` 执行自然序首图封面选择（`jpg/png/webp/jpeg`）。
 
 ## Out of Scope
 - 不负责目录扫描与索引建立。
@@ -28,7 +29,8 @@
     {
       "resource_id": "string",
       "resource_type": "string",
-      "path": "string"
+      "path": "string",
+      "cover_image_path": "string|null"
     }
   ],
   "thumbnail_profile": {
@@ -52,6 +54,7 @@
       {
         "resource_id": "string",
         "thumbnail_path": "string",
+        "cover_image_path": "string|null",
         "cache_key": "string",
         "generated_at": "ISO-8601"
       }
@@ -73,3 +76,4 @@
 - 延迟任务必须写入 `deferred_queue`。
 - 缩略图路径必须是可访问的本地路径。
 - 失败项必须进入 `errors` 并给出 `retryable` 语义。
+- `comic_folder` 必须返回用于双击外部打开的 `cover_image_path`。

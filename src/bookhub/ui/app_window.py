@@ -18,6 +18,7 @@ from bookhub.ui.pages.library_page import LibraryPage
 from bookhub.ui.pages.placeholder_page import PlaceholderPage
 from bookhub.ui.pages.plugins_page import PluginsPage
 from bookhub.ui.pages.settings_page import SettingsPage
+from bookhub.ui.pages.comic_page import ComicPage
 from bookhub.ui.resources.layout_config import (
     UI_LAYOUT,
     normalize_card_spacing,
@@ -91,6 +92,10 @@ class AppWindow(QMainWindow):
         self._register_page("collections", CollectionsPage(self._repository))
         self._register_page("reading_now", PlaceholderPage("Reading Now", "Reading queue page skeleton."))
         self._register_page("favorites", FavoritesPage(self._repository))
+        self.comic_page = ComicPage(self._repository, favorite_only=False)
+        self._register_page("comic", self.comic_page)
+        self.comic_fav_page = ComicPage(self._repository, favorite_only=True)
+        self._register_page("comic_fav", self.comic_fav_page)
         self.plugins_page = PluginsPage()
         self._register_page("tools", self.plugins_page)
         self.missed_page = LibraryPage(self._library_vm, missing_mode=True, repository=self._repository)
@@ -99,6 +104,8 @@ class AppWindow(QMainWindow):
         self.settings_page.language_changed.connect(self._on_language_changed)
         self.settings_page.add_root_requested.connect(self._on_add_root)
         self.settings_page.remove_root_requested.connect(self._on_remove_root)
+        self.settings_page.add_comic_root_requested.connect(self._on_add_comic_root)
+        self.settings_page.remove_comic_root_requested.connect(self._on_remove_comic_root)
         self.settings_page.scan_requested.connect(lambda: self._start_scan("manual"))
         self.settings_page.scan_depth_changed.connect(self._on_scan_depth_changed)
         self.settings_page.hash_strategy_changed.connect(self._on_hash_strategy_changed)
@@ -198,10 +205,13 @@ class AppWindow(QMainWindow):
         self._last_committed_query = self._library_vm.ui_state.filter
         self.library_page.render()
         self.missed_page.render()
+        self.comic_page.refresh()
+        self.comic_fav_page.refresh()
         self._refresh_search_suggestions()
 
     def _refresh_settings_state(self) -> None:
         self.settings_page.set_library_roots(self._repository.list_roots())
+        self.settings_page.set_comic_roots(self._repository.list_comic_roots())
         self.settings_page.set_scan_depth(self._repository.get_scan_depth())
         self.settings_page.set_hash_strategy(self._repository.get_hash_strategy())
         self.settings_page.set_card_spacing(self._repository.get_card_spacing())
@@ -220,6 +230,21 @@ class AppWindow(QMainWindow):
         self._repository.add_root(path)
         self._refresh_settings_state()
         self._start_scan("add_path")
+
+    def _on_add_comic_root(self, path: str) -> None:
+        self._repository.add_comic_root(path)
+        self._refresh_settings_state()
+        self._start_scan("add_comic_path")
+
+    def _on_remove_comic_root(self, path: str) -> None:
+        moved_count = self._repository.remove_comic_root(path)
+        summary = self._repository.read_scan_report()
+        summary["comic_moved_to_missed_count"] = moved_count
+        summary["trigger"] = "remove_comic_root"
+        self._repository.write_scan_report(summary)
+        self._repository.record_scan_event("remove_comic_root", summary)
+        self._reload_resources_from_repository()
+        self._refresh_settings_state()
 
     def _on_remove_root(self, path: str) -> None:
         moved_count = self._repository.remove_root(path)
@@ -274,6 +299,7 @@ class AppWindow(QMainWindow):
             db_path=self._repository.db_path,
             scan_report_path=self._repository.scan_report_path,
             roots=roots,
+            comic_roots=self._repository.list_comic_roots(),
             scan_depth=self._repository.get_scan_depth(),
             hash_strategy=self._repository.get_hash_strategy(),
             trigger=trigger,
@@ -429,5 +455,11 @@ class AppWindow(QMainWindow):
         favorites_retranslate = getattr(self.page_stack.widget(self._pages["favorites"]), "retranslate_ui", None)
         if callable(favorites_retranslate):
             favorites_retranslate()
+        comic_retranslate = getattr(self.page_stack.widget(self._pages["comic"]), "retranslate_ui", None)
+        if callable(comic_retranslate):
+            comic_retranslate()
+        comic_fav_retranslate = getattr(self.page_stack.widget(self._pages["comic_fav"]), "retranslate_ui", None)
+        if callable(comic_fav_retranslate):
+            comic_fav_retranslate()
         self.plugins_page.retranslate_ui()
         self.settings_page.retranslate_ui()

@@ -86,6 +86,12 @@ class LibraryRepository:
                     updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS comic_roots (
+                    path TEXT PRIMARY KEY,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS books (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     resource_id TEXT NOT NULL UNIQUE,
@@ -114,6 +120,31 @@ class LibraryRepository:
                 CREATE INDEX IF NOT EXISTS idx_books_fp_sha256 ON books(fingerprint_sha256);
                 CREATE INDEX IF NOT EXISTS idx_books_fp_size_mtime ON books(fingerprint_size_mtime);
                 CREATE INDEX IF NOT EXISTS idx_books_fp_quick ON books(fingerprint_quick);
+
+                CREATE TABLE IF NOT EXISTS comics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    resource_id TEXT NOT NULL UNIQUE,
+                    title TEXT NOT NULL,
+                    path TEXT NOT NULL UNIQUE,
+                    comic_root TEXT,
+                    cover_image_path TEXT,
+                    thumbnail_path TEXT,
+                    image_count INTEGER NOT NULL DEFAULT 0,
+                    info_text TEXT,
+                    is_missing INTEGER NOT NULL DEFAULT 0,
+                    missing_reason TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_comics_title ON comics(title);
+                CREATE INDEX IF NOT EXISTS idx_comics_missing ON comics(is_missing);
+
+                CREATE TABLE IF NOT EXISTS favorite_comics (
+                    comic_id INTEGER PRIMARY KEY,
+                    added_at TEXT NOT NULL DEFAULT '',
+                    FOREIGN KEY (comic_id) REFERENCES comics(id) ON DELETE CASCADE
+                );
 
                 CREATE TABLE IF NOT EXISTS scan_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -232,6 +263,43 @@ class LibraryRepository:
                 AND (path = ? OR path LIKE ?)
                 """,
                 ("root_removed", timestamp, normalized, root_prefix),
+            )
+            moved_to_missed = cursor.rowcount if cursor.rowcount is not None else 0
+        return max(0, int(moved_to_missed))
+
+    def list_comic_roots(self) -> list[str]:
+        with self._connection() as conn:
+            rows = conn.execute("SELECT path FROM comic_roots ORDER BY lower(path)").fetchall()
+        return [str(row["path"]) for row in rows]
+
+    def add_comic_root(self, path: str | Path) -> str:
+        normalized = self.normalize_path(path)
+        timestamp = now_utc_iso()
+        with self._connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO comic_roots(path, created_at, updated_at)
+                VALUES(?, ?, ?)
+                ON CONFLICT(path) DO UPDATE SET updated_at = excluded.updated_at
+                """,
+                (normalized, timestamp, timestamp),
+            )
+        return normalized
+
+    def remove_comic_root(self, path: str | Path) -> int:
+        normalized = self.normalize_path(path)
+        root_prefix = normalized.rstrip("\\/") + os.sep + "%"
+        timestamp = now_utc_iso()
+        with self._connection() as conn:
+            conn.execute("DELETE FROM comic_roots WHERE path = ?", (normalized,))
+            cursor = conn.execute(
+                """
+                UPDATE comics
+                SET is_missing = 1, missing_reason = ?, updated_at = ?
+                WHERE is_missing = 0
+                AND (path = ? OR path LIKE ?)
+                """,
+                ("comic_root_removed", timestamp, normalized, root_prefix),
             )
             moved_to_missed = cursor.rowcount if cursor.rowcount is not None else 0
         return max(0, int(moved_to_missed))
@@ -491,6 +559,116 @@ class LibraryRepository:
                 (resource_id,),
             ).fetchone()
         return int(row["id"]) if row else None
+
+    def upsert_comic(self, payload: dict[str, Any]) -> bool:
+        path = payload["path"]
+        timestamp = now_utc_iso()
+        with self._connection() as conn:
+            existing = conn.execute("SELECT id FROM comics WHERE path = ?", (path,)).fetchone()
+            if existing:
+                conn.execute(
+                    """
+                    UPDATE comics
+                    SET title = ?, comic_root = ?, cover_image_path = ?, thumbnail_path = ?,
+                        image_count = ?, info_text = ?, is_missing = 0, missing_reason = NULL, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        payload["title"],
+                        payload.get("comic_root"),
+                        payload.get("cover_image_path"),
+                        payload.get("thumbnail_path"),
+                        int(payload.get("image_count") or 0),
+                        payload.get("info_text"),
+                        timestamp,
+                        existing["id"],
+                    ),
+                )
+                return False
+
+            resource_id = payload.get("resource_id") or uuid4().hex
+            conn.execute(
+                """
+                INSERT INTO comics(
+                    resource_id, title, path, comic_root, cover_image_path, thumbnail_path,
+                    image_count, info_text, is_missing, missing_reason, created_at, updated_at
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
+                """,
+                (
+                    resource_id,
+                    payload["title"],
+                    path,
+                    payload.get("comic_root"),
+                    payload.get("cover_image_path"),
+                    payload.get("thumbnail_path"),
+                    int(payload.get("image_count") or 0),
+                    payload.get("info_text"),
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            return True
+
+    def list_comics(self, include_missing: bool | None = None) -> list[dict[str, Any]]:
+        where_clause = ""
+        if include_missing is True:
+            where_clause = "WHERE is_missing = 1"
+        elif include_missing is False:
+            where_clause = "WHERE is_missing = 0"
+
+        query = f"""
+            SELECT resource_id, title, path, comic_root, cover_image_path, thumbnail_path,
+                   image_count, info_text, is_missing, missing_reason
+            FROM comics
+            {where_clause}
+            ORDER BY lower(title)
+        """
+        with self._connection() as conn:
+            rows = conn.execute(query).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_comic_int_id(self, resource_id: str) -> int | None:
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT id FROM comics WHERE resource_id = ?",
+                (resource_id,),
+            ).fetchone()
+        return int(row["id"]) if row else None
+
+    def add_comic_to_favorites(self, comic_id: int) -> None:
+        import datetime
+        with self._connection() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO favorite_comics (comic_id, added_at) VALUES (?, ?)",
+                (comic_id, datetime.datetime.now().isoformat()),
+            )
+
+    def remove_comic_from_favorites(self, comic_id: int) -> None:
+        with self._connection() as conn:
+            conn.execute(
+                "DELETE FROM favorite_comics WHERE comic_id = ?",
+                (comic_id,),
+            )
+
+    def get_favorite_comics(self, order: str = "desc") -> list[dict[str, Any]]:
+        order_text = str(order or "").strip().lower()
+        order_sql = "ASC" if order_text == "asc" else "DESC"
+        query = f"""SELECT c.*, fc.added_at AS favorite_added_at
+                    FROM comics c
+                    INNER JOIN favorite_comics fc ON c.id = fc.comic_id
+                    ORDER BY fc.added_at {order_sql}"""
+        with self._connection() as conn:
+            rows = conn.execute(query).fetchall()
+        return [dict(row) for row in rows]
+
+    def is_favorite_comic(self, comic_id: int) -> bool:
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM favorite_comics WHERE comic_id = ?",
+                (comic_id,),
+            ).fetchone()
+        return row is not None
 
 
     # ==================================================================

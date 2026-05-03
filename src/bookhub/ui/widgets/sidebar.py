@@ -48,6 +48,8 @@ class SidebarWidget(QWidget):
             ("library", "Library", "library.svg"),
             ("collections", "Collections", "collections.svg"),
             ("favorites", "Favorites", "favorites.svg"),
+            ("comic", "Comic", "library.svg"),
+            ("comic_fav", "Comic Fav", "favorites.svg"),
             ("tools", "Tools", "tools.svg"),
             ("missed", "Missed", "trash.svg"),
         ]
@@ -98,6 +100,8 @@ class SidebarWidget(QWidget):
         if "reading_now" in self._buttons:
             self._buttons["reading_now"].setText(tr("sidebar.reading_now", "Reading Now"))
         self._buttons["favorites"].setText(tr("sidebar.favorites", "Favorites"))
+        self._buttons["comic"].setText(tr("sidebar.comic", "Comic"))
+        self._buttons["comic_fav"].setText(tr("sidebar.comic_fav", "Comic Fav"))
         self._buttons["tools"].setText(tr("sidebar.tools", "Tools"))
         self._buttons["missed"].setText(tr("sidebar.missed", "Missed"))
         self.import_button.setText(tr("sidebar.import_books", "IMPORT BOOKS"))

@@ -36,6 +36,8 @@ class SettingsPage(QWidget):
     language_changed = Signal(str)
     add_root_requested = Signal(str)
     remove_root_requested = Signal(str)
+    add_comic_root_requested = Signal(str)
+    remove_comic_root_requested = Signal(str)
     scan_requested = Signal()
     scan_depth_changed = Signal(int)
     hash_strategy_changed = Signal(str)
@@ -49,6 +51,7 @@ class SettingsPage(QWidget):
         super().__init__(parent)
         self._last_summary: dict[str, object] = {}
         self._current_roots: list[str] = []
+        self._current_comic_roots: list[str] = []
         self._thumbnail_task_kind: str | None = None
         self._project_font_families: list[str] = []
         self._font_source: str = "system"
@@ -190,6 +193,21 @@ class SettingsPage(QWidget):
         self.folders.setSpacing(4)
         library_layout.addWidget(self.folders)
 
+        comic_row = QHBoxLayout()
+        self.comic_label = QLabel("COMIC FOLDERS")
+        self.comic_label.setStyleSheet("font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #6a7382;")
+        self.add_comic_path_button = QPushButton("+ Add Comic Path")
+        self.add_comic_path_button.setObjectName("PrimaryButton")
+        self.add_comic_path_button.clicked.connect(self._pick_comic_folder)
+        comic_row.addWidget(self.comic_label, 1)
+        comic_row.addWidget(self.add_comic_path_button)
+        library_layout.addLayout(comic_row)
+
+        self.comic_folders = QListWidget()
+        self.comic_folders.setObjectName("LibraryPathList")
+        self.comic_folders.setSpacing(4)
+        library_layout.addWidget(self.comic_folders)
+
         options_row = QHBoxLayout()
         options_row.setSpacing(10)
         self.scan_depth_label = QLabel("Scan depth")
@@ -310,6 +328,12 @@ class SettingsPage(QWidget):
         for path in self._current_roots:
             self._append_path_item(path)
 
+    def set_comic_roots(self, paths: list[str]) -> None:
+        self._current_comic_roots = list(paths)
+        self.comic_folders.clear()
+        for path in self._current_comic_roots:
+            self._append_comic_path_item(path)
+
     def set_scan_depth(self, depth: int) -> None:
         index = self.scan_depth_combo.findData(depth)
         self.scan_depth_combo.blockSignals(True)
@@ -418,6 +442,8 @@ class SettingsPage(QWidget):
         self.language_label.setText(tr("settings.display_language", "Display language"))
         self.library_label.setText(tr("settings.library_folders", "Library Folders"))
         self.add_path_button.setText(tr("settings.add_path", "+ Add Path"))
+        self.comic_label.setText(tr("settings.comic_folders", "Comic Folders"))
+        self.add_comic_path_button.setText(tr("settings.add_comic_path", "+ Add Comic Path"))
         self.scan_btn.setText(tr("settings.scan_now", "Scan folders for new books now"))
         self.manage_btn.setText(tr("settings.manage_metadata", "Manage Metadata"))
         self.restart_hint.setText(tr("settings.restart_hint", "Restart application to apply language changes."))
@@ -454,6 +480,7 @@ class SettingsPage(QWidget):
         if self._thumbnail_task_kind:
             self.thumbnail_task_status.setText(tr("settings.thumb.done", "Task completed"))
         self.set_library_roots(self._current_roots)
+        self.set_comic_roots(self._current_comic_roots)
         self._set_language_options()
         self.set_scan_summary(self._last_summary)
 
@@ -472,6 +499,12 @@ class SettingsPage(QWidget):
         if not directory:
             return
         self.add_root_requested.emit(directory)
+
+    def _pick_comic_folder(self) -> None:
+        directory = QFileDialog.getExistingDirectory(self, tr("settings.pick_comic_folder", "Select Comic Folder"))
+        if not directory:
+            return
+        self.add_comic_root_requested.emit(directory)
 
     def _build_shortcuts_page(self) -> QWidget:
         page = QFrame()
@@ -519,6 +552,27 @@ class SettingsPage(QWidget):
         item.setSizeHint(row.sizeHint())
         self.folders.addItem(item)
         self.folders.setItemWidget(item, row)
+
+    def _append_comic_path_item(self, path: str) -> None:
+        item = QListWidgetItem()
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(8)
+
+        path_label = QLabel(path)
+        path_label.setObjectName("PageSubtitle")
+        path_label.setWordWrap(True)
+        layout.addWidget(path_label, 1)
+
+        delete_btn = QPushButton(tr("settings.delete_path", "Delete"))
+        delete_btn.setObjectName("DangerButton")
+        delete_btn.clicked.connect(lambda _=False, target=path: self.remove_comic_root_requested.emit(target))
+        layout.addWidget(delete_btn, 0)
+
+        item.setSizeHint(row.sizeHint())
+        self.comic_folders.addItem(item)
+        self.comic_folders.setItemWidget(item, row)
 
     def _emit_language_changed(self) -> None:
         code = self.language_combo.currentData() or "en"

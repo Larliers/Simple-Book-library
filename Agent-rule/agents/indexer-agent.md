@@ -8,6 +8,7 @@
 - 识别资源类型：`pdf`、`epub`、`txt`、`comic_folder`。
 - 建立和更新资源索引。
 - 维护增量扫描检查点与变更集。
+- 扫描 `Comic Folders` 并识别“最深含图目录”漫画资源单元（最大 5 级）。
 
 ## Out of Scope
 - 不负责元数据语义解析。
@@ -25,8 +26,10 @@
   "request_id": "string",
   "task_id": "string",
   "scan_roots": ["string"],
+  "comic_roots": ["string"],
   "scan_mode": "full|incremental",
   "resource_types": ["pdf|epub|txt|comic_folder"],
+  "comic_max_depth": 5,
   "last_checkpoint": "ISO-8601|null",
   "constraints": ["string"],
   "trace_id": "string"
@@ -45,6 +48,10 @@
         "resource_id": "string",
         "resource_type": "string",
         "path": "string",
+        "comic_root": "string|null",
+        "cover_image_path": "string|null",
+        "image_count": 0,
+        "info_text": "string|null",
         "change_type": "created|updated|deleted"
       }
     ],
@@ -52,6 +59,7 @@
     "scan_metrics": {
       "scanned_paths": 0,
       "detected_resources": 0,
+      "detected_comic_folders": 0,
       "duration_ms": 0
     }
   },
@@ -65,3 +73,4 @@
 - `resource_index_delta` 必须只包含本次变化项。
 - 扫描错误必须写入 `errors`，不得静默吞掉。
 - 输出字段名必须与合同一致，禁止临时字段。
+- `comic_folder` 必须带 `comic_root`、`cover_image_path`、`image_count`、`info_text` 字段。
