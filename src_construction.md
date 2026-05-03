@@ -1,6 +1,6 @@
 ﻿# src 结构说明书（精简且完整）
 
-更新时间：2026-04-27
+更新时间：2026-05-03
 
 ## 1. 文档目标
 - 保留字符串式文件路径结构。
@@ -150,6 +150,7 @@ src/
 - Library 展示：主区双栏，右侧详情栏常驻且可拖拽宽度。
 - Favorites/CollectionDetail 展示：支持与 Library 一致的 grid/list 切换；主区接入右侧详情栏；详情页主区布局采用与 Library 相同的伸展策略，避免分栏贴底；grid 卡片采用 cover-only 样式并支持选中态；模式持久化到 `app_settings`。
 - Settings 导航：新增 Shortcuts 占位标签页（后续用于快捷键自定义）。
+- Reading Now 临时废弃（仅 UI 隐藏）：侧栏不再显示 Reading Now 入口；Library/Favorites/CollectionDetail 不再显示状态列或状态详情，不再提供“标记为阅读中”入口；底层 `status` 字段与数据结构保持不变。
 - TopBar：移除右侧 IMPORT/NEW LIST/刷新/菜单占位区，搜索栏填充顶部可用宽度。
 - TopBar：搜索框支持最小高度与字号放大；搜索输入与建议下拉字号可在 Settings 调节并持久化（默认 15px）。
 - 网格布局：Library/Missed/Favorites/CollectionDetail 的书籍网格统一左内边距 12px，避免左侧贴边溢出观感。

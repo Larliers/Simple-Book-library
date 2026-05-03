@@ -82,17 +82,6 @@ class BookCardWidget(QFrame):
             author.setToolTip(meta_text)
             layout.addWidget(author)
 
-            status = QLabel(resource.status)
-            status.setObjectName("BookStatus")
-            status.setAlignment(Qt.AlignCenter)
-            status.setFixedWidth(58)
-
-            row = QHBoxLayout()
-            row.setContentsMargins(0, 0, 0, 0)
-            row.addWidget(status, 0)
-            row.addStretch(1)
-            layout.addLayout(row)
-
             tags_row = QHBoxLayout()
             tags_row.setContentsMargins(0, 0, 0, 0)
             tags_row.setSpacing(4)

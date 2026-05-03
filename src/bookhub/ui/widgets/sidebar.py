@@ -47,7 +47,6 @@ class SidebarWidget(QWidget):
         button_definitions = [
             ("library", "Library", "library.svg"),
             ("collections", "Collections", "collections.svg"),
-            ("reading_now", "Reading Now", "reading_now.svg"),
             ("favorites", "Favorites", "favorites.svg"),
             ("tools", "Tools", "tools.svg"),
             ("missed", "Missed", "trash.svg"),
@@ -96,7 +95,8 @@ class SidebarWidget(QWidget):
         self.subtitle.setText(tr("sidebar.subtitle", "Local Database"))
         self._buttons["library"].setText(tr("sidebar.library", "Library"))
         self._buttons["collections"].setText(tr("sidebar.collections", "Collections"))
-        self._buttons["reading_now"].setText(tr("sidebar.reading_now", "Reading Now"))
+        if "reading_now" in self._buttons:
+            self._buttons["reading_now"].setText(tr("sidebar.reading_now", "Reading Now"))
         self._buttons["favorites"].setText(tr("sidebar.favorites", "Favorites"))
         self._buttons["tools"].setText(tr("sidebar.tools", "Tools"))
         self._buttons["missed"].setText(tr("sidebar.missed", "Missed"))

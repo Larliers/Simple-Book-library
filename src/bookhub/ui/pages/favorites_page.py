@@ -159,7 +159,7 @@ class FavoritesPage(QWidget):
         self._scroll.setWidget(self._container)
         self._view_stack.addWidget(self._scroll)
 
-        self._list_table = QTableWidget(0, 5)
+        self._list_table = QTableWidget(0, 4)
         self._list_table.setSelectionBehavior(QTableWidget.SelectRows)
         self._list_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self._list_table.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -207,7 +207,6 @@ class FavoritesPage(QWidget):
                 tr("library.table.cover", "Cover"),
                 tr("library.table.title", "Title"),
                 tr("library.table.author", "Author"),
-                tr("library.table.status", "Status"),
                 tr("library.table.tags", "Tags"),
             ]
         )
@@ -321,8 +320,7 @@ class FavoritesPage(QWidget):
                 2,
                 QTableWidgetItem(format_author_publisher_meta(resource.author, resource.publisher)),
             )
-            self._list_table.setItem(row, 3, QTableWidgetItem(resource.status))
-            self._list_table.setItem(row, 4, QTableWidgetItem(", ".join(resource.tags)))
+            self._list_table.setItem(row, 3, QTableWidgetItem(", ".join(resource.tags)))
 
         self._list_table.resizeColumnsToContents()
         self._list_table.setColumnWidth(1, 260)

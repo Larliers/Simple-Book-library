@@ -75,10 +75,6 @@ class BookDetailPanel(QFrame):
         self._publisher.setObjectName("DetailMeta")
         content_layout.addWidget(self._publisher)
 
-        self._status = QLabel()
-        self._status.setObjectName("DetailMeta")
-        content_layout.addWidget(self._status)
-
         self._tags = QLabel()
         self._tags.setObjectName("DetailMeta")
         self._tags.setWordWrap(True)
@@ -120,14 +116,12 @@ class BookDetailPanel(QFrame):
         title_text = resource.title.strip() if resource.title else "Unknown"
         author_text = resource.author.strip() if resource.author else "Unknown"
         publisher_text = (resource.publisher or "").strip() or "Unknown"
-        status_text = (resource.status or "").strip() or "Unknown"
         tags_text = "、".join(resource.tags) if resource.tags else tr("library.detail.tags_empty", "无")
         col_text = "、".join(collection_names) if collection_names else tr("library.detail.no_collections", "未加入任何自定义书单")
 
         self._title.setText(title_text)
         self._author.setText(tr("library.detail.author", "作者：{value}").format(value=author_text))
         self._publisher.setText(tr("library.detail.publisher", "出版社：{value}").format(value=publisher_text))
-        self._status.setText(tr("library.detail.status", "状态：{value}").format(value=status_text))
         self._tags.setText(tr("library.detail.tags", "标签：{value}").format(value=tags_text))
         self._collections.setText(
             tr("library.detail.collections", "所属书单：{value}").format(value=col_text)
@@ -258,7 +252,7 @@ class LibraryPage(QWidget):
         self.grid_scroll.setWidget(self.grid_container)
         self.view_stack.addWidget(self.grid_scroll)
 
-        self.list_table = QTableWidget(0, 5)
+        self.list_table = QTableWidget(0, 4)
         self.list_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.list_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.list_table.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -295,7 +289,6 @@ class LibraryPage(QWidget):
                 tr("library.table.cover", "Cover"),
                 tr("library.table.title", "Title"),
                 tr("library.table.author", "Author"),
-                tr("library.table.status", "Status"),
                 tr("library.table.tags", "Tags"),
             ]
         )
@@ -400,8 +393,7 @@ class LibraryPage(QWidget):
                 2,
                 QTableWidgetItem(format_author_publisher_meta(item.author, item.publisher)),
             )
-            self.list_table.setItem(row, 3, QTableWidgetItem(item.status))
-            self.list_table.setItem(row, 4, QTableWidgetItem(", ".join(item.tags)))
+            self.list_table.setItem(row, 3, QTableWidgetItem(", ".join(item.tags)))
 
         self.list_table.resizeColumnsToContents()
         self.list_table.setColumnWidth(1, 260)
@@ -677,7 +669,6 @@ class LibraryPage(QWidget):
         if self._repository is not None and not self.missing_mode:
             add_favorite_action = menu.addAction(tr("library.menu.add_to_favorites", "Add to Favorites"))
         add_tag_action = menu.addAction(tr("library.menu.add_tag", "Add Tag"))
-        mark_action = menu.addAction(tr("library.menu.mark_reading", "Mark as Reading"))
         chosen = menu.exec(global_pos)
 
         if chosen == open_action:
@@ -697,8 +688,6 @@ class LibraryPage(QWidget):
             dialog = AddTagDialog(self)
             if dialog.exec():
                 self._track_event("sort", resource_id)
-        elif chosen == mark_action:
-            self._track_event("sort", resource_id)
 
     def _add_to_favorites(self, resource: ResourceItem) -> None:
         if self._repository is None:
