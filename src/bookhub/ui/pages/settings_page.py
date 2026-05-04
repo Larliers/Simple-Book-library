@@ -183,10 +183,12 @@ class SettingsPage(QWidget):
         row = QHBoxLayout()
         self.library_label = QLabel("LIBRARY FOLDERS")
         self.library_label.setStyleSheet("font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #6a7382;")
+
+        row.addWidget(self.library_label, 1)
+
         self.add_path_button = QPushButton("+ Add Path")
         self.add_path_button.setObjectName("PrimaryButton")
         self.add_path_button.clicked.connect(self._pick_folder)
-        row.addWidget(self.library_label, 1)
         row.addWidget(self.add_path_button)
         library_layout.addLayout(row)
 
@@ -559,29 +561,28 @@ class SettingsPage(QWidget):
     def _append_root_row(self, list_widget: QListWidget, path: str, remove_callback) -> None:
         item = QListWidgetItem()
         row = QWidget()
+        row.setObjectName("PathRow")
         layout = QHBoxLayout(row)
         layout.setContentsMargins(8, 4, 12, 4)
-        layout.setSpacing(8)
+        layout.setSpacing(10)
+        row.setMinimumHeight(40)
 
-        delete_btn = QPushButton("X")
-        delete_btn.setObjectName("DangerButton")
+        delete_btn = QPushButton("Delete")
+        delete_btn.setObjectName("PathDeleteButton")
         delete_btn.setToolTip(tr("settings.delete_path", "Delete"))
-        delete_btn.setFixedWidth(26)
+        delete_btn.setFixedSize(96, 40)
         delete_btn.clicked.connect(
             lambda _=False, target=path: self._confirm_and_remove_root(target, remove_callback)
         )
         layout.addWidget(delete_btn, 0, Qt.AlignLeft)
 
         path_label = QLabel(path)
-        path_label.setObjectName("PageSubtitle")
+        path_label.setObjectName("PathValueLabel")
         path_label.setWordWrap(False)
         path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         path_label.setToolTip(path)
-        path_label.setMinimumWidth(120)
-
-        metrics = QFontMetrics(path_label.font())
-        available_width = max(120, list_widget.viewport().width() - 80)
-        path_label.setText(metrics.elidedText(path, Qt.ElideRight, available_width))
+        path_label.setMinimumHeight(40)
+        path_label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
         layout.addWidget(path_label, 1)
 
         item.setSizeHint(row.sizeHint())

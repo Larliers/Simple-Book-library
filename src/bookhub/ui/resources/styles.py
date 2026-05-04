@@ -107,6 +107,22 @@ QPushButton#DangerButton {
 QPushButton#DangerButton:hover {
     background: #ffefee;
 }
+QPushButton#PathDeleteButton {
+    color: #ba1a1a;
+    border: 1px solid #efc3c0;
+    background: #ffffff;
+    min-width: 96px;
+    max-width: 96px;
+    min-height: 40px;
+    max-height: 40px;
+    padding: 0px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 20px;
+}
+QPushButton#PathDeleteButton:hover {
+    background: #ffefee;
+}
 #TopBar {
     background: #f9f9f9;
     border-bottom: 1px solid #d4dae4;
@@ -201,11 +217,34 @@ QListWidget#LibraryPathList {
     padding: 0px;
 }
 QListWidget#LibraryPathList::item {
-    border: 1px solid #d6ddea;
-    background: #ffffff;
-    margin: 2px 0px;
+    border: none;
+    background: transparent;
+    margin: 1px 0px;
     padding: 0px;
 }
+QLabel#PathValueLabel {
+    color: #4a5568;
+    background: transparent;
+    border: none;
+    padding: 2px 8px 3px 8px;
+}
+QWidget#PathRow {
+    background: transparent;
+    border: none;
+}
+QWidget#PathRow {
+    min-height: 40px;
+}
+QWidget#PathRow QLabel {
+    background: transparent;
+    border: none;
+}
+QLabel#PathValueLabel[pathFontPx="14"] { font-size: 14px; }
+QLabel#PathValueLabel[pathFontPx="16"] { font-size: 16px; }
+QLabel#PathValueLabel[pathFontPx="18"] { font-size: 18px; }
+QLabel#PathValueLabel[pathFontPx="20"] { font-size: 20px; }
+QLabel#PathValueLabel[pathFontPx="22"] { font-size: 22px; }
+QLabel#PathValueLabel[pathFontPx="24"] { font-size: 24px; }
 QProgressBar {
     border: 1px solid #c8d0dc;
     background: #ffffff;
@@ -222,6 +261,8 @@ QProgressBar::chunk {
 #PageSubtitle {
     color: #6a7382;
     font-size: 13px;
+    background: transparent;
+    border: none;
 }
 #ViewTogglePanel {
     border: none;
@@ -270,10 +311,14 @@ QPushButton#ViewToggleButton:checked {
 #BookTitle {
     font-size: 15px;
     font-weight: 700;
+    background: transparent;
+    border: none;
 }
 #BookMeta {
     color: #697286;
     font-size: 12px;
+    background: transparent;
+    border: none;
 }
 #BookStatus {
     color: #0f5fa8;
@@ -334,10 +379,14 @@ QWidget#LibraryGridContainer {
 #DetailMeta {
     color: #4a5568;
     font-size: 12px;
+    background: transparent;
+    border: none;
 }
 #DetailPath {
     color: #5b6474;
     font-size: 11px;
+    background: transparent;
+    border: none;
 }
 QHeaderView::section {
     background: #eef2f7;
