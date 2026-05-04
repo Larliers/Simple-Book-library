@@ -16,6 +16,7 @@ from bookhub.library.metadata import (
     generate_epub_thumbnail,
     generate_pdf_thumbnail,
 )
+from bookhub.library.media_sanitizer import sanitize_image_for_ui
 from bookhub.library.models import (
     COMIC_IMAGE_EXTENSIONS,
     SUPPORTED_EXTENSIONS,
@@ -195,7 +196,11 @@ def scan_comic_roots(repository: LibraryRepository, request: ComicScanRequest) -
             try:
                 from PIL import Image
 
-                with Image.open(str(cover_path)) as img:
+                sanitized_source = thumb_file.with_suffix(".comic_cover_sanitized.png")
+                sanitize_result = sanitize_image_for_ui(cover_path, sanitized_source)
+                source_for_thumb = Path(sanitize_result.output_path) if sanitize_result.ok and sanitize_result.output_path else cover_path
+
+                with Image.open(str(source_for_thumb)) as img:
                     img = img.convert("RGB")
                     img.thumbnail((420, 620))
                     thumb_file.parent.mkdir(parents=True, exist_ok=True)

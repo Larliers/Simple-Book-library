@@ -388,6 +388,21 @@ QWidget#LibraryGridContainer {
     background: transparent;
     border: none;
 }
+QScrollArea#DetailTextScroll {
+    background: transparent;
+    border: none;
+}
+QWidget#DetailTextContainer {
+    background: transparent;
+    border: none;
+}
+QLabel#DetailTextContent {
+    color: #4a5568;
+    font-size: 12px;
+    background: transparent;
+    border: none;
+    padding: 0px;
+}
 QHeaderView::section {
     background: #eef2f7;
     border: none;

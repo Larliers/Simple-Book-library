@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -67,29 +68,29 @@ class BookDetailPanel(QFrame):
         self._title.setWordWrap(True)
         content_layout.addWidget(self._title)
 
-        self._author = QLabel()
-        self._author.setObjectName("DetailMeta")
-        content_layout.addWidget(self._author)
+        self._detail_text_scroll = QScrollArea()
+        self._detail_text_scroll.setObjectName("DetailTextScroll")
+        self._detail_text_scroll.setWidgetResizable(True)
+        self._detail_text_scroll.setFrameShape(QFrame.NoFrame)
+        self._detail_text_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._detail_text_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
-        self._publisher = QLabel()
-        self._publisher.setObjectName("DetailMeta")
-        content_layout.addWidget(self._publisher)
+        self._detail_text_container = QWidget()
+        self._detail_text_container.setObjectName("DetailTextContainer")
+        detail_text_layout = QVBoxLayout(self._detail_text_container)
+        detail_text_layout.setContentsMargins(0, 0, 0, 0)
+        detail_text_layout.setSpacing(0)
 
-        self._tags = QLabel()
-        self._tags.setObjectName("DetailMeta")
-        self._tags.setWordWrap(True)
-        content_layout.addWidget(self._tags)
+        self._detail_text_label = QLabel()
+        self._detail_text_label.setObjectName("DetailTextContent")
+        self._detail_text_label.setWordWrap(True)
+        self._detail_text_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self._detail_text_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        detail_text_layout.addWidget(self._detail_text_label)
 
-        self._collections = QLabel()
-        self._collections.setObjectName("DetailMeta")
-        self._collections.setWordWrap(True)
-        content_layout.addWidget(self._collections)
-
-        self._path = QLabel()
-        self._path.setObjectName("DetailPath")
-        self._path.setWordWrap(True)
-        content_layout.addWidget(self._path)
-        content_layout.addStretch(1)
+        self._detail_text_scroll.setWidget(self._detail_text_container)
+        self._detail_text_scroll.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        content_layout.addWidget(self._detail_text_scroll, 1)
 
         root.addWidget(self._content, 1)
 
@@ -120,14 +121,21 @@ class BookDetailPanel(QFrame):
         col_text = "、".join(collection_names) if collection_names else tr("library.detail.no_collections", "未加入任何自定义书单")
 
         self._title.setText(title_text)
-        self._author.setText(tr("library.detail.author", "作者：{value}").format(value=author_text))
-        self._publisher.setText(tr("library.detail.publisher", "出版社：{value}").format(value=publisher_text))
-        self._tags.setText(tr("library.detail.tags", "标签：{value}").format(value=tags_text))
-        self._collections.setText(
-            tr("library.detail.collections", "所属书单：{value}").format(value=col_text)
-        )
-        self._path.setText(tr("library.detail.path", "文件：{value}").format(value=resource.path or "Unknown"))
 
+        lines = [
+            tr("library.detail.author", "作者：{value}").format(value=author_text),
+            tr("library.detail.publisher", "出版社：{value}").format(value=publisher_text),
+            tr("library.detail.tags", "标签：{value}").format(value=tags_text),
+            tr("library.detail.collections", "所属书单：{value}").format(value=col_text),
+            tr("library.detail.path", "文件：{value}").format(value=resource.path or "Unknown"),
+        ]
+        raw_info_text = (resource.info_text or "").strip()
+        if raw_info_text:
+            lines.append("")
+            lines.append(tr("comic.detail.info_text", "漫画文本信息："))
+            lines.append(raw_info_text)
+
+        self._detail_text_label.setText("\n".join(lines))
         self._empty_label.hide()
         self._content.show()
 

@@ -9,6 +9,8 @@ from xml.etree import ElementTree as ET
 
 from PIL import Image, ImageDraw
 
+from bookhub.library.media_sanitizer import sanitize_image_for_ui
+
 from bookhub.library.models import FingerprintBundle, ParsedMetadata
 
 EPUB_NS = {
@@ -210,7 +212,19 @@ def generate_pdf_thumbnail(file_path: Path, output_path: Path) -> str:
 def generate_epub_thumbnail(file_path: Path, output_path: Path, title_fallback: str) -> str:
     cover_bytes = _extract_epub_cover_bytes(file_path)
     if cover_bytes:
-        with Image.open(BytesIO(cover_bytes)) as cover_image:
+        safe_png_path = output_path.with_suffix(".cover_sanitized.png")
+        try:
+            with Image.open(BytesIO(cover_bytes)) as cover_image:
+                cover_image.save(safe_png_path, format="PNG", icc_profile=None, optimize=True)
+        except Exception:  # noqa: BLE001
+            safe_png_path = output_path.with_suffix(".cover_sanitized_fallback.png")
+            safe_png_path.write_bytes(cover_bytes)
+
+        sanitized = sanitize_image_for_ui(safe_png_path, safe_png_path)
+        if sanitized.ok and sanitized.output_path:
+            with Image.open(Path(sanitized.output_path)) as safe_cover_image:
+                return _save_thumbnail_image(safe_cover_image, output_path)
+        with Image.open(safe_png_path) as cover_image:
             return _save_thumbnail_image(cover_image, output_path)
 
     placeholder = Image.new("RGB", (360, 540), color=(232, 238, 248))
