@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 
 from bookhub.i18n import language_manager, tr
 from bookhub.library import LibraryRepository, ScanWorker, ThumbnailTaskWorker
+from bookhub.library.error_logs import append_conflict_if_new, read_latest_log_text
 from bookhub.ui.models.resource import ResourceItem
 from bookhub.ui.pages.library_page import LibraryPage
 from bookhub.ui.pages.placeholder_page import PlaceholderPage
@@ -217,6 +218,7 @@ class AppWindow(QMainWindow):
         self.settings_page.set_card_spacing(self._repository.get_card_spacing())
         self.settings_page.set_topbar_search_font_size(self._repository.get_topbar_search_font_size())
         self.settings_page.set_scan_summary(self._repository.read_scan_report())
+        self.settings_page.set_error_logs_text(read_latest_log_text())
 
     def _import_directory(self) -> None:
         directory = QFileDialog.getExistingDirectory(self, tr("import.pick_dir", "Select library folder to import"))
@@ -332,28 +334,34 @@ class AppWindow(QMainWindow):
     def _show_name_conflicts(self, conflicts: list[object]) -> None:
         normalized = [item for item in conflicts if isinstance(item, dict)]
         if not normalized:
-            message = tr("scan.conflict.empty", "Name conflicts detected.")
-        else:
-            count = len(normalized)
-            message = tr(
-                "scan.conflict.toast_msg",
-                "Skipped {count} files because same file name + extension already exists.",
-            ).format(count=count)
-            samples = [
-                str(item.get("file_name") or "").strip()
-                for item in normalized[:2]
-                if str(item.get("file_name") or "").strip()
-            ]
-            if samples:
-                preview = "、".join(samples)
-                message = (
-                    f"{message}\n"
-                    f"{tr('scan.conflict.toast_example', 'Example')}: {preview}"
-                )
+            return
 
+        new_logged_count = 0
+        for item in normalized:
+            file_name = str(item.get("file_name") or "").strip()
+            src = str(item.get("source_path") or item.get("path") or "").strip()
+            existing = str(item.get("existing_path") or "").strip()
+            line = f"conflict={file_name} | source={src} | existing={existing}"
+            if append_conflict_if_new(line):
+                new_logged_count += 1
+
+        self.settings_page.set_error_logs_text(read_latest_log_text())
+
+        if new_logged_count <= 0:
+            return
+
+        count = len(normalized)
+        message = tr(
+            "scan.conflict.toast_msg",
+            "Skipped {count} files because same file name + extension already exists.",
+        ).format(count=count)
+        hint = tr(
+            "scan.conflict.settings_hint",
+            "New conflict logs were added. Check Settings > Error logs.",
+        )
         self._scan_conflict_toast.show_toast(
             title=tr("scan.conflict_title", "Duplicate name and extension detected"),
-            message=message,
+            message=f"{message}\n{hint}",
             duration_seconds=7,
         )
 

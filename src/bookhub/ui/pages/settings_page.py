@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QStackedWidget,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -86,6 +87,7 @@ class SettingsPage(QWidget):
             ("settings.nav.library", "Library"),
             ("settings.nav.appearance", "Appearance"),
             ("settings.nav.about", "About"),
+            ("settings.nav.error_logs", "Error logs"),
             ("settings.nav.shortcuts", "Shortcuts"),
         ]
         self.nav.addItems([label for _, label in self._nav_labels])
@@ -320,6 +322,25 @@ class SettingsPage(QWidget):
         content_layout.addStretch(1)
 
         self.content_stack.addWidget(content)
+
+        self.error_logs_page = QFrame()
+        self.error_logs_page.setObjectName("PageSection")
+        error_logs_layout = QVBoxLayout(self.error_logs_page)
+        error_logs_layout.setContentsMargins(18, 18, 18, 18)
+        error_logs_layout.setSpacing(12)
+        self.error_logs_title = QLabel("Error logs")
+        self.error_logs_title.setObjectName("PageTitle")
+        error_logs_layout.addWidget(self.error_logs_title)
+        self.error_logs_hint = QLabel("Startup/scan conflict logs are listed below.")
+        self.error_logs_hint.setObjectName("PageSubtitle")
+        self.error_logs_hint.setWordWrap(True)
+        error_logs_layout.addWidget(self.error_logs_hint)
+        self.error_logs_text = QTextEdit()
+        self.error_logs_text.setObjectName("ErrorLogsText")
+        self.error_logs_text.setReadOnly(True)
+        error_logs_layout.addWidget(self.error_logs_text, 1)
+        self.content_stack.addWidget(self.error_logs_page)
+
         self.shortcuts_page = self._build_shortcuts_page()
         self.content_stack.addWidget(self.shortcuts_page)
 
@@ -540,9 +561,18 @@ class SettingsPage(QWidget):
 
     def _on_nav_changed(self, row: int) -> None:
         if row == len(self._nav_labels) - 1:
+            self.content_stack.setCurrentIndex(2)
+            return
+        if row == len(self._nav_labels) - 2:
             self.content_stack.setCurrentIndex(1)
             return
         self.content_stack.setCurrentIndex(0)
+
+    def set_error_logs_text(self, text: str) -> None:
+        value = str(text or "").strip()
+        if not value:
+            value = tr("settings.error_logs.empty", "No error logs yet.")
+        self.error_logs_text.setPlainText(value)
 
     def _append_path_item(self, path: str) -> None:
         self._append_root_row(
