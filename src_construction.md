@@ -1,6 +1,6 @@
 ﻿# src 结构说明书（精简且完整）
 
-更新时间：2026-05-03
+更新时间：2026-05-15
 
 ## 1. 文档目标
 - 保留字符串式文件路径结构。
@@ -57,6 +57,7 @@ src/
       │  └─ resource.py
       ├─ pages/
       │  ├─ __init__.py
+      │  ├─ comic_page.py
       │  ├─ collections_page.py
       │  ├─ favorites_page.py
       │  ├─ library_page.py
@@ -120,6 +121,7 @@ src/
 
 ### 3.8 页面组件（bookhub/ui/pages）
 - `src/bookhub/ui/pages/__init__.py`：页面包入口。
+- `src/bookhub/ui/pages/comic_page.py`：Comic/Comic Fav 页面；仅 grid 视图；封面双击外部打开；右键添加/移除收藏。
 - `src/bookhub/ui/pages/library_page.py`：Library/Missed 页面；grid/list；右侧详情栏；单/双击交互。
 - `src/bookhub/ui/pages/collections_page.py`：书单页与书单详情页；详情支持 grid/list 视图与侧键返回上一级。
 - `src/bookhub/ui/pages/favorites_page.py`：收藏页；支持 grid/list 视图与排序持久化。
