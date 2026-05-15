@@ -18,8 +18,6 @@ Thumbs.db
 #测试文件夹
 .book_test_using/
 book_test_using/
-.Scan_error_logs/
-Scan_error_logs/
 
 # 运行期数据
 src/sql/*.db
