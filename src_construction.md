@@ -141,6 +141,7 @@ src/
 - `src/bookhub/ui/widgets/slide_toast.py`：右下角滑入提示组件。
 
 ## 4. 当前关键实现（简要）
+- 运行依赖：`requirements.txt` 采用固定版本策略；在 Python 3.10.6 环境锁定 `PySide6==6.6.1` 以规避 `libshiboken/signature` 初始化崩溃。
 - 缩略图：WebP 落盘，DB 保存 `file://` URL。
 - 数据能力：Collections、Favorites、Tags 已接入。
 - Library 展示：主区双栏，右侧详情栏常驻且可拖拽宽度。
