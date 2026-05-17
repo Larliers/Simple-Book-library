@@ -1,6 +1,6 @@
 ﻿# src 结构说明书（精简且完整）
 
-更新时间：2026-05-15
+更新时间：2026-05-17
 
 ## 1. 文档目标
 - 保留字符串式文件路径结构。
@@ -19,11 +19,9 @@ src/
 │     ├─ favorites.svg
 │     ├─ library.svg
 │     ├─ menu_vertical.svg
-│     ├─ reading_now.svg
 │     ├─ refresh.svg
 │     ├─ search.svg
 │     ├─ settings.svg
-│     ├─ tools.svg
 │     ├─ trash.svg
 │     ├─ view_grid.svg
 │     └─ view_list.svg
@@ -61,8 +59,6 @@ src/
       │  ├─ collections_page.py
       │  ├─ favorites_page.py
       │  ├─ library_page.py
-      │  ├─ placeholder_page.py
-      │  ├─ plugins_page.py
       │  └─ settings_page.py
       ├─ resources/
       │  ├─ __init__.py
@@ -125,9 +121,7 @@ src/
 - `src/bookhub/ui/pages/library_page.py`：Library/Missed 页面；grid/list；右侧详情栏；单/双击交互。
 - `src/bookhub/ui/pages/collections_page.py`：书单页与书单详情页；详情支持 grid/list 视图与侧键返回上一级。
 - `src/bookhub/ui/pages/favorites_page.py`：收藏页；支持 grid/list 视图与排序持久化。
-- `src/bookhub/ui/pages/settings_page.py`：设置页（扫描、匹配策略、卡片间距、缩略图任务、Shortcuts 占位标签页）；Library/Comic 路径列表项统一为“左侧单行路径+右侧固定删除按钮”布局，关闭横向滚动并确保窄宽度下删除按钮不被遮挡。
-- `src/bookhub/ui/pages/plugins_page.py`：工具/插件页。
-- `src/bookhub/ui/pages/placeholder_page.py`：占位页通用实现。
+- `src/bookhub/ui/pages/settings_page.py`：设置页（扫描、匹配策略、卡片间距、缩略图任务、错误日志）；导航仅保留 General 与 Error logs；Library/Comic 路径列表项统一为“左侧单行路径+右侧固定删除按钮”布局，关闭横向滚动并确保窄宽度下删除按钮不被遮挡。
 
 ### 3.9 UI 资源组件（bookhub/ui/resources）
 - `src/bookhub/ui/resources/__init__.py`：资源包入口。
@@ -151,8 +145,8 @@ src/
 - 数据能力：Collections、Favorites、Tags 已接入。
 - Library 展示：主区双栏，右侧详情栏常驻且可拖拽宽度。
 - Favorites/CollectionDetail 展示：支持与 Library 一致的 grid/list 切换；主区接入右侧详情栏；详情页主区布局采用与 Library 相同的伸展策略，避免分栏贴底；grid 卡片采用 cover-only 样式并支持选中态；模式持久化到 `app_settings`。
-- Settings 导航：新增 Shortcuts 占位标签页（后续用于快捷键自定义）。
-- Reading Now 临时废弃（仅 UI 隐藏）：侧栏不再显示 Reading Now 入口；Library/Favorites/CollectionDetail 不再显示状态列或状态详情，不再提供“标记为阅读中”入口；底层 `status` 字段与数据结构保持不变。
+- Settings 导航：仅保留 General 与 Error logs 两项；移除顶部搜索框、Shortcuts、Manage Metadata 占位区域。
+- Reading Now 与 Tools 占位页已下线：主窗口不再注册对应页面，侧栏仅保留可用功能入口；底层 `status` 字段与数据结构保持不变。
 - TopBar：移除右侧 IMPORT/NEW LIST/刷新/菜单占位区，搜索栏填充顶部可用宽度。
 - TopBar：搜索框支持最小高度与字号放大；搜索输入与建议下拉字号可在 Settings 调节并持久化（默认 15px）。
 - 网格布局：Library/Missed/Favorites/CollectionDetail 的书籍网格统一左内边距 12px，避免左侧贴边溢出观感。

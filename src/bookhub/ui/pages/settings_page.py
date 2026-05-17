@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMessageBox,
     QListWidget,
     QListWidgetItem,
@@ -68,11 +67,6 @@ class SettingsPage(QWidget):
         self.app_title.setStyleSheet("font-size: 28px; font-weight: 700;")
         top.addWidget(self.app_title)
         top.addStretch(1)
-        self.search_settings = QLineEdit()
-        self.search_settings.setObjectName("SettingsSearchInput")
-        self.search_settings.setPlaceholderText("Search settings")
-        self.search_settings.setFixedWidth(260)
-        top.addWidget(self.search_settings)
         root.addLayout(top)
 
         shell = QHBoxLayout()
@@ -84,11 +78,7 @@ class SettingsPage(QWidget):
         self.nav.setFixedWidth(210)
         self._nav_labels = [
             ("settings.nav.general", "General"),
-            ("settings.nav.library", "Library"),
-            ("settings.nav.appearance", "Appearance"),
-            ("settings.nav.about", "About"),
             ("settings.nav.error_logs", "Error logs"),
-            ("settings.nav.shortcuts", "Shortcuts"),
         ]
         self.nav.addItems([label for _, label in self._nav_labels])
         self.nav.setCurrentRow(0)
@@ -312,11 +302,7 @@ class SettingsPage(QWidget):
         self.scan_btn = QPushButton("Scan folders for new books now")
         self.scan_btn.setObjectName("PrimaryButton")
         self.scan_btn.clicked.connect(self.scan_requested.emit)
-        self.manage_btn = QPushButton("Manage Metadata")
-        self.manage_btn.setObjectName("GhostButton")
-        self.manage_btn.setEnabled(False)
         action_row.addWidget(self.scan_btn)
-        action_row.addWidget(self.manage_btn)
         action_row.addStretch(1)
         content_layout.addLayout(action_row)
         content_layout.addStretch(1)
@@ -340,9 +326,6 @@ class SettingsPage(QWidget):
         self.error_logs_text.setReadOnly(True)
         error_logs_layout.addWidget(self.error_logs_text, 1)
         self.content_stack.addWidget(self.error_logs_page)
-
-        self.shortcuts_page = self._build_shortcuts_page()
-        self.content_stack.addWidget(self.shortcuts_page)
 
         self._set_language_options()
         self.set_language_selection("en")
@@ -478,9 +461,7 @@ class SettingsPage(QWidget):
         self.comic_label.setText(tr("settings.comic_folders", "Comic Folders"))
         self.add_comic_path_button.setText(tr("settings.add_comic_path", "+ Add Comic Path"))
         self.scan_btn.setText(tr("settings.scan_now", "Scan folders for new books now"))
-        self.manage_btn.setText(tr("settings.manage_metadata", "Manage Metadata"))
         self.restart_hint.setText(tr("settings.restart_hint", "Restart application to apply language changes."))
-        self.search_settings.setPlaceholderText(tr("settings.search_placeholder", "Search settings"))
         self.scan_depth_label.setText(tr("settings.scan_depth", "Scan depth"))
         self.hash_strategy_label.setText(tr("settings.hash_strategy", "Missed hash matching"))
         self.card_spacing_label.setText(tr("settings.card_spacing", "Card spacing"))
@@ -499,16 +480,6 @@ class SettingsPage(QWidget):
                 "settings.formats_hint",
                 "Supported formats: PDF, EPUB. Unsupported formats are ignored and recorded in scan summary.",
             )
-        )
-        self.shortcuts_title.setText(tr("settings.shortcuts.title", "Shortcuts"))
-        self.shortcuts_placeholder.setText(
-            tr(
-                "settings.shortcuts.placeholder",
-                "Shortcut customization will be available in a future update.",
-            )
-        )
-        self.shortcuts_modify_btn.setText(
-            tr("settings.shortcuts.modify_disabled", "Modify Shortcuts (Coming Soon)")
         )
         if self._thumbnail_task_kind:
             self.thumbnail_task_status.setText(tr("settings.thumb.done", "Task completed"))
@@ -539,34 +510,8 @@ class SettingsPage(QWidget):
             return
         self.add_comic_root_requested.emit(directory)
 
-    def _build_shortcuts_page(self) -> QWidget:
-        page = QFrame()
-        page.setObjectName("PageSection")
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(18, 18, 18, 18)
-        layout.setSpacing(12)
-        self.shortcuts_title = QLabel()
-        self.shortcuts_title.setObjectName("PageTitle")
-        layout.addWidget(self.shortcuts_title)
-        self.shortcuts_placeholder = QLabel()
-        self.shortcuts_placeholder.setObjectName("PageSubtitle")
-        self.shortcuts_placeholder.setWordWrap(True)
-        layout.addWidget(self.shortcuts_placeholder)
-        self.shortcuts_modify_btn = QPushButton()
-        self.shortcuts_modify_btn.setObjectName("GhostButton")
-        self.shortcuts_modify_btn.setEnabled(False)
-        layout.addWidget(self.shortcuts_modify_btn, 0)
-        layout.addStretch(1)
-        return page
-
     def _on_nav_changed(self, row: int) -> None:
-        if row == len(self._nav_labels) - 1:
-            self.content_stack.setCurrentIndex(2)
-            return
-        if row == len(self._nav_labels) - 2:
-            self.content_stack.setCurrentIndex(1)
-            return
-        self.content_stack.setCurrentIndex(0)
+        self.content_stack.setCurrentIndex(1 if row == 1 else 0)
 
     def set_error_logs_text(self, text: str) -> None:
         value = str(text or "").strip()

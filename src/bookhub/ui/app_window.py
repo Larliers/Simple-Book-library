@@ -16,8 +16,6 @@ from bookhub.library import LibraryRepository, ScanWorker, ThumbnailTaskWorker
 from bookhub.library.error_logs import append_conflict_if_new, read_latest_log_text
 from bookhub.ui.models.resource import ResourceItem
 from bookhub.ui.pages.library_page import LibraryPage
-from bookhub.ui.pages.placeholder_page import PlaceholderPage
-from bookhub.ui.pages.plugins_page import PluginsPage
 from bookhub.ui.pages.settings_page import SettingsPage
 from bookhub.ui.pages.comic_page import ComicPage
 from bookhub.ui.resources.layout_config import (
@@ -91,14 +89,11 @@ class AppWindow(QMainWindow):
         self.library_page = LibraryPage(self._library_vm, missing_mode=False, repository=self._repository)
         self._register_page("library", self.library_page)
         self._register_page("collections", CollectionsPage(self._repository))
-        self._register_page("reading_now", PlaceholderPage("Reading Now", "Reading queue page skeleton."))
         self._register_page("favorites", FavoritesPage(self._repository))
         self.comic_page = ComicPage(self._repository, favorite_only=False)
         self._register_page("comic", self.comic_page)
         self.comic_fav_page = ComicPage(self._repository, favorite_only=True)
         self._register_page("comic_fav", self.comic_fav_page)
-        self.plugins_page = PluginsPage()
-        self._register_page("tools", self.plugins_page)
         self.missed_page = LibraryPage(self._library_vm, missing_mode=True, repository=self._repository)
         self._register_page("missed", self.missed_page)
         self.settings_page = SettingsPage()
@@ -469,5 +464,4 @@ class AppWindow(QMainWindow):
         comic_fav_retranslate = getattr(self.page_stack.widget(self._pages["comic_fav"]), "retranslate_ui", None)
         if callable(comic_fav_retranslate):
             comic_fav_retranslate()
-        self.plugins_page.retranslate_ui()
         self.settings_page.retranslate_ui()
