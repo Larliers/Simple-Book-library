@@ -110,34 +110,40 @@ class BookDetailPanel(QFrame):
         self._content.hide()
         self._empty_label.show()
 
-    def set_resource(self, resource: ResourceItem, collection_names: list[str]) -> None:
+    def set_resource(self, resource: ResourceItem, book_collection_names: list[str] | None = None) -> None:
         self._resource = resource
         self._render_cover(resource.thumbnail_path)
 
         title_text = resource.title.strip() if resource.title else "Unknown"
+        self._title.setText(title_text)
+        lines = self._build_detail_lines(resource, book_collection_names or [])
+
+        self._detail_text_label.setText("\n".join(lines))
+        self._empty_label.hide()
+        self._content.show()
+
+    def _build_detail_lines(self, resource: ResourceItem, book_collection_names: list[str]) -> list[str]:
         author_text = resource.author.strip() if resource.author else "Unknown"
         publisher_text = (resource.publisher or "").strip() or "Unknown"
         tags_text = "、".join(resource.tags) if resource.tags else tr("library.detail.tags_empty", "无")
-        col_text = "、".join(collection_names) if collection_names else tr("library.detail.no_collections", "未加入任何自定义书单")
-
-        self._title.setText(title_text)
-
         lines = [
             tr("library.detail.author", "作者：{value}").format(value=author_text),
             tr("library.detail.publisher", "出版社：{value}").format(value=publisher_text),
             tr("library.detail.tags", "标签：{value}").format(value=tags_text),
-            tr("library.detail.collections", "所属书单：{value}").format(value=col_text),
-            tr("library.detail.path", "文件：{value}").format(value=resource.path or "Unknown"),
         ]
+        if resource.resource_type == "book":
+            col_text = "、".join(book_collection_names) if book_collection_names else tr(
+                "library.detail.no_collections",
+                "未加入任何自定义书单",
+            )
+            lines.append(tr("library.detail.collections", "所属书单：{value}").format(value=col_text))
+        lines.append(tr("library.detail.path", "文件：{value}").format(value=resource.path or "Unknown"))
         raw_info_text = (resource.info_text or "").strip()
         if raw_info_text:
             lines.append("")
             lines.append(tr("detail.info_text", "Text Preview:"))
             lines.append(raw_info_text)
-
-        self._detail_text_label.setText("\n".join(lines))
-        self._empty_label.hide()
-        self._content.show()
+        return lines
 
     def _render_cover(self, thumbnail_path: str | None) -> None:
         self._cover.setText("COVER")

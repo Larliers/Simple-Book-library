@@ -219,7 +219,4 @@ class TextNovelPage(QWidget):
         if resource is None:
             self.detail_panel.clear_selection()
             return
-        detail_texts: list[str] = []
-        if resource.info_text:
-            detail_texts.append(resource.info_text)
-        self.detail_panel.set_resource(resource, detail_texts)
+        self.detail_panel.set_resource(resource)

@@ -245,10 +245,7 @@ class ComicPage(QWidget):
         if resource is None:
             self.detail_panel.clear_selection()
             return
-        collection_names = []
-        if resource.info_text:
-            collection_names.append(resource.info_text)
-        self.detail_panel.set_resource(resource, collection_names)
+        self.detail_panel.set_resource(resource)
 
     def _calculate_columns(self) -> int:
         available_width = max(1, self._scroll.viewport().width())

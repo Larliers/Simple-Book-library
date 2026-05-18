@@ -164,6 +164,7 @@ src/
 - Favorites/CollectionDetail 展示：支持与 Library 一致的 grid/list 切换；主区接入右侧详情栏；详情页主区布局采用与 Library 相同的伸展策略，避免分栏贴底；grid 卡片采用 cover-only 样式并支持选中态；模式持久化到 `app_settings`。
 - Settings 导航：仅保留 General 与 Error logs 两项；移除顶部搜索框、Shortcuts、Manage Metadata 占位区域。
 - Text Novel：新增独立侧栏入口与独立列表页；TXT 不进入 Library 主列表；右侧详情栏可展示 `info_text` 预览。
+- 详情面板语义统一：`info_text` 仅作为“文本预览”渲染一次；“所属书单”仅在 `book` 资源类型显示，Comic/Text Novel 不再复用该字段。
 - Text 规则：支持路径级规则步骤编辑（source + steps），支持 `txt_head_text` 来源，并在扫描时应用到标题/作者/标签提取。
 - 扫描容错：当 PyMuPDF（`fitz`）不可用时，PDF 扫描自动降级为“仅入库+标题兜底”，跳过元数据/缩略图并输出单条聚合 warning，避免错误风暴弹窗。
 - 缺失记录治理：扫描按 scope 检查已入库源路径；缺失项写入 `src/Scan_error_logs` 后硬删除，不再进入 Missed 体系；重名冲突遇到陈旧路径会先清理再导入。
