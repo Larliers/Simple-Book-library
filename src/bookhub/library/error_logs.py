@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-_LOG_DIR = Path("Scan_error_logs")
+_LOG_DIR = Path("src") / "Scan_error_logs"
 
 
 def get_log_dir() -> Path:
@@ -59,6 +59,22 @@ def append_conflict_if_new(conflict_text: str) -> bool:
 
     log_path = get_today_log_path()
     line = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {text}\n"
+    try:
+        with log_path.open("a", encoding="utf-8") as fh:
+            fh.write(line)
+        return True
+    except OSError:
+        return False
+
+
+def append_scan_log(text: str, dedupe_latest: bool = False) -> bool:
+    line_text = str(text or "").strip()
+    if not line_text:
+        return False
+    if dedupe_latest and has_conflict_in_latest(line_text):
+        return False
+    log_path = get_today_log_path()
+    line = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {line_text}\n"
     try:
         with log_path.open("a", encoding="utf-8") as fh:
             fh.write(line)

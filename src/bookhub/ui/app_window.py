@@ -18,6 +18,7 @@ from bookhub.ui.models.resource import ResourceItem
 from bookhub.ui.pages.library_page import LibraryPage
 from bookhub.ui.pages.settings_page import SettingsPage
 from bookhub.ui.pages.comic_page import ComicPage
+from bookhub.ui.pages.text_novel_page import TextNovelPage
 from bookhub.ui.resources.layout_config import (
     UI_LAYOUT,
     normalize_card_spacing,
@@ -40,19 +41,22 @@ class AppWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        language_manager.set_language("en")
+        self._repository = LibraryRepository()
+        language_manager.set_language(self._repository.get_language_code())
         self.setWindowTitle(tr("app.window_title", "Simple Book Library - UI Outline"))
         self.resize(1400, 860)
-
-        self._repository = LibraryRepository()
         UI_LAYOUT.set_card_spacing(self._repository.get_card_spacing())
         UI_LAYOUT.set_topbar_search_font_size(self._repository.get_topbar_search_font_size())
         self._library_vm = LibraryViewModel()
+        self._text_vm = LibraryViewModel()
         self._pages: dict[str, int] = {}
         self._scan_worker: ScanWorker | None = None
         self._thumbnail_worker: ThumbnailTaskWorker | None = None
         self._active_thumbnail_task_kind: str | None = None
+        self._active_thumbnail_task_scope: str | None = None
         self._scan_conflict_toast = SlideToast(self)
+        self._scan_warning_toast = SlideToast(self)
+        self._scan_missing_removed_toast = SlideToast(self)
         self._search_render_timer = QTimer(self)
         self._search_render_timer.setSingleShot(True)
         self._search_render_timer.setInterval(self.SEARCH_RENDER_DEBOUNCE_MS)
@@ -86,29 +90,48 @@ class AppWindow(QMainWindow):
         panel_layout.addWidget(self.page_stack, 1)
         root.addWidget(main_panel, 1)
 
-        self.library_page = LibraryPage(self._library_vm, missing_mode=False, repository=self._repository)
+        self.library_page = LibraryPage(self._library_vm, repository=self._repository)
         self._register_page("library", self.library_page)
+        self.text_page = TextNovelPage(repository=self._repository)
+        self._register_page("text_novel", self.text_page)
         self._register_page("collections", CollectionsPage(self._repository))
         self._register_page("favorites", FavoritesPage(self._repository))
         self.comic_page = ComicPage(self._repository, favorite_only=False)
         self._register_page("comic", self.comic_page)
         self.comic_fav_page = ComicPage(self._repository, favorite_only=True)
         self._register_page("comic_fav", self.comic_fav_page)
-        self.missed_page = LibraryPage(self._library_vm, missing_mode=True, repository=self._repository)
-        self._register_page("missed", self.missed_page)
         self.settings_page = SettingsPage()
         self.settings_page.language_changed.connect(self._on_language_changed)
+        self.settings_page.scan_on_startup_changed.connect(self._on_scan_on_startup_changed)
+        self.settings_page.auto_scan_on_path_change_changed.connect(self._on_auto_scan_on_path_change_changed)
         self.settings_page.add_root_requested.connect(self._on_add_root)
         self.settings_page.remove_root_requested.connect(self._on_remove_root)
         self.settings_page.add_comic_root_requested.connect(self._on_add_comic_root)
         self.settings_page.remove_comic_root_requested.connect(self._on_remove_comic_root)
-        self.settings_page.scan_requested.connect(lambda: self._start_scan("manual"))
+        self.settings_page.add_text_root_requested.connect(self._on_add_text_root)
+        self.settings_page.remove_text_root_requested.connect(self._on_remove_text_root)
+        self.settings_page.text_preview_chars_changed.connect(self._on_text_preview_chars_changed)
+        self.settings_page.manage_text_rules_requested.connect(self._on_manage_text_rules)
+        self.settings_page.scan_library_requested.connect(lambda: self._start_scan("manual_library", scope="library"))
+        self.settings_page.scan_comic_requested.connect(lambda: self._start_scan("manual_comic", scope="comic"))
+        self.settings_page.scan_text_requested.connect(lambda: self._start_scan("manual_text", scope="text"))
         self.settings_page.scan_depth_changed.connect(self._on_scan_depth_changed)
         self.settings_page.hash_strategy_changed.connect(self._on_hash_strategy_changed)
         self.settings_page.card_spacing_changed.connect(self._on_card_spacing_changed)
         self.settings_page.topbar_search_font_size_changed.connect(self._on_topbar_search_font_size_changed)
-        self.settings_page.cleanup_all_thumbnails_requested.connect(self._start_cleanup_thumbnails)
-        self.settings_page.regenerate_thumbnails_requested.connect(self._start_regenerate_thumbnails)
+        self.settings_page.font_changed.connect(self._on_font_changed)
+        self.settings_page.cleanup_library_thumbnails_requested.connect(
+            lambda: self._start_thumbnail_task("cleanup", scope="library")
+        )
+        self.settings_page.regenerate_library_thumbnails_requested.connect(
+            lambda: self._start_thumbnail_task("regenerate", scope="library")
+        )
+        self.settings_page.cleanup_comic_thumbnails_requested.connect(
+            lambda: self._start_thumbnail_task("cleanup", scope="comic")
+        )
+        self.settings_page.regenerate_comic_thumbnails_requested.connect(
+            lambda: self._start_thumbnail_task("regenerate", scope="comic")
+        )
         self._register_page("settings", self.settings_page)
 
         self.setStyleSheet(APP_STYLE)
@@ -118,7 +141,8 @@ class AppWindow(QMainWindow):
         self._refresh_search_suggestions()
         self._last_committed_query = self._library_vm.ui_state.filter
         self._show_page("library")
-        QTimer.singleShot(100, lambda: self._start_scan("startup"))
+        if self._repository.get_scan_on_startup():
+            QTimer.singleShot(100, lambda: self._start_scan("startup", scope="all"))
 
     def _register_page(self, page_name: str, widget: QWidget) -> None:
         index = self.page_stack.addWidget(widget)
@@ -136,8 +160,8 @@ class AppWindow(QMainWindow):
             refresh_fn()
         if current is self.library_page:
             self.library_page.render()
-        elif current is self.missed_page:
-            self.missed_page.render()
+        elif current is self.text_page:
+            self.text_page.render()
         self._stabilize_dropdown_layer()
 
     def _on_query_changed(self, query: str) -> None:
@@ -154,7 +178,7 @@ class AppWindow(QMainWindow):
         self._library_vm.set_query(self._pending_query)
         self._last_committed_query = normalized
         current_page = self.page_stack.currentWidget()
-        if current_page in {self.library_page, self.missed_page}:
+        if current_page in {self.library_page}:
             current_page.render()  # type: ignore[call-arg]
         self._stabilize_dropdown_layer()
 
@@ -178,29 +202,36 @@ class AppWindow(QMainWindow):
 
     def _reload_resources_from_repository(self) -> None:
         records = self._repository.list_books(include_missing=None)
-        resources: list[ResourceItem] = []
+        library_resources: list[ResourceItem] = []
+        text_resources: list[ResourceItem] = []
         for record in records:
-            resources.append(
-                ResourceItem(
-                    resource_id=record["resource_id"],
-                    title=record["title"] or record["file_name"],
-                    author=record["author"] or "",
-                    status=record.get("status") or "UNREAD",
-                    tags=record.get("tags") or [],
-                    resource_type=record.get("resource_type") or "book",
-                    path=record["path"],
-                    thumbnail_path=record.get("thumbnail_path"),
-                    publisher=record.get("publisher"),
-                    language=record.get("language"),
-                    is_missing=bool(record.get("is_missing")),
-                    file_name=record.get("file_name") or "",
-                    extension=record.get("extension") or "",
-                )
+            resource = ResourceItem(
+                resource_id=record["resource_id"],
+                title=record["title"] or record["file_name"],
+                author=record["author"] or "",
+                status=record.get("status") or "UNREAD",
+                tags=record.get("tags") or [],
+                resource_type=record.get("resource_type") or "book",
+                path=record["path"],
+                thumbnail_path=record.get("thumbnail_path"),
+                publisher=record.get("publisher"),
+                language=record.get("language"),
+                is_missing=bool(record.get("is_missing")),
+                file_name=record.get("file_name") or "",
+                extension=record.get("extension") or "",
+                info_text=str(record.get("info_text") or "") or None,
             )
-        self._library_vm.set_resources(resources)
+            if resource.resource_type == "text_novel":
+                text_resources.append(resource)
+            else:
+                library_resources.append(resource)
+
+        self._library_vm.set_resources(library_resources)
+        self._text_vm.set_resources(text_resources)
+        self.text_page.set_resources(text_resources)
         self._last_committed_query = self._library_vm.ui_state.filter
         self.library_page.render()
-        self.missed_page.render()
+        self.text_page.render()
         self.comic_page.refresh()
         self.comic_fav_page.refresh()
         self._refresh_search_suggestions()
@@ -208,6 +239,12 @@ class AppWindow(QMainWindow):
     def _refresh_settings_state(self) -> None:
         self.settings_page.set_library_roots(self._repository.list_roots())
         self.settings_page.set_comic_roots(self._repository.list_comic_roots())
+        self.settings_page.set_text_roots_with_rules(self._repository.list_text_roots_with_rules())
+        self.settings_page.set_text_preview_chars(self._repository.get_text_preview_chars())
+        self.settings_page.set_language_selection(self._repository.get_language_code())
+        self.settings_page.set_scan_on_startup(self._repository.get_scan_on_startup())
+        self.settings_page.set_auto_scan_on_path_change(self._repository.get_auto_scan_on_path_change())
+        self.settings_page.set_font_selection(self._repository.get_font_source(), self._repository.get_font_family())
         self.settings_page.set_scan_depth(self._repository.get_scan_depth())
         self.settings_page.set_hash_strategy(self._repository.get_hash_strategy())
         self.settings_page.set_card_spacing(self._repository.get_card_spacing())
@@ -221,45 +258,85 @@ class AppWindow(QMainWindow):
             return
         self._repository.add_root(directory)
         self._refresh_settings_state()
-        self._start_scan("import")
+        if self._repository.get_auto_scan_on_path_change():
+            self._start_scan("import", scope="library")
 
     def _on_add_root(self, path: str) -> None:
         self._repository.add_root(path)
         self._refresh_settings_state()
-        self._start_scan("add_path")
+        if self._repository.get_auto_scan_on_path_change():
+            self._start_scan("add_path", scope="library")
 
     def _on_add_comic_root(self, path: str) -> None:
         self._repository.add_comic_root(path)
         self._refresh_settings_state()
-        self._start_scan("add_comic_path")
+        if self._repository.get_auto_scan_on_path_change():
+            self._start_scan("add_comic_path", scope="comic")
+
+    def _on_add_text_root(self, path: str) -> None:
+        self._repository.add_text_root(path)
+        self._refresh_settings_state()
+        if self._repository.get_auto_scan_on_path_change():
+            self._start_scan("add_text_path", scope="text")
 
     def _on_remove_comic_root(self, path: str) -> None:
-        moved_count = self._repository.remove_comic_root(path)
+        removed_count = self._repository.remove_comic_root(path)
         summary = self._repository.read_scan_report()
-        summary["comic_moved_to_missed_count"] = moved_count
+        summary["removed_missing_comic_count"] = removed_count
+        summary["removed_missing_count"] = int(summary.get("removed_missing_count", 0) or 0) + removed_count
         summary["trigger"] = "remove_comic_root"
         self._repository.write_scan_report(summary)
         self._repository.record_scan_event("remove_comic_root", summary)
         self._reload_resources_from_repository()
         self._refresh_settings_state()
 
-    def _on_remove_root(self, path: str) -> None:
-        moved_count = self._repository.remove_root(path)
+    def _on_remove_text_root(self, path: str) -> None:
+        removed_count = self._repository.remove_text_root(path)
         summary = self._repository.read_scan_report()
-        summary["moved_to_missed_count"] = moved_count
+        summary["removed_missing_book_count"] = int(summary.get("removed_missing_book_count", 0) or 0) + removed_count
+        summary["removed_missing_count"] = int(summary.get("removed_missing_count", 0) or 0) + removed_count
+        summary["trigger"] = "remove_text_root"
+        self._repository.write_scan_report(summary)
+        self._repository.record_scan_event("remove_text_root", summary)
+        self._reload_resources_from_repository()
+        self._refresh_settings_state()
+
+    def _on_remove_root(self, path: str) -> None:
+        removed_count = self._repository.remove_root(path)
+        summary = self._repository.read_scan_report()
+        summary["removed_missing_book_count"] = int(summary.get("removed_missing_book_count", 0) or 0) + removed_count
+        summary["removed_missing_count"] = int(summary.get("removed_missing_count", 0) or 0) + removed_count
         summary["trigger"] = "remove_root"
         self._repository.write_scan_report(summary)
         self._repository.record_scan_event("remove_root", summary)
         self._reload_resources_from_repository()
         self._refresh_settings_state()
-        QMessageBox.information(
-            self,
-            tr("settings.root_removed_title", "Library folder removed"),
-            tr(
-                "settings.root_removed_msg",
-                "{count} books moved to Missed because the folder was removed from scan roots.",
-            ).format(count=moved_count),
+        self._scan_missing_removed_toast.show_toast(
+            title=tr("scan.missing_removed.title", "Missing files removed"),
+            message=tr("scan.missing_removed.msg", "Removed {count} stale records after root removal.").format(
+                count=removed_count
+            ),
+            duration_seconds=6,
         )
+
+    def _on_text_preview_chars_changed(self, size: int) -> None:
+        self._repository.set_text_preview_chars(size)
+
+    def _on_manage_text_rules(self, root_path: str, rules_json: str) -> None:
+        self._repository.set_text_root_rules_json(root_path, rules_json)
+        self._refresh_settings_state()
+        if self._repository.get_auto_scan_on_path_change():
+            self._start_scan("update_text_rules", scope="text")
+
+    def _on_scan_on_startup_changed(self, enabled: bool) -> None:
+        self._repository.set_scan_on_startup(enabled)
+
+    def _on_auto_scan_on_path_change_changed(self, enabled: bool) -> None:
+        self._repository.set_auto_scan_on_path_change(enabled)
+
+    def _on_font_changed(self, source: str, family: str) -> None:
+        self._repository.set_font_source(source)
+        self._repository.set_font_family(family)
 
     def _on_scan_depth_changed(self, depth: int) -> None:
         self._repository.set_scan_depth(depth)
@@ -283,23 +360,28 @@ class AppWindow(QMainWindow):
         UI_LAYOUT.set_topbar_search_font_size(normalized)
         self.topbar.set_search_font_size(normalized)
 
-    def _start_scan(self, trigger: str) -> None:
+    def _start_scan(self, trigger: str, *, scope: str = "all") -> None:
         if self._thumbnail_worker is not None and self._thumbnail_worker.isRunning():
             return
         if self._scan_worker is not None and self._scan_worker.isRunning():
             return
-        roots = self._repository.list_roots()
-        if not roots:
+        roots = self._repository.list_roots() if scope in {"all", "library"} else []
+        comic_roots = self._repository.list_comic_roots() if scope in {"all", "comic"} else []
+        text_roots = self._repository.list_text_roots_with_rules() if scope in {"all", "text"} else []
+        if not roots and not comic_roots and not text_roots:
             return
-        self.settings_page.set_scan_running(True)
+        self.settings_page.set_scan_running(True, scope)
         worker = ScanWorker(
             db_path=self._repository.db_path,
             scan_report_path=self._repository.scan_report_path,
             roots=roots,
-            comic_roots=self._repository.list_comic_roots(),
+            comic_roots=comic_roots,
+            text_roots=text_roots,
+            text_preview_chars=self._repository.get_text_preview_chars(),
             scan_depth=self._repository.get_scan_depth(),
             hash_strategy=self._repository.get_hash_strategy(),
             trigger=trigger,
+            scope=scope,
         )
         worker.scan_completed.connect(self._on_scan_completed)
         worker.scan_failed.connect(self._on_scan_failed)
@@ -309,7 +391,8 @@ class AppWindow(QMainWindow):
 
     def _on_scan_completed(self, summary_obj: object) -> None:
         summary = summary_obj if isinstance(summary_obj, dict) else {}
-        self.settings_page.set_scan_running(False)
+        scope = str(summary.get("scope") or "all")
+        self.settings_page.set_scan_running(False, scope)
         self.settings_page.set_scan_summary(summary)
         self._reload_resources_from_repository()
         conflicts = summary.get("name_conflicts", [])
@@ -318,9 +401,15 @@ class AppWindow(QMainWindow):
         errors = summary.get("errors", [])
         if isinstance(errors, list) and errors:
             self._show_scan_errors(errors)
+        warnings = summary.get("warnings", [])
+        if isinstance(warnings, list) and warnings:
+            self._show_scan_warnings(warnings)
+        removed_missing_count = int(summary.get("removed_missing_count", 0) or 0)
+        if removed_missing_count > 0:
+            self._show_missing_removed_toast(removed_missing_count)
 
     def _on_scan_failed(self, message: str) -> None:
-        self.settings_page.set_scan_running(False)
+        self.settings_page.set_scan_running(False, "all")
         QMessageBox.critical(self, tr("scan.failed_title", "Scan failed"), message)
 
     def _on_worker_finished(self) -> None:
@@ -370,27 +459,62 @@ class AppWindow(QMainWindow):
             "\n".join(lines),
         )
 
+    def _show_scan_warnings(self, warnings: list[object]) -> None:
+        normalized = [item for item in warnings if isinstance(item, dict)]
+        if not normalized:
+            return
+
+        pdf_warning = next(
+            (item for item in normalized if str(item.get("code") or "") == "pdf_backend_unavailable"),
+            None,
+        )
+        if not pdf_warning:
+            return
+
+        count = int(pdf_warning.get("count", 0) or 0)
+        reason = str(pdf_warning.get("reason") or "").strip()
+        message = tr(
+            "scan.warning.pdf_backend_unavailable",
+            "PyMuPDF unavailable. Imported PDF files with fallback title only; skipped PDF metadata and thumbnails ({count} files).",
+        ).format(count=count)
+        if reason:
+            message = f"{message}\n{reason}"
+        self._scan_warning_toast.show_toast(
+            title=tr("scan.warning_title", "Scan warning"),
+            message=message,
+            duration_seconds=8,
+        )
+
+    def _show_missing_removed_toast(self, removed_count: int) -> None:
+        self.settings_page.set_error_logs_text(read_latest_log_text())
+        message = tr(
+            "scan.missing_removed.msg",
+            "Removed {count} stale records. Check Settings > Error logs for details.",
+        ).format(count=removed_count)
+        self._scan_missing_removed_toast.show_toast(
+            title=tr("scan.missing_removed.title", "Missing files removed"),
+            message=message,
+            duration_seconds=8,
+        )
+
     def _on_language_changed(self, language_code: str) -> None:
         language_manager.set_language(language_code)
+        self._repository.set_language_code(language_code)
         self.retranslate_ui()
 
-    def _start_cleanup_thumbnails(self) -> None:
-        self._start_thumbnail_task("cleanup")
-
-    def _start_regenerate_thumbnails(self) -> None:
-        self._start_thumbnail_task("regenerate")
-
-    def _start_thumbnail_task(self, task_kind: str) -> None:
+    def _start_thumbnail_task(self, task_kind: str, *, scope: str) -> None:
         if self._scan_worker is not None and self._scan_worker.isRunning():
             return
         if self._thumbnail_worker is not None and self._thumbnail_worker.isRunning():
             return
         self._active_thumbnail_task_kind = task_kind
-        self.settings_page.set_thumbnail_task_running(task_kind, True)
+        self._active_thumbnail_task_scope = scope
+        self.settings_page.set_thumbnail_task_running(task_kind, True, scope)
         worker = ThumbnailTaskWorker(
             db_path=self._repository.db_path,
             scan_report_path=self._repository.scan_report_path,
             task_kind=task_kind,
+            task_scope=scope,
         )
         worker.progress.connect(self._on_thumbnail_task_progress)
         worker.completed.connect(self._on_thumbnail_task_completed)
@@ -401,13 +525,15 @@ class AppWindow(QMainWindow):
 
     def _on_thumbnail_task_progress(self, current: int, total: int, _label: str) -> None:
         task_kind = self._active_thumbnail_task_kind or "regenerate"
-        self.settings_page.set_thumbnail_task_progress(current, total, task_kind)
+        scope = self._active_thumbnail_task_scope or "library"
+        self.settings_page.set_thumbnail_task_progress(current, total, task_kind, scope)
 
     def _on_thumbnail_task_completed(self, summary_obj: object) -> None:
         summary = summary_obj if isinstance(summary_obj, dict) else {}
         task_kind = str(summary.get("task_kind") or self._active_thumbnail_task_kind or "cleanup")
-        self.settings_page.set_thumbnail_task_running(task_kind, False)
-        self.settings_page.set_thumbnail_task_finished(task_kind, summary)
+        scope = str(summary.get("task_scope") or self._active_thumbnail_task_scope or "library")
+        self.settings_page.set_thumbnail_task_running(task_kind, False, scope)
+        self.settings_page.set_thumbnail_task_finished(task_kind, summary, scope)
         self._reload_resources_from_repository()
 
         scan_summary = self._repository.read_scan_report()
@@ -425,8 +551,9 @@ class AppWindow(QMainWindow):
             tr("settings.thumb.result_title", "Thumbnail task finished"),
             tr(
                 "settings.thumb.result_msg",
-                "Task: {task}\nTotal: {total}\nSuccess: {succeeded}\nSkipped: {skipped}\nFailed: {failed}",
+                "Scope: {scope}\nTask: {task}\nTotal: {total}\nSuccess: {succeeded}\nSkipped: {skipped}\nFailed: {failed}",
             ).format(
+                scope=scope,
                 task=task_kind,
                 total=total,
                 succeeded=succeeded,
@@ -437,16 +564,20 @@ class AppWindow(QMainWindow):
 
     def _on_thumbnail_task_failed(self, message: str) -> None:
         task_kind = self._active_thumbnail_task_kind or "cleanup"
-        self.settings_page.set_thumbnail_task_running(task_kind, False)
+        scope = self._active_thumbnail_task_scope or "library"
+        self.settings_page.set_thumbnail_task_running(task_kind, False, scope)
         QMessageBox.critical(self, tr("settings.thumb.failed_title", "Thumbnail task failed"), message)
 
     def _on_thumbnail_worker_finished(self) -> None:
         self._thumbnail_worker = None
         self._active_thumbnail_task_kind = None
+        self._active_thumbnail_task_scope = None
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._scan_conflict_toast.reposition()
+        self._scan_warning_toast.reposition()
+        self._scan_missing_removed_toast.reposition()
         self._stabilize_dropdown_layer()
 
     def retranslate_ui(self) -> None:
@@ -454,7 +585,7 @@ class AppWindow(QMainWindow):
         self.sidebar.retranslate_ui()
         self.topbar.retranslate_ui()
         self.library_page.retranslate_ui()
-        self.missed_page.retranslate_ui()
+        self.text_page.retranslate_ui()
         favorites_retranslate = getattr(self.page_stack.widget(self._pages["favorites"]), "retranslate_ui", None)
         if callable(favorites_retranslate):
             favorites_retranslate()

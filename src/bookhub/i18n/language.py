@@ -34,7 +34,7 @@ class LanguageManager:
             return {}
 
         try:
-            data = json.loads(file_path.read_text(encoding="utf-8"))
+            data = json.loads(file_path.read_text(encoding="utf-8-sig"))
         except (OSError, json.JSONDecodeError):
             data = {}
 
@@ -49,4 +49,3 @@ language_manager = LanguageManager()
 
 def tr(key: str, english_text: str) -> str:
     return language_manager.text(key, english_text)
-

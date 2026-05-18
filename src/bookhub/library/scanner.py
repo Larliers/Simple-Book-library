@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import os
 import re
 from pathlib import Path
+from typing import Any
 
 from bookhub.library.metadata import (
     build_metadata_tags,
@@ -17,6 +19,7 @@ from bookhub.library.metadata import (
     generate_pdf_thumbnail,
 )
 from bookhub.library.media_sanitizer import sanitize_image_for_ui
+from bookhub.library.error_logs import append_scan_log
 from bookhub.library.models import (
     COMIC_IMAGE_EXTENSIONS,
     SUPPORTED_EXTENSIONS,
@@ -25,8 +28,12 @@ from bookhub.library.models import (
     ScanConflict,
     ScanRequest,
     ScanResult,
+    TEXT_FILE_EXTENSION,
+    TextScanRequest,
 )
 from bookhub.library.repository import LibraryRepository
+from bookhub.library.text_rules import ImportRule, RuleContext, apply_rule_chain, load_rules_from_json
+from bookhub.library.text_rules.rule_examples import default_text_title_rule_chain
 
 
 def _iter_files_with_depth(root: Path, depth: int):
@@ -64,6 +71,15 @@ def _build_thumbnail_by_extension(
     return generate_epub_thumbnail(file_path, output_path, title_fallback)
 
 
+def _probe_pdf_backend() -> tuple[bool, str | None]:
+    try:
+        importlib.import_module("fitz")
+    except Exception as exc:  # noqa: BLE001
+        reason = f"{exc.__class__.__name__}: {exc}"
+        return False, reason
+    return True, None
+
+
 def _build_payload(
     normalized_path: str,
     file_path: Path,
@@ -75,7 +91,7 @@ def _build_payload(
     tags: list[str],
     thumbnail_path: str | None,
     fingerprints,
-) -> dict[str, str | None]:
+    ) -> dict[str, str | None]:
     return {
         "path": normalized_path,
         "file_name": file_name(file_path),
@@ -92,6 +108,120 @@ def _build_payload(
         "fingerprint_size_mtime": fingerprints.size_mtime,
         "fingerprint_quick": fingerprints.quick,
     }
+
+
+def _log_missing_entry(*, resource_type: str, title: str, path_value: str, reason: str) -> None:
+    append_scan_log(
+        f"missing_removed | type={resource_type} | title={title} | path={path_value} | reason={reason}"
+    )
+
+
+def _remove_missing_books_in_scope(
+    repository: LibraryRepository,
+    roots: list[str],
+    *,
+    resource_type: str | None,
+    exclude_text_novel: bool = False,
+) -> int:
+    records = repository.list_books_in_roots(roots=roots, resource_type=resource_type)
+    stale_ids: list[int] = []
+    for record in records:
+        if exclude_text_novel and str(record.get("resource_type") or "") == "text_novel":
+            continue
+        path_value = str(record.get("path") or "")
+        if not path_value:
+            continue
+        source = Path(path_value)
+        if source.exists() and source.is_file():
+            continue
+        book_id = repository.get_book_int_id(str(record.get("resource_id") or ""))
+        if book_id is None:
+            continue
+        stale_ids.append(book_id)
+        title = str(record.get("title") or record.get("file_name") or "Unknown")
+        _log_missing_entry(
+            resource_type=str(record.get("resource_type") or "book"),
+            title=title,
+            path_value=path_value,
+            reason="source file missing during scan",
+        )
+    return repository.delete_books_by_ids(stale_ids)
+
+
+def _remove_missing_comics_in_scope(repository: LibraryRepository, roots: list[str]) -> int:
+    records = repository.list_comics_in_roots(roots=roots)
+    stale_ids: list[int] = []
+    for record in records:
+        path_value = str(record.get("path") or "")
+        if not path_value:
+            continue
+        source = Path(path_value)
+        if source.exists() and source.is_dir():
+            continue
+        comic_id = repository.get_comic_int_id(str(record.get("resource_id") or ""))
+        if comic_id is None:
+            continue
+        stale_ids.append(comic_id)
+        title = str(record.get("title") or "Unknown")
+        _log_missing_entry(
+            resource_type="comic_folder",
+            title=title,
+            path_value=path_value,
+            reason="source folder missing during scan",
+        )
+    return repository.delete_comics_by_ids(stale_ids)
+
+
+def _cleanup_stale_duplicate_if_needed(
+    repository: LibraryRepository,
+    duplicate: dict[str, Any] | None,
+) -> bool:
+    if not duplicate:
+        return False
+    stale_path = str(duplicate.get("path") or "")
+    stale_id = duplicate.get("id")
+    if not stale_path or not isinstance(stale_id, int):
+        return False
+    stale_file = Path(stale_path)
+    if stale_file.exists():
+        return False
+    repository.delete_book_by_id(stale_id)
+    _log_missing_entry(
+        resource_type=str(duplicate.get("resource_type") or "book"),
+        title=str(duplicate.get("title") or duplicate.get("file_name") or "Unknown"),
+        path_value=stale_path,
+        reason="stale duplicate removed before import",
+    )
+    return True
+
+
+def _read_txt_first_line(file_path: Path) -> str:
+    try:
+        with file_path.open("r", encoding="utf-8", errors="ignore") as handle:
+            return (handle.readline() or "").strip()
+    except OSError:
+        return ""
+
+
+def _read_txt_head_text(file_path: Path, preview_chars: int) -> str:
+    safe_limit = max(100, int(preview_chars))
+    try:
+        with file_path.open("r", encoding="utf-8", errors="ignore") as handle:
+            content = handle.read(safe_limit + 1)
+    except OSError:
+        return ""
+    return content[:safe_limit].strip()
+
+
+def _parse_rule_map(raw_rules_json: str, errors: list[str], path_for_error: str) -> dict[str, list[ImportRule]]:
+    if not str(raw_rules_json or "").strip():
+        return {}
+    try:
+        decoded = json.loads(raw_rules_json)
+    except json.JSONDecodeError as exc:
+        errors.append(f"Text rule json invalid for {path_for_error}: {exc}")
+        return {}
+    return load_rules_from_json(decoded)
 
 
 def _natural_sort_key(path: Path) -> list[object]:
@@ -159,10 +289,30 @@ def _is_deepest_image_folder(folder: Path, max_depth: int) -> bool:
     return not has_child_image_folder
 
 
+def _extract_text_fields(
+    *,
+    rule_map: dict[str, list[ImportRule]],
+    context: RuleContext,
+) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for field_name in ("title", "author", "series", "tag"):
+        rules = rule_map.get(field_name, [])
+        if not rules:
+            continue
+        result = apply_rule_chain(rules, context)
+        if result.success and result.value.strip():
+            values[field_name] = result.value.strip()
+    return values
+
+
 def scan_comic_roots(repository: LibraryRepository, request: ComicScanRequest) -> ScanResult:
     result = ScanResult()
     max_depth = min(5, max(1, int(request.max_depth or 5)))
     scanned_roots = [repository.normalize_path(path) for path in request.roots]
+    removed_missing = _remove_missing_comics_in_scope(repository, scanned_roots)
+    if removed_missing > 0:
+        result.removed_missing_count += removed_missing
+        result.removed_missing_comic_count += removed_missing
 
     for raw_root in scanned_roots:
         root = Path(raw_root)
@@ -228,11 +378,114 @@ def scan_comic_roots(repository: LibraryRepository, request: ComicScanRequest) -
     return result
 
 
+def scan_text_roots(repository: LibraryRepository, request: TextScanRequest) -> ScanResult:
+    result = ScanResult()
+    preview_chars = max(100, int(request.preview_chars or 1200))
+    scanned_roots = [repository.normalize_path(item.path) for item in request.roots if str(item.path).strip()]
+    removed_missing = _remove_missing_books_in_scope(repository, scanned_roots, resource_type="text_novel")
+    if removed_missing > 0:
+        result.removed_missing_count += removed_missing
+        result.removed_missing_book_count += removed_missing
+
+    for root in request.roots:
+        normalized_root = repository.normalize_path(root.path)
+        root_path = Path(normalized_root)
+        if not root_path.exists() or not root_path.is_dir():
+            result.text_errors.append(f"Text root unavailable: {normalized_root}")
+            continue
+
+        rule_map = _parse_rule_map(root.rules_json or "{}", result.text_errors, normalized_root)
+        if "title" not in rule_map:
+            rule_map["title"] = default_text_title_rule_chain()
+
+        for dir_path, _dir_names, file_names in os.walk(root_path):
+            current_dir = Path(dir_path)
+            for name in sorted(file_names):
+                file_path = current_dir / name
+                if file_path.suffix.lower() != TEXT_FILE_EXTENSION:
+                    continue
+
+                result.text_scanned_files += 1
+                normalized_path = repository.normalize_path(file_path)
+                txt_first_line = _read_txt_first_line(file_path)
+                txt_head_text = _read_txt_head_text(file_path, preview_chars)
+                context = RuleContext(
+                    file_path=normalized_path,
+                    txt_first_line=txt_first_line,
+                    txt_head_text=txt_head_text,
+                )
+
+                extracted = _extract_text_fields(rule_map=rule_map, context=context)
+                title = extracted.get("title") or file_path.stem
+                author = extracted.get("author")
+                tags: list[str] = []
+                if extracted.get("series"):
+                    tags.append(f"series:{extracted['series']}")
+                if extracted.get("tag"):
+                    tags.append(extracted["tag"])
+
+                try:
+                    fingerprints = compute_fingerprints(file_path)
+                except OSError as exc:
+                    result.text_errors.append(f"Text fingerprint failed for {normalized_path}: {exc}")
+                    continue
+
+                payload: dict[str, Any] = {
+                    "path": normalized_path,
+                    "file_name": file_name(file_path),
+                    "extension": TEXT_FILE_EXTENSION,
+                    "title": title,
+                    "author": author,
+                    "publisher": None,
+                    "language": None,
+                    "tags_json": json.dumps(tags, ensure_ascii=False),
+                    "status": "UNREAD",
+                    "resource_type": "text_novel",
+                    "thumbnail_path": None,
+                    "info_text": txt_head_text,
+                    "fingerprint_sha256": fingerprints.sha256,
+                    "fingerprint_size_mtime": fingerprints.size_mtime,
+                    "fingerprint_quick": fingerprints.quick,
+                }
+
+                duplicate = repository.find_duplicate_name(payload["file_name"], TEXT_FILE_EXTENSION, normalized_path)
+                if _cleanup_stale_duplicate_if_needed(repository, duplicate):
+                    duplicate = None
+                if duplicate:
+                    result.name_conflicts.append(
+                        ScanConflict(
+                            file_name=payload["file_name"],
+                            incoming_path=normalized_path,
+                            existing_path=str(duplicate["path"]),
+                            existing_title=(duplicate.get("title") or duplicate.get("file_name")),
+                        )
+                    )
+                    continue
+
+                inserted = repository.upsert_book(payload)
+                if inserted:
+                    result.text_added_count += 1
+                else:
+                    result.text_updated_count += 1
+    return result
+
+
 def scan_roots(repository: LibraryRepository, request: ScanRequest) -> ScanResult:
     result = ScanResult()
     scan_depth = min(3, max(1, request.scan_depth))
     hash_strategy: HashStrategy = request.hash_strategy
     scanned_roots = [repository.normalize_path(path) for path in request.roots]
+    removed_missing = _remove_missing_books_in_scope(
+        repository,
+        scanned_roots,
+        resource_type=None,
+        exclude_text_novel=True,
+    )
+    if removed_missing > 0:
+        result.removed_missing_count += removed_missing
+        result.removed_missing_book_count += removed_missing
+    pdf_backend_ok, pdf_backend_reason = _probe_pdf_backend()
+    skipped_pdf_backend_count = 0
 
     for raw_root in scanned_roots:
         root = Path(raw_root)
@@ -255,11 +508,16 @@ def scan_roots(repository: LibraryRepository, request: ScanRequest) -> ScanResul
                 result.errors.append(f"Fingerprint failed for {normalized_path}: {exc}")
                 continue
 
-            try:
-                metadata = _extract_metadata_by_extension(file_path, extension)
-            except Exception as exc:  # noqa: BLE001
-                result.errors.append(f"Metadata failed for {normalized_path}: {exc}")
-                metadata = None
+            metadata = None
+            should_skip_pdf_backend = extension == ".pdf" and not pdf_backend_ok
+            if should_skip_pdf_backend:
+                skipped_pdf_backend_count += 1
+            else:
+                try:
+                    metadata = _extract_metadata_by_extension(file_path, extension)
+                except Exception as exc:  # noqa: BLE001
+                    result.errors.append(f"Metadata failed for {normalized_path}: {exc}")
+                    metadata = None
 
             title = metadata.title if metadata and metadata.title else file_path.stem
             author = metadata.author if metadata else None
@@ -269,15 +527,16 @@ def scan_roots(repository: LibraryRepository, request: ScanRequest) -> ScanResul
 
             thumb_file = _thumbnail_path_for(repository, normalized_path)
             thumbnail_path: str | None = None
-            try:
-                thumbnail_path = _build_thumbnail_by_extension(
-                    file_path=file_path,
-                    extension=extension,
-                    output_path=thumb_file,
-                    title_fallback=title,
-                )
-            except Exception as exc:  # noqa: BLE001
-                result.errors.append(f"Thumbnail failed for {normalized_path}: {exc}")
+            if not should_skip_pdf_backend:
+                try:
+                    thumbnail_path = _build_thumbnail_by_extension(
+                        file_path=file_path,
+                        extension=extension,
+                        output_path=thumb_file,
+                        title_fallback=title,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    result.errors.append(f"Thumbnail failed for {normalized_path}: {exc}")
 
             payload = _build_payload(
                 normalized_path=normalized_path,
@@ -292,14 +551,9 @@ def scan_roots(repository: LibraryRepository, request: ScanRequest) -> ScanResul
                 fingerprints=fingerprints,
             )
 
-            fingerprint_value = fingerprints.value_for(hash_strategy)
-            missed_match = repository.find_missing_by_fingerprint(hash_strategy, fingerprint_value)
-            if missed_match:
-                repository.restore_missing_book(int(missed_match["id"]), payload)
-                result.restored_from_missed += 1
-                continue
-
             duplicate = repository.find_duplicate_name(payload["file_name"] or "", extension, normalized_path)
+            if _cleanup_stale_duplicate_if_needed(repository, duplicate):
+                duplicate = None
             if duplicate:
                 result.name_conflicts.append(
                     ScanConflict(
@@ -316,5 +570,14 @@ def scan_roots(repository: LibraryRepository, request: ScanRequest) -> ScanResul
                 result.added_count += 1
             else:
                 result.updated_count += 1
+
+    if skipped_pdf_backend_count > 0:
+        result.warnings.append(
+            {
+                "code": "pdf_backend_unavailable",
+                "count": skipped_pdf_backend_count,
+                "reason": pdf_backend_reason or "Unknown fitz import error.",
+            }
+        )
 
     return result

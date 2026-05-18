@@ -12,6 +12,8 @@ from uuid import uuid4
 from bookhub.library.models import (
     HASH_STRATEGIES,
     HASH_STRATEGY_SIZE_MTIME,
+    DEFAULT_TEXT_PREVIEW_CHARS,
+    TEXT_PREVIEW_CHAR_OPTIONS,
     HashStrategy,
 )
 
@@ -92,6 +94,13 @@ class LibraryRepository:
                     updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS text_roots (
+                    path TEXT PRIMARY KEY,
+                    rules_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS books (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     resource_id TEXT NOT NULL UNIQUE,
@@ -106,6 +115,7 @@ class LibraryRepository:
                     resource_type TEXT NOT NULL DEFAULT 'book',
                     path TEXT NOT NULL UNIQUE,
                     thumbnail_path TEXT,
+                    info_text TEXT,
                     is_missing INTEGER NOT NULL DEFAULT 0,
                     missing_reason TEXT,
                     fingerprint_sha256 TEXT,
@@ -154,6 +164,15 @@ class LibraryRepository:
                 );
                 """
             )
+            self._ensure_column(conn, "books", "info_text", "ALTER TABLE books ADD COLUMN info_text TEXT")
+
+    @staticmethod
+    def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, ddl_sql: str) -> None:
+        columns = conn.execute(f"PRAGMA table_info({table_name})").fetchall()  # noqa: S608
+        names = {str(row["name"]) for row in columns}
+        if column_name in names:
+            return
+        conn.execute(ddl_sql)
 
     def _ensure_defaults(self) -> None:
         if self.get_setting("scan_depth", None) is None:
@@ -164,6 +183,18 @@ class LibraryRepository:
             self.set_setting("card_spacing", DEFAULT_CARD_SPACING)
         if self.get_setting("topbar_search_font_size", None) is None:
             self.set_setting("topbar_search_font_size", DEFAULT_TOPBAR_SEARCH_FONT_SIZE)
+        if self.get_setting("text_preview_chars", None) is None:
+            self.set_setting("text_preview_chars", DEFAULT_TEXT_PREVIEW_CHARS)
+        if self.get_setting("scan_on_startup", None) is None:
+            self.set_setting("scan_on_startup", False)
+        if self.get_setting("auto_scan_on_path_change", None) is None:
+            self.set_setting("auto_scan_on_path_change", True)
+        if self.get_setting("language_code", None) is None:
+            self.set_setting("language_code", "en")
+        if self.get_setting("font_source", None) is None:
+            self.set_setting("font_source", "system")
+        if self.get_setting("font_family", None) is None:
+            self.set_setting("font_family", "")
 
     @staticmethod
     def normalize_path(path: str | Path) -> str:
@@ -230,6 +261,54 @@ class LibraryRepository:
     def set_topbar_search_font_size(self, size: int) -> None:
         self.set_setting("topbar_search_font_size", _normalize_topbar_search_font_size(size))
 
+    def get_text_preview_chars(self) -> int:
+        raw = self.get_setting("text_preview_chars", DEFAULT_TEXT_PREVIEW_CHARS)
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            value = DEFAULT_TEXT_PREVIEW_CHARS
+        if value not in TEXT_PREVIEW_CHAR_OPTIONS:
+            value = DEFAULT_TEXT_PREVIEW_CHARS
+        return value
+
+    def set_text_preview_chars(self, size: int) -> None:
+        value = int(size)
+        if value not in TEXT_PREVIEW_CHAR_OPTIONS:
+            value = DEFAULT_TEXT_PREVIEW_CHARS
+        self.set_setting("text_preview_chars", value)
+
+    def get_scan_on_startup(self) -> bool:
+        return bool(self.get_setting("scan_on_startup", False))
+
+    def set_scan_on_startup(self, enabled: bool) -> None:
+        self.set_setting("scan_on_startup", bool(enabled))
+
+    def get_auto_scan_on_path_change(self) -> bool:
+        return bool(self.get_setting("auto_scan_on_path_change", True))
+
+    def set_auto_scan_on_path_change(self, enabled: bool) -> None:
+        self.set_setting("auto_scan_on_path_change", bool(enabled))
+
+    def get_language_code(self) -> str:
+        code = str(self.get_setting("language_code", "en") or "en").strip().lower()
+        return code or "en"
+
+    def set_language_code(self, code: str) -> None:
+        self.set_setting("language_code", str(code or "en").strip().lower() or "en")
+
+    def get_font_source(self) -> str:
+        raw = str(self.get_setting("font_source", "system") or "system").strip().lower()
+        return "project" if raw == "project" else "system"
+
+    def set_font_source(self, source: str) -> None:
+        self.set_setting("font_source", "project" if str(source).strip().lower() == "project" else "system")
+
+    def get_font_family(self) -> str:
+        return str(self.get_setting("font_family", "") or "")
+
+    def set_font_family(self, family: str) -> None:
+        self.set_setting("font_family", str(family or ""))
+
     def list_roots(self) -> list[str]:
         with self._connection() as conn:
             rows = conn.execute("SELECT path FROM library_roots ORDER BY lower(path)").fetchall()
@@ -252,17 +331,16 @@ class LibraryRepository:
     def remove_root(self, path: str | Path) -> int:
         normalized = self.normalize_path(path)
         root_prefix = normalized.rstrip("\\/") + os.sep + "%"
-        timestamp = now_utc_iso()
         with self._connection() as conn:
             conn.execute("DELETE FROM library_roots WHERE path = ?", (normalized,))
             cursor = conn.execute(
                 """
-                UPDATE books
-                SET is_missing = 1, missing_reason = ?, updated_at = ?
-                WHERE is_missing = 0
+                DELETE FROM books
+                WHERE 1=1
+                AND resource_type != 'text_novel'
                 AND (path = ? OR path LIKE ?)
                 """,
-                ("root_removed", timestamp, normalized, root_prefix),
+                (normalized, root_prefix),
             )
             moved_to_missed = cursor.rowcount if cursor.rowcount is not None else 0
         return max(0, int(moved_to_missed))
@@ -289,20 +367,80 @@ class LibraryRepository:
     def remove_comic_root(self, path: str | Path) -> int:
         normalized = self.normalize_path(path)
         root_prefix = normalized.rstrip("\\/") + os.sep + "%"
-        timestamp = now_utc_iso()
         with self._connection() as conn:
             conn.execute("DELETE FROM comic_roots WHERE path = ?", (normalized,))
             cursor = conn.execute(
                 """
-                UPDATE comics
-                SET is_missing = 1, missing_reason = ?, updated_at = ?
-                WHERE is_missing = 0
+                DELETE FROM comics
+                WHERE 1=1
                 AND (path = ? OR path LIKE ?)
                 """,
-                ("comic_root_removed", timestamp, normalized, root_prefix),
+                (normalized, root_prefix),
             )
             moved_to_missed = cursor.rowcount if cursor.rowcount is not None else 0
         return max(0, int(moved_to_missed))
+
+    def list_text_roots(self) -> list[str]:
+        with self._connection() as conn:
+            rows = conn.execute("SELECT path FROM text_roots ORDER BY lower(path)").fetchall()
+        return [str(row["path"]) for row in rows]
+
+    def list_text_roots_with_rules(self) -> list[dict[str, str]]:
+        with self._connection() as conn:
+            rows = conn.execute("SELECT path, rules_json FROM text_roots ORDER BY lower(path)").fetchall()
+        return [{"path": str(row["path"]), "rules_json": str(row["rules_json"] or "{}")} for row in rows]
+
+    def add_text_root(self, path: str | Path) -> str:
+        normalized = self.normalize_path(path)
+        timestamp = now_utc_iso()
+        with self._connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO text_roots(path, rules_json, created_at, updated_at)
+                VALUES(?, ?, ?, ?)
+                ON CONFLICT(path) DO UPDATE SET updated_at = excluded.updated_at
+                """,
+                (normalized, "{}", timestamp, timestamp),
+            )
+        return normalized
+
+    def remove_text_root(self, path: str | Path) -> int:
+        normalized = self.normalize_path(path)
+        root_prefix = normalized.rstrip("\\/") + os.sep + "%"
+        with self._connection() as conn:
+            conn.execute("DELETE FROM text_roots WHERE path = ?", (normalized,))
+            cursor = conn.execute(
+                """
+                DELETE FROM books
+                WHERE 1=1
+                AND resource_type = 'text_novel'
+                AND (path = ? OR path LIKE ?)
+                """,
+                (normalized, root_prefix),
+            )
+            moved_to_missed = cursor.rowcount if cursor.rowcount is not None else 0
+        return max(0, int(moved_to_missed))
+
+    def get_text_root_rules_json(self, path: str | Path) -> str:
+        normalized = self.normalize_path(path)
+        with self._connection() as conn:
+            row = conn.execute("SELECT rules_json FROM text_roots WHERE path = ?", (normalized,)).fetchone()
+        if not row:
+            return "{}"
+        return str(row["rules_json"] or "{}")
+
+    def set_text_root_rules_json(self, path: str | Path, rules_json: str) -> None:
+        normalized = self.normalize_path(path)
+        timestamp = now_utc_iso()
+        with self._connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO text_roots(path, rules_json, created_at, updated_at)
+                VALUES(?, ?, ?, ?)
+                ON CONFLICT(path) DO UPDATE SET rules_json = excluded.rules_json, updated_at = excluded.updated_at
+                """,
+                (normalized, str(rules_json or "{}"), timestamp, timestamp),
+            )
 
     def find_missing_by_fingerprint(self, strategy: HashStrategy, value: str) -> dict[str, Any] | None:
         if not value:
@@ -324,16 +462,41 @@ class LibraryRepository:
         with self._connection() as conn:
             row = conn.execute(
                 """
-                SELECT path, title, file_name
+                SELECT id, path, title, file_name, resource_type
                 FROM books
                 WHERE lower(file_name) = lower(?)
                 AND lower(extension) = lower(?)
+                AND is_missing = 0
                 AND path != ?
                 LIMIT 1
                 """,
                 (file_name, extension, incoming_path),
             ).fetchone()
         return dict(row) if row else None
+
+    def delete_book_by_id(self, book_id: int) -> None:
+        with self._connection() as conn:
+            conn.execute("DELETE FROM books WHERE id = ?", (int(book_id),))
+
+    def delete_books_by_ids(self, book_ids: list[int]) -> int:
+        ids = [int(item) for item in book_ids if int(item) > 0]
+        if not ids:
+            return 0
+        placeholders = ",".join(["?"] * len(ids))
+        with self._connection() as conn:
+            cursor = conn.execute(f"DELETE FROM books WHERE id IN ({placeholders})", tuple(ids))  # noqa: S608
+            deleted = cursor.rowcount if cursor.rowcount is not None else 0
+        return max(0, int(deleted))
+
+    def delete_comics_by_ids(self, comic_ids: list[int]) -> int:
+        ids = [int(item) for item in comic_ids if int(item) > 0]
+        if not ids:
+            return 0
+        placeholders = ",".join(["?"] * len(ids))
+        with self._connection() as conn:
+            cursor = conn.execute(f"DELETE FROM comics WHERE id IN ({placeholders})", tuple(ids))  # noqa: S608
+            deleted = cursor.rowcount if cursor.rowcount is not None else 0
+        return max(0, int(deleted))
 
     def upsert_book(self, payload: dict[str, Any]) -> bool:
         path = payload["path"]
@@ -345,7 +508,7 @@ class LibraryRepository:
                     """
                     UPDATE books
                     SET file_name = ?, extension = ?, title = ?, author = ?, publisher = ?, language = ?,
-                        tags_json = ?, status = ?, resource_type = ?, thumbnail_path = ?,
+                        tags_json = ?, status = ?, resource_type = ?, thumbnail_path = ?, info_text = ?,
                         is_missing = 0, missing_reason = NULL,
                         fingerprint_sha256 = ?, fingerprint_size_mtime = ?, fingerprint_quick = ?, updated_at = ?
                     WHERE id = ?
@@ -361,6 +524,7 @@ class LibraryRepository:
                         payload.get("status", "UNREAD"),
                         payload.get("resource_type", "book"),
                         payload.get("thumbnail_path"),
+                        payload.get("info_text"),
                         payload.get("fingerprint_sha256"),
                         payload.get("fingerprint_size_mtime"),
                         payload.get("fingerprint_quick"),
@@ -375,10 +539,10 @@ class LibraryRepository:
                 """
                 INSERT INTO books(
                     resource_id, file_name, extension, title, author, publisher, language, tags_json,
-                    status, resource_type, path, thumbnail_path, is_missing, missing_reason,
+                    status, resource_type, path, thumbnail_path, info_text, is_missing, missing_reason,
                     fingerprint_sha256, fingerprint_size_mtime, fingerprint_quick, created_at, updated_at
                 )
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?)
                 """,
                 (
                     resource_id,
@@ -393,6 +557,7 @@ class LibraryRepository:
                     payload.get("resource_type", "book"),
                     path,
                     payload.get("thumbnail_path"),
+                    payload.get("info_text"),
                     payload.get("fingerprint_sha256"),
                     payload.get("fingerprint_size_mtime"),
                     payload.get("fingerprint_quick"),
@@ -410,7 +575,7 @@ class LibraryRepository:
                 """
                 UPDATE books
                 SET file_name = ?, extension = ?, title = ?, author = ?, publisher = ?, language = ?,
-                    tags_json = ?, status = ?, resource_type = ?, path = ?, thumbnail_path = ?,
+                    tags_json = ?, status = ?, resource_type = ?, path = ?, thumbnail_path = ?, info_text = ?,
                     is_missing = 0, missing_reason = NULL,
                     fingerprint_sha256 = ?, fingerprint_size_mtime = ?, fingerprint_quick = ?, updated_at = ?
                 WHERE id = ?
@@ -427,6 +592,7 @@ class LibraryRepository:
                     payload.get("resource_type", "book"),
                     payload["path"],
                     payload.get("thumbnail_path"),
+                    payload.get("info_text"),
                     payload.get("fingerprint_sha256"),
                     payload.get("fingerprint_size_mtime"),
                     payload.get("fingerprint_quick"),
@@ -445,7 +611,7 @@ class LibraryRepository:
 
         query = f"""
             SELECT resource_id, file_name, extension, title, author, publisher, language, tags_json, status,
-                   resource_type, path, thumbnail_path, is_missing, missing_reason
+                   resource_type, path, thumbnail_path, info_text, is_missing, missing_reason
             FROM books
             {where_clause}
             ORDER BY lower(COALESCE(title, file_name))
@@ -476,11 +642,39 @@ class LibraryRepository:
                     "resource_type": row["resource_type"],
                     "path": row["path"],
                     "thumbnail_path": row["thumbnail_path"],
+                    "info_text": row["info_text"],
                     "is_missing": bool(row["is_missing"]),
                     "missing_reason": row["missing_reason"],
                 }
             )
         return records
+
+    @staticmethod
+    def _path_in_roots(path_value: str, roots: list[str]) -> bool:
+        normalized_path = os.path.normcase(os.path.normpath(str(path_value or "")))
+        for root in roots:
+            normalized_root = os.path.normcase(os.path.normpath(str(root or "")))
+            if not normalized_root:
+                continue
+            if normalized_path == normalized_root:
+                return True
+            if normalized_path.startswith(normalized_root + os.sep):
+                return True
+        return False
+
+    def list_books_in_roots(self, roots: list[str], *, resource_type: str | None = None) -> list[dict[str, Any]]:
+        records = self.list_books(include_missing=False)
+        scoped: list[dict[str, Any]] = []
+        for record in records:
+            if resource_type is not None and str(record.get("resource_type") or "") != resource_type:
+                continue
+            if self._path_in_roots(str(record.get("path") or ""), roots):
+                scoped.append(record)
+        return scoped
+
+    def list_comics_in_roots(self, roots: list[str]) -> list[dict[str, Any]]:
+        records = self.list_comics(include_missing=False)
+        return [record for record in records if self._path_in_roots(str(record.get("path") or ""), roots)]
 
     def read_scan_report(self) -> dict[str, Any]:
         default: dict[str, Any] = {
@@ -488,11 +682,17 @@ class LibraryRepository:
             "updated_count": 0,
             "ignored_unsupported": 0,
             "name_conflicts": [],
-            "restored_from_missed": 0,
-            "moved_to_missed_count": 0,
+            "removed_missing_count": 0,
+            "removed_missing_book_count": 0,
+            "removed_missing_comic_count": 0,
             "errors": [],
+            "warnings": [],
             "unsupported_files": [],
             "scanned_files": 0,
+            "text_added_count": 0,
+            "text_updated_count": 0,
+            "text_scanned_files": 0,
+            "text_errors": [],
             "updated_at": None,
         }
         if not self.scan_report_path.exists():
@@ -519,19 +719,51 @@ class LibraryRepository:
                 (now_utc_iso(), trigger, json.dumps(summary, ensure_ascii=False)),
             )
 
-    def list_active_books_for_thumbnail_task(self) -> list[dict[str, Any]]:
+    def list_active_books_for_thumbnail_task(self, roots: list[str] | None = None) -> list[dict[str, Any]]:
         with self._connection() as conn:
             rows = conn.execute(
                 """
                 SELECT id, resource_id, file_name, extension, title, path, thumbnail_path
                 FROM books
                 WHERE is_missing = 0
+                AND resource_type != 'text_novel'
                 ORDER BY lower(COALESCE(title, file_name))
                 """
             ).fetchall()
-        return [dict(row) for row in rows]
+        records = [dict(row) for row in rows]
+        if not roots:
+            return records
+        return [record for record in records if self._path_in_roots(str(record.get("path") or ""), roots)]
 
-    def clear_all_thumbnail_paths(self) -> int:
+    def list_active_comics_for_thumbnail_task(self, roots: list[str] | None = None) -> list[dict[str, Any]]:
+        with self._connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, resource_id, title, path, cover_image_path, thumbnail_path
+                FROM comics
+                WHERE is_missing = 0
+                ORDER BY lower(title)
+                """
+            ).fetchall()
+        records = [dict(row) for row in rows]
+        if not roots:
+            return records
+        return [record for record in records if self._path_in_roots(str(record.get("path") or ""), roots)]
+
+    def clear_all_thumbnail_paths(self, roots: list[str] | None = None) -> int:
+        if roots:
+            records = self.list_active_books_for_thumbnail_task(roots=roots)
+            ids = [int(record["id"]) for record in records if record.get("thumbnail_path")]
+            if not ids:
+                return 0
+            placeholders = ",".join(["?"] * len(ids))
+            with self._connection() as conn:
+                cursor = conn.execute(
+                    f"UPDATE books SET thumbnail_path = NULL, updated_at = ? WHERE id IN ({placeholders})",  # noqa: S608
+                    (now_utc_iso(), *ids),
+                )
+                changed = cursor.rowcount if cursor.rowcount is not None else 0
+            return max(0, int(changed))
         with self._connection() as conn:
             cursor = conn.execute(
                 """
@@ -549,6 +781,39 @@ class LibraryRepository:
             conn.execute(
                 "UPDATE books SET thumbnail_path = ?, updated_at = ? WHERE id = ?",
                 (thumbnail_path, now_utc_iso(), int(book_id)),
+            )
+
+    def clear_all_comic_thumbnail_paths(self, roots: list[str] | None = None) -> int:
+        if roots:
+            records = self.list_active_comics_for_thumbnail_task(roots=roots)
+            ids = [int(record["id"]) for record in records if record.get("thumbnail_path")]
+            if not ids:
+                return 0
+            placeholders = ",".join(["?"] * len(ids))
+            with self._connection() as conn:
+                cursor = conn.execute(
+                    f"UPDATE comics SET thumbnail_path = NULL, updated_at = ? WHERE id IN ({placeholders})",  # noqa: S608
+                    (now_utc_iso(), *ids),
+                )
+                changed = cursor.rowcount if cursor.rowcount is not None else 0
+            return max(0, int(changed))
+        with self._connection() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE comics
+                SET thumbnail_path = NULL, updated_at = ?
+                WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ''
+                """,
+                (now_utc_iso(),),
+            )
+            changed = cursor.rowcount if cursor.rowcount is not None else 0
+        return max(0, int(changed))
+
+    def update_comic_thumbnail_path(self, comic_id: int, thumbnail_path: str | None) -> None:
+        with self._connection() as conn:
+            conn.execute(
+                "UPDATE comics SET thumbnail_path = ?, updated_at = ? WHERE id = ?",
+                (thumbnail_path, now_utc_iso(), int(comic_id)),
             )
 
     def get_book_int_id(self, resource_id: str) -> int | None:

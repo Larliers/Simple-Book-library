@@ -46,11 +46,11 @@ class SidebarWidget(QWidget):
         self._buttons: dict[str, QPushButton] = {}
         button_definitions = [
             ("library", "Library", "library.svg"),
+            ("text_novel", "Text Novel", "library.svg"),
             ("collections", "Collections", "collections.svg"),
             ("favorites", "Favorites", "favorites.svg"),
             ("comic", "Comic", "library.svg"),
             ("comic_fav", "Comic Fav", "favorites.svg"),
-            ("missed", "Missed", "trash.svg"),
         ]
 
         for key, text, icon_name in button_definitions:
@@ -95,11 +95,11 @@ class SidebarWidget(QWidget):
         self.title.setText(tr("sidebar.title", "Bookshelf"))
         self.subtitle.setText(tr("sidebar.subtitle", "Local Database"))
         self._buttons["library"].setText(tr("sidebar.library", "Library"))
+        self._buttons["text_novel"].setText(tr("sidebar.text_novel", "Text Novel"))
         self._buttons["collections"].setText(tr("sidebar.collections", "Collections"))
         self._buttons["favorites"].setText(tr("sidebar.favorites", "Favorites"))
         self._buttons["comic"].setText(tr("sidebar.comic", "Comic"))
         self._buttons["comic_fav"].setText(tr("sidebar.comic_fav", "Comic Fav"))
-        self._buttons["missed"].setText(tr("sidebar.missed", "Missed"))
         self.import_button.setText(tr("sidebar.import_books", "IMPORT BOOKS"))
         self.settings_button.setText(tr("sidebar.settings", "Settings"))
 

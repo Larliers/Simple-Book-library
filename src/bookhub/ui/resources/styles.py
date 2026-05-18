@@ -123,6 +123,22 @@ QPushButton#PathDeleteButton {
 QPushButton#PathDeleteButton:hover {
     background: #ffefee;
 }
+QPushButton#PathRuleButton {
+    color: #0f5fa8;
+    border: 1px solid #b7d2f2;
+    background: #ffffff;
+    min-width: 96px;
+    max-width: 96px;
+    min-height: 40px;
+    max-height: 40px;
+    padding: 0px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 16px;
+}
+QPushButton#PathRuleButton:hover {
+    background: #eef6ff;
+}
 #TopBar {
     background: #f9f9f9;
     border-bottom: 1px solid #d4dae4;

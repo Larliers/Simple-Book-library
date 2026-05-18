@@ -13,9 +13,14 @@ HASH_STRATEGIES = {
 }
 HashStrategy = Literal["sha256", "size_mtime", "quick"]
 ThumbnailTaskKind = Literal["cleanup", "regenerate"]
+ScanScope = Literal["library", "comic", "text", "all"]
+ThumbnailScope = Literal["library", "comic"]
 
 SUPPORTED_EXTENSIONS = (".pdf", ".epub")
 COMIC_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+TEXT_FILE_EXTENSION = ".txt"
+DEFAULT_TEXT_PREVIEW_CHARS = 1200
+TEXT_PREVIEW_CHAR_OPTIONS = (600, 1200, 2000, 4000)
 
 
 @dataclass(slots=True)
@@ -71,21 +76,39 @@ class ComicScanRequest:
 
 
 @dataclass(slots=True)
+class TextScanRoot:
+    path: str
+    rules_json: str | None = None
+
+
+@dataclass(slots=True)
+class TextScanRequest:
+    roots: list[TextScanRoot]
+    preview_chars: int = DEFAULT_TEXT_PREVIEW_CHARS
+
+
+@dataclass(slots=True)
 class ScanResult:
     added_count: int = 0
     updated_count: int = 0
     ignored_unsupported: int = 0
-    restored_from_missed: int = 0
-    moved_to_missed_count: int = 0
+    removed_missing_count: int = 0
+    removed_missing_book_count: int = 0
+    removed_missing_comic_count: int = 0
     scanned_files: int = 0
     unsupported_files: list[str] = field(default_factory=list)
     name_conflicts: list[ScanConflict] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    warnings: list[dict[str, object]] = field(default_factory=list)
     comic_added_count: int = 0
     comic_updated_count: int = 0
     comic_scanned_dirs: int = 0
     comic_detected_folders: int = 0
     comic_errors: list[str] = field(default_factory=list)
+    text_added_count: int = 0
+    text_updated_count: int = 0
+    text_scanned_files: int = 0
+    text_errors: list[str] = field(default_factory=list)
 
     def to_summary(self) -> dict[str, object]:
         return {
@@ -93,9 +116,11 @@ class ScanResult:
             "updated_count": self.updated_count,
             "ignored_unsupported": self.ignored_unsupported,
             "name_conflicts": [item.as_dict() for item in self.name_conflicts],
-            "restored_from_missed": self.restored_from_missed,
-            "moved_to_missed_count": self.moved_to_missed_count,
+            "removed_missing_count": self.removed_missing_count,
+            "removed_missing_book_count": self.removed_missing_book_count,
+            "removed_missing_comic_count": self.removed_missing_comic_count,
             "errors": list(self.errors),
+            "warnings": list(self.warnings),
             "unsupported_files": list(self.unsupported_files),
             "scanned_files": self.scanned_files,
             "comic_added_count": self.comic_added_count,
@@ -103,12 +128,17 @@ class ScanResult:
             "comic_scanned_dirs": self.comic_scanned_dirs,
             "comic_detected_folders": self.comic_detected_folders,
             "comic_errors": list(self.comic_errors),
+            "text_added_count": self.text_added_count,
+            "text_updated_count": self.text_updated_count,
+            "text_scanned_files": self.text_scanned_files,
+            "text_errors": list(self.text_errors),
         }
 
 
 @dataclass(slots=True)
 class ThumbnailTaskResult:
     task_kind: ThumbnailTaskKind
+    task_scope: ThumbnailScope = "library"
     total: int = 0
     succeeded: int = 0
     skipped: int = 0
@@ -118,6 +148,7 @@ class ThumbnailTaskResult:
     def to_summary(self) -> dict[str, object]:
         return {
             "task_kind": self.task_kind,
+            "task_scope": self.task_scope,
             "total": self.total,
             "succeeded": self.succeeded,
             "skipped": self.skipped,

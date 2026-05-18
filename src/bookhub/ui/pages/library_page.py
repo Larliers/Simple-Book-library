@@ -132,7 +132,7 @@ class BookDetailPanel(QFrame):
         raw_info_text = (resource.info_text or "").strip()
         if raw_info_text:
             lines.append("")
-            lines.append(tr("comic.detail.info_text", "漫画文本信息："))
+            lines.append(tr("detail.info_text", "Text Preview:"))
             lines.append(raw_info_text)
 
         self._detail_text_label.setText("\n".join(lines))
@@ -174,12 +174,10 @@ class LibraryPage(QWidget):
         self,
         view_model: LibraryViewModel,
         parent: QWidget | None = None,
-        missing_mode: bool = False,
         repository=None,
     ) -> None:
         super().__init__(parent)
         self.view_model = view_model
-        self.missing_mode = missing_mode
         self._repository = repository
         self.interaction_events: list[dict[str, str | None]] = []
         self._last_grid_columns = 0
@@ -286,10 +284,7 @@ class LibraryPage(QWidget):
         self.render()
 
     def retranslate_ui(self) -> None:
-        if self.missing_mode:
-            self.title.setText(tr("missed.title", "Missed"))
-        else:
-            self.title.setText(tr("library.title", "Library"))
+        self.title.setText(tr("library.title", "Library"))
         self.grid_btn.setToolTip(tr("library.grid", "Grid"))
         self.list_btn.setToolTip(tr("library.list", "List"))
         self.list_table.setHorizontalHeaderLabels(
@@ -314,17 +309,11 @@ class LibraryPage(QWidget):
         self.render()
 
     def render(self) -> None:
-        items = self.view_model.filtered_resources(include_missing=self.missing_mode)
+        items = self.view_model.filtered_resources(include_missing=False)
         self._resource_by_id = {item.resource_id: item for item in items}
-
-        if self.missing_mode:
-            self.subtitle.setText(
-                tr("missed.subtitle.count", "{count} missing books waiting restore").format(count=len(items))
-            )
-        else:
-            self.subtitle.setText(
-                tr("library.subtitle.count", "{count} books in your local collection").format(count=len(items))
-            )
+        self.subtitle.setText(
+            tr("library.subtitle.count", "{count} books in your local collection").format(count=len(items))
+        )
 
         if self._selected_resource_id and self._selected_resource_id not in self._resource_by_id:
             self._selected_resource_id = None
@@ -372,17 +361,16 @@ class LibraryPage(QWidget):
             )
             self.grid_layout.addWidget(card, row, col, alignment=Qt.AlignLeft | Qt.AlignTop)
 
-        if not self.missing_mode:
-            add_card = QLabel(tr("library.add_new_book", "+\nADD NEW BOOK"))
-            add_card.setObjectName("AddCard")
-            add_card.setAlignment(Qt.AlignCenter)
-            add_card.setFixedSize(UI_LAYOUT.card_width, UI_LAYOUT.add_card_height)
-            self.grid_layout.addWidget(
-                add_card,
-                len(items) // columns,
-                len(items) % columns,
-                alignment=Qt.AlignLeft | Qt.AlignTop,
-            )
+        add_card = QLabel(tr("library.add_new_book", "+\nADD NEW BOOK"))
+        add_card.setObjectName("AddCard")
+        add_card.setAlignment(Qt.AlignCenter)
+        add_card.setFixedSize(UI_LAYOUT.card_width, UI_LAYOUT.add_card_height)
+        self.grid_layout.addWidget(
+            add_card,
+            len(items) // columns,
+            len(items) % columns,
+            alignment=Qt.AlignLeft | Qt.AlignTop,
+        )
 
         max_columns_to_reset = max(previous_columns, columns) + 1
         for col in range(max_columns_to_reset + 1):
@@ -497,7 +485,7 @@ class LibraryPage(QWidget):
         open_action = menu.addAction(tr("library.menu.open_external", "Open External"))
         open_folder_action = menu.addAction(tr("library.menu.open_folder", "Open Folder"))
         add_favorite_action = None
-        if self._repository is not None and not self.missing_mode:
+        if self._repository is not None:
             add_favorite_action = menu.addAction(tr("library.menu.add_to_favorites", "Add to Favorites"))
         menu.addSeparator()
         remove_action = menu.addAction(tr("library.menu.remove_library", "Remove from Library"))
@@ -674,7 +662,7 @@ class LibraryPage(QWidget):
         menu = QMenu(self)
         open_action = menu.addAction(tr("library.menu.open_external", "Open External"))
         add_favorite_action = None
-        if self._repository is not None and not self.missing_mode:
+        if self._repository is not None:
             add_favorite_action = menu.addAction(tr("library.menu.add_to_favorites", "Add to Favorites"))
         add_tag_action = menu.addAction(tr("library.menu.add_tag", "Add Tag"))
         chosen = menu.exec(global_pos)
@@ -755,7 +743,7 @@ class LibraryPage(QWidget):
         self.grid_layout.setHorizontalSpacing(UI_LAYOUT.card_spacing)
         self.grid_layout.setVerticalSpacing(UI_LAYOUT.card_spacing)
         if self.view_model.view_mode == "waterfall":
-            self._render_grid(self.view_model.filtered_resources(include_missing=self.missing_mode))
+            self._render_grid(self.view_model.filtered_resources(include_missing=False))
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -763,11 +751,11 @@ class LibraryPage(QWidget):
             return
         columns = self._calculate_grid_columns()
         if columns != self._last_grid_columns:
-            self._render_grid(self.view_model.filtered_resources(include_missing=self.missing_mode))
+            self._render_grid(self.view_model.filtered_resources(include_missing=False))
 
     def _on_main_splitter_moved(self, _pos: int, _index: int) -> None:
         if self.view_model.view_mode != "waterfall":
             return
         columns = self._calculate_grid_columns()
         if columns != self._last_grid_columns:
-            self._render_grid(self.view_model.filtered_resources(include_missing=self.missing_mode))
+            self._render_grid(self.view_model.filtered_resources(include_missing=False))

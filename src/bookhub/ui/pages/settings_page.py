@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
+    QDialog,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -22,6 +23,8 @@ from PySide6.QtWidgets import (
 )
 
 from bookhub.i18n import tr
+from bookhub.library.models import DEFAULT_TEXT_PREVIEW_CHARS, TEXT_PREVIEW_CHAR_OPTIONS
+from bookhub.ui.dialogs.text_rule_dialog import TextRuleDialog
 from bookhub.ui.resources.layout_config import (
     CARD_SPACING_MAX,
     CARD_SPACING_MIN,
@@ -36,17 +39,27 @@ from bookhub.ui.resources.layout_config import (
 
 class SettingsPage(QWidget):
     language_changed = Signal(str)
+    scan_on_startup_changed = Signal(bool)
+    auto_scan_on_path_change_changed = Signal(bool)
     add_root_requested = Signal(str)
     remove_root_requested = Signal(str)
     add_comic_root_requested = Signal(str)
     remove_comic_root_requested = Signal(str)
-    scan_requested = Signal()
+    add_text_root_requested = Signal(str)
+    remove_text_root_requested = Signal(str)
+    manage_text_rules_requested = Signal(str, str)
+    scan_library_requested = Signal()
+    scan_comic_requested = Signal()
+    scan_text_requested = Signal()
     scan_depth_changed = Signal(int)
     hash_strategy_changed = Signal(str)
     card_spacing_changed = Signal(int)
     topbar_search_font_size_changed = Signal(int)
-    cleanup_all_thumbnails_requested = Signal()
-    regenerate_thumbnails_requested = Signal()
+    text_preview_chars_changed = Signal(int)
+    cleanup_library_thumbnails_requested = Signal()
+    regenerate_library_thumbnails_requested = Signal()
+    cleanup_comic_thumbnails_requested = Signal()
+    regenerate_comic_thumbnails_requested = Signal()
     font_changed = Signal(str, str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -54,6 +67,8 @@ class SettingsPage(QWidget):
         self._last_summary: dict[str, object] = {}
         self._current_roots: list[str] = []
         self._current_comic_roots: list[str] = []
+        self._current_text_roots: list[str] = []
+        self._text_rules_by_path: dict[str, str] = {}
         self._thumbnail_task_kind: str | None = None
         self._project_font_families: list[str] = []
         self._font_source: str = "system"
@@ -104,10 +119,13 @@ class SettingsPage(QWidget):
         self.startup_label = QLabel("STARTUP OPTIONS")
         self.startup_label.setStyleSheet("font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #6a7382;")
         startup_layout.addWidget(self.startup_label)
-        self.launch_check = QCheckBox("Launch at system startup")
-        self.launch_check.setChecked(True)
+        self.launch_check = QCheckBox("Scan on startup")
+        self.launch_check.setChecked(False)
+        self.launch_check.stateChanged.connect(self._emit_scan_on_startup_changed)
         startup_layout.addWidget(self.launch_check)
-        self.tray_check = QCheckBox("Minimize to tray on close")
+        self.tray_check = QCheckBox("Auto scan when path changed")
+        self.tray_check.setChecked(True)
+        self.tray_check.stateChanged.connect(self._emit_auto_scan_on_path_change_changed)
         startup_layout.addWidget(self.tray_check)
         content_layout.addWidget(startup)
 
@@ -212,6 +230,25 @@ class SettingsPage(QWidget):
         self.comic_folders.setViewportMargins(0, 0, 0, 0)
         library_layout.addWidget(self.comic_folders)
 
+        text_row = QHBoxLayout()
+        self.text_label = QLabel("TEXT NOVEL FOLDERS")
+        self.text_label.setStyleSheet("font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #6a7382;")
+        self.add_text_path_button = QPushButton("+ Add Text Path")
+        self.add_text_path_button.setObjectName("PrimaryButton")
+        self.add_text_path_button.clicked.connect(self._pick_text_folder)
+        text_row.addWidget(self.text_label, 1)
+        text_row.addWidget(self.add_text_path_button)
+        library_layout.addLayout(text_row)
+
+        self.text_folders = QListWidget()
+        self.text_folders.setObjectName("LibraryPathList")
+        self.text_folders.setSpacing(4)
+        self.text_folders.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.text_folders.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.text_folders.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.text_folders.setViewportMargins(0, 0, 0, 0)
+        library_layout.addWidget(self.text_folders)
+
         options_row = QHBoxLayout()
         options_row.setSpacing(10)
         self.scan_depth_label = QLabel("Scan depth")
@@ -253,10 +290,19 @@ class SettingsPage(QWidget):
             self._emit_topbar_search_font_size_changed
         )
         options_row.addWidget(self.topbar_search_font_size_combo, 1)
+
+        self.text_preview_chars_label = QLabel("Text preview chars")
+        options_row.addWidget(self.text_preview_chars_label)
+        self.text_preview_chars_combo = QComboBox()
+        self.text_preview_chars_combo.setObjectName("SettingsLanguageCombo")
+        for size in TEXT_PREVIEW_CHAR_OPTIONS:
+            self.text_preview_chars_combo.addItem(f"{size}", int(size))
+        self.text_preview_chars_combo.currentIndexChanged.connect(self._emit_text_preview_chars_changed)
+        options_row.addWidget(self.text_preview_chars_combo, 1)
         library_layout.addLayout(options_row)
 
         self.formats_hint = QLabel(
-            "Supported formats: PDF, EPUB. Unsupported formats are ignored and recorded in scan summary."
+            "Library supports PDF/EPUB. Text Novel roots support TXT with configurable preview extraction."
         )
         self.formats_hint.setObjectName("PageSubtitle")
         self.formats_hint.setWordWrap(True)
@@ -267,19 +313,48 @@ class SettingsPage(QWidget):
         self.scan_summary.setWordWrap(True)
         library_layout.addWidget(self.scan_summary)
 
-        thumb_task_row = QHBoxLayout()
-        thumb_task_row.setSpacing(8)
-        self.cleanup_thumbnails_btn = QPushButton("Clean All Thumbnails")
-        self.cleanup_thumbnails_btn.setObjectName("GhostButton")
-        self.cleanup_thumbnails_btn.clicked.connect(self.cleanup_all_thumbnails_requested.emit)
-        thumb_task_row.addWidget(self.cleanup_thumbnails_btn)
+        scan_row = QHBoxLayout()
+        scan_row.setSpacing(8)
+        self.scan_library_btn = QPushButton("Scan Library Folders")
+        self.scan_library_btn.setObjectName("PrimaryButton")
+        self.scan_library_btn.clicked.connect(self.scan_library_requested.emit)
+        scan_row.addWidget(self.scan_library_btn)
+        self.scan_comic_btn = QPushButton("Scan Comic Folders")
+        self.scan_comic_btn.setObjectName("PrimaryButton")
+        self.scan_comic_btn.clicked.connect(self.scan_comic_requested.emit)
+        scan_row.addWidget(self.scan_comic_btn)
+        self.scan_text_btn = QPushButton("Scan Text Novel Folders")
+        self.scan_text_btn.setObjectName("PrimaryButton")
+        self.scan_text_btn.clicked.connect(self.scan_text_requested.emit)
+        scan_row.addWidget(self.scan_text_btn)
+        scan_row.addStretch(1)
+        library_layout.addLayout(scan_row)
 
-        self.regenerate_thumbnails_btn = QPushButton("Regenerate Thumbnails")
-        self.regenerate_thumbnails_btn.setObjectName("GhostButton")
-        self.regenerate_thumbnails_btn.clicked.connect(self.regenerate_thumbnails_requested.emit)
-        thumb_task_row.addWidget(self.regenerate_thumbnails_btn)
-        thumb_task_row.addStretch(1)
-        library_layout.addLayout(thumb_task_row)
+        library_thumb_row = QHBoxLayout()
+        library_thumb_row.setSpacing(8)
+        self.cleanup_library_thumbnails_btn = QPushButton("Clean Library Thumbnails")
+        self.cleanup_library_thumbnails_btn.setObjectName("GhostButton")
+        self.cleanup_library_thumbnails_btn.clicked.connect(self.cleanup_library_thumbnails_requested.emit)
+        library_thumb_row.addWidget(self.cleanup_library_thumbnails_btn)
+        self.regenerate_library_thumbnails_btn = QPushButton("Regenerate Library Thumbnails")
+        self.regenerate_library_thumbnails_btn.setObjectName("GhostButton")
+        self.regenerate_library_thumbnails_btn.clicked.connect(self.regenerate_library_thumbnails_requested.emit)
+        library_thumb_row.addWidget(self.regenerate_library_thumbnails_btn)
+        library_thumb_row.addStretch(1)
+        library_layout.addLayout(library_thumb_row)
+
+        comic_thumb_row = QHBoxLayout()
+        comic_thumb_row.setSpacing(8)
+        self.cleanup_comic_thumbnails_btn = QPushButton("Clean Comic Thumbnails")
+        self.cleanup_comic_thumbnails_btn.setObjectName("GhostButton")
+        self.cleanup_comic_thumbnails_btn.clicked.connect(self.cleanup_comic_thumbnails_requested.emit)
+        comic_thumb_row.addWidget(self.cleanup_comic_thumbnails_btn)
+        self.regenerate_comic_thumbnails_btn = QPushButton("Regenerate Comic Thumbnails")
+        self.regenerate_comic_thumbnails_btn.setObjectName("GhostButton")
+        self.regenerate_comic_thumbnails_btn.clicked.connect(self.regenerate_comic_thumbnails_requested.emit)
+        comic_thumb_row.addWidget(self.regenerate_comic_thumbnails_btn)
+        comic_thumb_row.addStretch(1)
+        library_layout.addLayout(comic_thumb_row)
 
         self.thumbnail_task_panel = QFrame()
         self.thumbnail_task_panel.setObjectName("PageSection")
@@ -298,13 +373,21 @@ class SettingsPage(QWidget):
 
         content_layout.addWidget(library_box)
 
-        action_row = QHBoxLayout()
-        self.scan_btn = QPushButton("Scan folders for new books now")
-        self.scan_btn.setObjectName("PrimaryButton")
-        self.scan_btn.clicked.connect(self.scan_requested.emit)
-        action_row.addWidget(self.scan_btn)
-        action_row.addStretch(1)
-        content_layout.addLayout(action_row)
+        self._scan_buttons: dict[str, QPushButton] = {
+            "library": self.scan_library_btn,
+            "comic": self.scan_comic_btn,
+            "text": self.scan_text_btn,
+        }
+        self._thumbnail_buttons: dict[str, dict[str, QPushButton]] = {
+            "library": {
+                "cleanup": self.cleanup_library_thumbnails_btn,
+                "regenerate": self.regenerate_library_thumbnails_btn,
+            },
+            "comic": {
+                "cleanup": self.cleanup_comic_thumbnails_btn,
+                "regenerate": self.regenerate_comic_thumbnails_btn,
+            },
+        }
         content_layout.addStretch(1)
 
         self.content_stack.addWidget(content)
@@ -338,6 +421,16 @@ class SettingsPage(QWidget):
         if index >= 0:
             self.language_combo.setCurrentIndex(index)
 
+    def set_scan_on_startup(self, enabled: bool) -> None:
+        self.launch_check.blockSignals(True)
+        self.launch_check.setChecked(bool(enabled))
+        self.launch_check.blockSignals(False)
+
+    def set_auto_scan_on_path_change(self, enabled: bool) -> None:
+        self.tray_check.blockSignals(True)
+        self.tray_check.setChecked(bool(enabled))
+        self.tray_check.blockSignals(False)
+
     def set_library_roots(self, paths: list[str]) -> None:
         self._current_roots = list(paths)
         self.folders.clear()
@@ -349,6 +442,25 @@ class SettingsPage(QWidget):
         self.comic_folders.clear()
         for path in self._current_comic_roots:
             self._append_comic_path_item(path)
+
+    def set_text_roots(self, paths: list[str]) -> None:
+        self._current_text_roots = list(paths)
+        self._text_rules_by_path = {path: self._text_rules_by_path.get(path, "{}") for path in self._current_text_roots}
+        self.text_folders.clear()
+        for path in self._current_text_roots:
+            self._append_text_path_item(path)
+
+    def set_text_roots_with_rules(self, rows: list[dict[str, str]]) -> None:
+        normalized: list[str] = []
+        mapping: dict[str, str] = {}
+        for item in rows:
+            path = str(item.get("path") or "").strip()
+            if not path:
+                continue
+            normalized.append(path)
+            mapping[path] = str(item.get("rules_json") or "{}")
+        self._text_rules_by_path = mapping
+        self.set_text_roots(normalized)
 
     def set_scan_depth(self, depth: int) -> None:
         index = self.scan_depth_combo.findData(depth)
@@ -384,6 +496,16 @@ class SettingsPage(QWidget):
         self.topbar_search_font_size_combo.setCurrentIndex(index)
         self.topbar_search_font_size_combo.blockSignals(False)
 
+    def set_text_preview_chars(self, size: int) -> None:
+        index = self.text_preview_chars_combo.findData(int(size))
+        if index < 0:
+            index = self.text_preview_chars_combo.findData(DEFAULT_TEXT_PREVIEW_CHARS)
+        if index < 0:
+            index = 0
+        self.text_preview_chars_combo.blockSignals(True)
+        self.text_preview_chars_combo.setCurrentIndex(index)
+        self.text_preview_chars_combo.blockSignals(False)
+
     def set_available_project_fonts(self, families: list[str]) -> None:
         self._project_font_families = sorted({str(item).strip() for item in families if str(item).strip()})
         self._rebuild_font_family_options()
@@ -401,36 +523,63 @@ class SettingsPage(QWidget):
         self._last_summary = dict(summary)
         added_count = int(summary.get("added_count", 0) or 0)
         ignored = int(summary.get("ignored_unsupported", 0) or 0)
-        restored = int(summary.get("restored_from_missed", 0) or 0)
-        moved = int(summary.get("moved_to_missed_count", 0) or 0)
+        removed_missing_total = int(summary.get("removed_missing_count", 0) or 0)
+        removed_missing_books = int(summary.get("removed_missing_book_count", 0) or 0)
+        removed_missing_comics = int(summary.get("removed_missing_comic_count", 0) or 0)
         conflicts = summary.get("name_conflicts", [])
         conflict_count = len(conflicts) if isinstance(conflicts, list) else 0
         updated_at = str(summary.get("updated_at") or tr("settings.summary.never", "never"))
+        scope = str(summary.get("scope") or "all")
         self.scan_summary.setText(
             tr(
                 "settings.scan_summary_template",
-                "Last scan: {updated_at}\nAdded: {added} | Restored from Missed: {restored} | "
-                "Moved to Missed: {moved} | Ignored unsupported: {ignored} | Name conflicts: {conflicts}",
+                "Last scan: {updated_at}\nScope: {scope} | Added: {added} | Ignored unsupported: {ignored} | "
+                "Name conflicts: {conflicts}\nRemoved missing: {removed_total} (library/text: {removed_books}, comic: {removed_comics})",
             ).format(
                 updated_at=updated_at,
+                scope=scope,
                 added=added_count,
-                restored=restored,
-                moved=moved,
                 ignored=ignored,
                 conflicts=conflict_count,
+                removed_total=removed_missing_total,
+                removed_books=removed_missing_books,
+                removed_comics=removed_missing_comics,
             )
         )
+        text_added = int(summary.get("text_added_count", 0) or 0)
+        text_updated = int(summary.get("text_updated_count", 0) or 0)
+        text_scanned = int(summary.get("text_scanned_files", 0) or 0)
+        text_suffix = tr(
+            "settings.text.scan_summary",
+            "\nText Novel - scanned:{scanned} added:{added} updated:{updated}",
+        ).format(scanned=text_scanned, added=text_added, updated=text_updated)
+        self.scan_summary.setText(self.scan_summary.text() + text_suffix)
+        warnings = summary.get("warnings", [])
+        if isinstance(warnings, list):
+            pdf_warning = next(
+                (item for item in warnings if isinstance(item, dict) and str(item.get("code") or "") == "pdf_backend_unavailable"),
+                None,
+            )
+            if isinstance(pdf_warning, dict):
+                skipped_count = int(pdf_warning.get("count", 0) or 0)
+                warning_suffix = tr(
+                    "settings.scan_warning_pdf_backend",
+                    "\nPDF backend unavailable, skipped metadata/thumbnail processing ({count} files).",
+                ).format(count=skipped_count)
+                self.scan_summary.setText(self.scan_summary.text() + warning_suffix)
         thumb_task = summary.get("thumbnail_task")
         if isinstance(thumb_task, dict):
             task_kind = str(thumb_task.get("task_kind") or "")
+            task_scope = str(thumb_task.get("task_scope") or "library")
             total = int(thumb_task.get("total", 0) or 0)
             succeeded = int(thumb_task.get("succeeded", 0) or 0)
             failed = int(thumb_task.get("failed", 0) or 0)
             skipped = int(thumb_task.get("skipped", 0) or 0)
             suffix = tr(
                 "settings.thumb.summary",
-                "\nThumbnail task({kind}) - total:{total} success:{succeeded} skipped:{skipped} failed:{failed}",
+                "\nThumbnail task({scope}/{kind}) - total:{total} success:{succeeded} skipped:{skipped} failed:{failed}",
             ).format(
+                scope=task_scope,
                 kind=task_kind,
                 total=total,
                 succeeded=succeeded,
@@ -439,12 +588,39 @@ class SettingsPage(QWidget):
             )
             self.scan_summary.setText(self.scan_summary.text() + suffix)
 
-    def set_scan_running(self, running: bool) -> None:
-        self.scan_btn.setEnabled(not running)
+    def set_scan_running(self, running: bool, scope: str = "all") -> None:
+        target_scopes = {"library", "comic", "text"} if scope == "all" else {scope}
+        for button_scope, button in self._scan_buttons.items():
+            if button_scope in target_scopes:
+                button.setEnabled(not running)
         if running:
-            self.scan_btn.setText(tr("settings.scan_running", "Scanning..."))
+            for target_scope in target_scopes:
+                button = self._scan_buttons.get(target_scope)
+                if button is None:
+                    continue
+                button.setText(
+                    tr(
+                        f"settings.scan_running.{target_scope}",
+                        f"Scanning {target_scope} folders...",
+                    )
+                )
         else:
-            self.scan_btn.setText(tr("settings.scan_now", "Scan folders for new books now"))
+            self._update_scan_button_texts()
+
+    def _update_scan_button_texts(self) -> None:
+        self.scan_library_btn.setText(tr("settings.scan.library", "Scan Library Folders"))
+        self.scan_comic_btn.setText(tr("settings.scan.comic", "Scan Comic Folders"))
+        self.scan_text_btn.setText(tr("settings.scan.text", "Scan Text Novel Folders"))
+
+    def _update_thumbnail_button_texts(self) -> None:
+        self.cleanup_library_thumbnails_btn.setText(tr("settings.thumb.library.clean", "Clean Library Thumbnails"))
+        self.regenerate_library_thumbnails_btn.setText(
+            tr("settings.thumb.library.regenerate", "Regenerate Library Thumbnails")
+        )
+        self.cleanup_comic_thumbnails_btn.setText(tr("settings.thumb.comic.clean", "Clean Comic Thumbnails"))
+        self.regenerate_comic_thumbnails_btn.setText(
+            tr("settings.thumb.comic.regenerate", "Regenerate Comic Thumbnails")
+        )
 
     def retranslate_ui(self) -> None:
         for idx, (key, fallback) in enumerate(self._nav_labels):
@@ -453,19 +629,21 @@ class SettingsPage(QWidget):
                 item.setText(tr(key, fallback))
         self.title.setText(tr("settings.title", "General Settings"))
         self.startup_label.setText(tr("settings.startup_options", "Startup Options"))
-        self.launch_check.setText(tr("settings.launch_startup", "Launch at system startup"))
-        self.tray_check.setText(tr("settings.minimize_tray", "Minimize to tray on close"))
+        self.launch_check.setText(tr("settings.scan_on_startup", "Scan on startup"))
+        self.tray_check.setText(tr("settings.auto_scan_on_path_change", "Auto scan when path changed"))
         self.language_label.setText(tr("settings.display_language", "Display language"))
         self.library_label.setText(tr("settings.library_folders", "Library Folders"))
         self.add_path_button.setText(tr("settings.add_path", "+ Add Path"))
         self.comic_label.setText(tr("settings.comic_folders", "Comic Folders"))
         self.add_comic_path_button.setText(tr("settings.add_comic_path", "+ Add Comic Path"))
-        self.scan_btn.setText(tr("settings.scan_now", "Scan folders for new books now"))
+        self.text_label.setText(tr("settings.text_folders", "Text Novel Folders"))
+        self.add_text_path_button.setText(tr("settings.add_text_path", "+ Add Text Path"))
         self.restart_hint.setText(tr("settings.restart_hint", "Restart application to apply language changes."))
         self.scan_depth_label.setText(tr("settings.scan_depth", "Scan depth"))
         self.hash_strategy_label.setText(tr("settings.hash_strategy", "Missed hash matching"))
         self.card_spacing_label.setText(tr("settings.card_spacing", "Card spacing"))
         self.topbar_search_font_size_label.setText(tr("settings.topbar_search_font_size", "Search font size"))
+        self.text_preview_chars_label.setText(tr("settings.text_preview_chars", "Text preview chars"))
         self.font_title.setText(tr("settings.font.title", "Font"))
         self.font_source_label.setText(tr("settings.font.source", "Font source"))
         self.font_family_label.setText(tr("settings.font.family", "Font family"))
@@ -473,18 +651,20 @@ class SettingsPage(QWidget):
         self.font_preview_label.setText(
             tr("settings.font.preview", "Preview: The quick brown fox jumps over the lazy dog 你好，世界")
         )
-        self.cleanup_thumbnails_btn.setText(tr("settings.thumb.clean_all", "Clean All Thumbnails"))
-        self.regenerate_thumbnails_btn.setText(tr("settings.thumb.regenerate", "Regenerate Thumbnails"))
+        self._update_scan_button_texts()
+        self._update_thumbnail_button_texts()
         self.formats_hint.setText(
             tr(
                 "settings.formats_hint",
-                "Supported formats: PDF, EPUB. Unsupported formats are ignored and recorded in scan summary.",
+                "Library supports PDF/EPUB. Text Novel roots support TXT with configurable preview extraction.",
             )
         )
         if self._thumbnail_task_kind:
             self.thumbnail_task_status.setText(tr("settings.thumb.done", "Task completed"))
         self.set_library_roots(self._current_roots)
         self.set_comic_roots(self._current_comic_roots)
+        self.set_text_roots(self._current_text_roots)
+        self.set_text_preview_chars(int(self.text_preview_chars_combo.currentData() or DEFAULT_TEXT_PREVIEW_CHARS))
         self._set_language_options()
         self.set_scan_summary(self._last_summary)
 
@@ -510,6 +690,12 @@ class SettingsPage(QWidget):
             return
         self.add_comic_root_requested.emit(directory)
 
+    def _pick_text_folder(self) -> None:
+        directory = QFileDialog.getExistingDirectory(self, tr("settings.pick_text_folder", "Select Text Novel Folder"))
+        if not directory:
+            return
+        self.add_text_root_requested.emit(directory)
+
     def _on_nav_changed(self, row: int) -> None:
         self.content_stack.setCurrentIndex(1 if row == 1 else 0)
 
@@ -533,7 +719,21 @@ class SettingsPage(QWidget):
             remove_callback=lambda target: self.remove_comic_root_requested.emit(target),
         )
 
-    def _append_root_row(self, list_widget: QListWidget, path: str, remove_callback) -> None:
+    def _append_text_path_item(self, path: str) -> None:
+        self._append_root_row(
+            list_widget=self.text_folders,
+            path=path,
+            remove_callback=lambda target: self.remove_text_root_requested.emit(target),
+            manage_rules_callback=self._open_text_rule_dialog,
+        )
+
+    def _append_root_row(
+        self,
+        list_widget: QListWidget,
+        path: str,
+        remove_callback,
+        manage_rules_callback=None,
+    ) -> None:
         item = QListWidgetItem()
         row = QWidget()
         row.setObjectName("PathRow")
@@ -550,6 +750,13 @@ class SettingsPage(QWidget):
             lambda _=False, target=path: self._confirm_and_remove_root(target, remove_callback)
         )
         layout.addWidget(delete_btn, 0, Qt.AlignLeft)
+
+        if callable(manage_rules_callback):
+            rule_btn = QPushButton(tr("settings.rules_btn", "Rules"))
+            rule_btn.setObjectName("PathRuleButton")
+            rule_btn.setFixedSize(96, 40)
+            rule_btn.clicked.connect(lambda _=False, target=path: manage_rules_callback(target))
+            layout.addWidget(rule_btn, 0, Qt.AlignLeft)
 
         path_label = QLabel(path)
         path_label.setObjectName("PathValueLabel")
@@ -580,6 +787,21 @@ class SettingsPage(QWidget):
         if result == QMessageBox.Yes:
             remove_callback(target)
 
+    def _open_text_rule_dialog(self, target: str) -> None:
+        existing_rules = self._text_rules_by_path.get(target, "{}")
+        dialog = TextRuleDialog(target, existing_rules, self)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        updated_json = dialog.rules_json()
+        self._text_rules_by_path[target] = updated_json
+        self.manage_text_rules_requested.emit(target, updated_json)
+
+    def _emit_scan_on_startup_changed(self) -> None:
+        self.scan_on_startup_changed.emit(self.launch_check.isChecked())
+
+    def _emit_auto_scan_on_path_change_changed(self) -> None:
+        self.auto_scan_on_path_change_changed.emit(self.tray_check.isChecked())
+
     def _emit_language_changed(self) -> None:
         code = self.language_combo.currentData() or "en"
         self.language_changed.emit(code)
@@ -599,6 +821,10 @@ class SettingsPage(QWidget):
     def _emit_topbar_search_font_size_changed(self) -> None:
         value = normalize_topbar_search_font_size(self.topbar_search_font_size_combo.currentData())
         self.topbar_search_font_size_changed.emit(value)
+
+    def _emit_text_preview_chars_changed(self) -> None:
+        value = int(self.text_preview_chars_combo.currentData() or DEFAULT_TEXT_PREVIEW_CHARS)
+        self.text_preview_chars_changed.emit(value)
 
     def _on_reload_fonts_clicked(self) -> None:
         self._emit_font_changed()
@@ -639,42 +865,47 @@ class SettingsPage(QWidget):
             return
         self.font_changed.emit(source, family)
 
-    def set_thumbnail_task_running(self, task_kind: str, running: bool) -> None:
+    def set_thumbnail_task_running(self, task_kind: str, running: bool, scope: str = "library") -> None:
         self._thumbnail_task_kind = task_kind if running else self._thumbnail_task_kind
-        self.cleanup_thumbnails_btn.setEnabled(not running)
-        self.regenerate_thumbnails_btn.setEnabled(not running)
+        target_buttons = self._thumbnail_buttons.get(scope, {})
+        for button in target_buttons.values():
+            button.setEnabled(not running)
         if running:
             self.thumbnail_task_panel.show()
             self.thumbnail_task_progress.setValue(0)
             self.thumbnail_task_status.setText(
-                tr("settings.thumb.progress", "第{current}个/共{total}个").format(current=0, total=0)
+                tr("settings.thumb.running", "Running {scope} {task} task...").format(scope=scope, task=task_kind)
             )
         else:
-            self.cleanup_thumbnails_btn.setEnabled(True)
-            self.regenerate_thumbnails_btn.setEnabled(True)
+            self._update_thumbnail_button_texts()
 
-    def set_thumbnail_task_progress(self, current: int, total: int, task_kind: str) -> None:
+    def set_thumbnail_task_progress(self, current: int, total: int, task_kind: str, scope: str = "library") -> None:
         self._thumbnail_task_kind = task_kind
         self.thumbnail_task_panel.show()
         safe_total = max(1, total)
         value = int((max(0, current) / safe_total) * 100)
         self.thumbnail_task_progress.setValue(min(100, max(0, value)))
         self.thumbnail_task_status.setText(
-            tr("settings.thumb.progress", "第{current}个/共{total}个").format(current=current, total=total)
+            tr("settings.thumb.progress", "{scope} {task}: {current}/{total}").format(
+                scope=scope, task=task_kind, current=current, total=total
+            )
         )
 
-    def set_thumbnail_task_finished(self, task_kind: str, summary: dict[str, object]) -> None:
+    def set_thumbnail_task_finished(self, task_kind: str, summary: dict[str, object], scope: str = "library") -> None:
         self._thumbnail_task_kind = task_kind
         self.thumbnail_task_panel.show()
         self.thumbnail_task_progress.setValue(100)
         if task_kind == "cleanup":
-            self.thumbnail_task_status.setText(tr("settings.thumb.cleanup_done", "清理完毕"))
+            self.thumbnail_task_status.setText(tr("settings.thumb.cleanup_done", "{scope} cleanup finished").format(scope=scope))
         else:
-            self.thumbnail_task_status.setText(tr("settings.thumb.regenerate_done", "重建完毕"))
+            self.thumbnail_task_status.setText(
+                tr("settings.thumb.regenerate_done", "{scope} regenerate finished").format(scope=scope)
+            )
 
         previous = self._last_summary.get("thumbnail_task")
         if not isinstance(previous, dict):
             previous = {}
         task_summary = dict(summary)
+        task_summary["task_scope"] = str(task_summary.get("task_scope") or scope)
         task_summary["updated_at"] = self._last_summary.get("updated_at")
         self._last_summary["thumbnail_task"] = task_summary

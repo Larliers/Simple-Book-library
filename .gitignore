@@ -19,6 +19,8 @@ Thumbs.db
 .book_test_using/
 book_test_using/
 
+Simple-Book-library-Dev_Document/
+.Simple-Book-library-Dev_Document/
 # 运行期数据
 src/sql/*.db
 src/sql/*.db-*
@@ -27,6 +29,5 @@ src/sql/*.sqlite3
 src/sql/*.sqlite3-*
 src/sql/scan_report.json
 img_preview/*
-!img_preview/.gitkeep
-# Test PDF files
-Simple-Book-library-Dev_Document/UI/新UI/测试用pdf(1)/
+.img_preview/.gitkeep
+

@@ -38,6 +38,13 @@ src/
    │  ├─ models.py
    │  ├─ repository.py
    │  ├─ scanner.py
+   │  ├─ text_rules/
+   │  │  ├─ __init__.py
+   │  │  ├─ rule_engine.py
+   │  │  ├─ rule_examples.py
+   │  │  ├─ rule_models.py
+   │  │  ├─ source_resolver.py
+   │  │  └─ step_handlers.py
    │  ├─ thumbnail_tasks.py
    │  ├─ thumbnail_worker.py
    │  └─ worker.py
@@ -49,7 +56,8 @@ src/
       │  ├─ add_tag_dialog.py
       │  ├─ add_to_collection_dialog.py
       │  ├─ import_dialog.py
-      │  └─ quick_add_dialog.py
+      │  ├─ quick_add_dialog.py
+      │  └─ text_rule_dialog.py
       ├─ models/
       │  ├─ __init__.py
       │  └─ resource.py
@@ -59,7 +67,8 @@ src/
       │  ├─ collections_page.py
       │  ├─ favorites_page.py
       │  ├─ library_page.py
-      │  └─ settings_page.py
+      │  ├─ settings_page.py
+      │  └─ text_novel_page.py
       ├─ resources/
       │  ├─ __init__.py
       │  ├─ assets.py
@@ -93,9 +102,14 @@ src/
 ### 3.4 书库后端组件（bookhub/library）
 - `src/bookhub/library/__init__.py`：后端模块导出入口。
 - `src/bookhub/library/repository.py`：SQLite 读写中心；设置、书籍、书单、收藏、标签操作。
-- `src/bookhub/library/scanner.py`：目录扫描与文件过滤；构建入库候选。
+- `src/bookhub/library/scanner.py`：目录扫描与文件过滤；构建入库候选（PDF/EPUB、Comic、Text Novel）。
 - `src/bookhub/library/metadata.py`：元数据提取与缩略图生成（WebP，`file://` 路径）。
 - `src/bookhub/library/models.py`：扫描/任务的数据结构定义。
+- `src/bookhub/library/text_rules/rule_models.py`：Text Novel 规则模型（`ImportRule`/`RuleStep`/`RuleContext`/`RuleResult`）。
+- `src/bookhub/library/text_rules/rule_engine.py`：规则执行器与规则链回退（`apply_rule`、`apply_rule_chain`）。
+- `src/bookhub/library/text_rules/source_resolver.py`：规则 source 解析（`filename`/`stem`/`txt_first_line`/`txt_head_text` 等）。
+- `src/bookhub/library/text_rules/step_handlers.py`：规则步骤处理（trim、split、括号提取、regex_extract 等）。
+- `src/bookhub/library/text_rules/rule_examples.py`：默认规则链示例。
 - `src/bookhub/library/worker.py`：扫描任务线程包装。
 - `src/bookhub/library/thumbnail_tasks.py`：缩略图清理与重建任务实现。
 - `src/bookhub/library/thumbnail_worker.py`：缩略图任务线程包装。
@@ -110,6 +124,7 @@ src/
 - `src/bookhub/ui/dialogs/add_tag_dialog.py`：添加标签对话框。
 - `src/bookhub/ui/dialogs/add_to_collection_dialog.py`：旧版加入书单对话框（兼容保留）。
 - `src/bookhub/ui/dialogs/quick_add_dialog.py`：快速添加标签/加入书单弹窗。
+- `src/bookhub/ui/dialogs/text_rule_dialog.py`：Text Novel 规则步骤编辑对话框。
 
 ### 3.7 UI 数据模型（bookhub/ui/models）
 - `src/bookhub/ui/models/__init__.py`：模型包入口。
@@ -118,10 +133,11 @@ src/
 ### 3.8 页面组件（bookhub/ui/pages）
 - `src/bookhub/ui/pages/__init__.py`：页面包入口。
 - `src/bookhub/ui/pages/comic_page.py`：Comic/Comic Fav 页面；仅 grid 视图；封面双击外部打开；右键添加/移除收藏。
-- `src/bookhub/ui/pages/library_page.py`：Library/Missed 页面；grid/list；右侧详情栏；单/双击交互。
+- `src/bookhub/ui/pages/library_page.py`：Library 页面；grid/list；右侧详情栏；单/双击交互。
 - `src/bookhub/ui/pages/collections_page.py`：书单页与书单详情页；详情支持 grid/list 视图与侧键返回上一级。
 - `src/bookhub/ui/pages/favorites_page.py`：收藏页；支持 grid/list 视图与排序持久化。
-- `src/bookhub/ui/pages/settings_page.py`：设置页（扫描、匹配策略、卡片间距、缩略图任务、错误日志）；导航仅保留 General 与 Error logs；Library/Comic 路径列表项统一为“左侧单行路径+右侧固定删除按钮”布局，关闭横向滚动并确保窄宽度下删除按钮不被遮挡。
+- `src/bookhub/ui/pages/settings_page.py`：设置页（扫描、匹配策略、卡片间距、缩略图任务、错误日志、Text Novel）；导航仅保留 General 与 Error logs；Text Novel 路径行支持“Delete + Rules + Path”布局；支持 Text 预览长度配置；扫描/缩略图任务按 Library/Comic/Text 分类型入口。
+- `src/bookhub/ui/pages/text_novel_page.py`：Text Novel 页面；固定列表视图；右侧详情栏展示 TXT 预览文本；双击外部打开。
 
 ### 3.9 UI 资源组件（bookhub/ui/resources）
 - `src/bookhub/ui/resources/__init__.py`：资源包入口。
@@ -147,15 +163,21 @@ src/
 - Library 展示：主区双栏，右侧详情栏常驻且可拖拽宽度。
 - Favorites/CollectionDetail 展示：支持与 Library 一致的 grid/list 切换；主区接入右侧详情栏；详情页主区布局采用与 Library 相同的伸展策略，避免分栏贴底；grid 卡片采用 cover-only 样式并支持选中态；模式持久化到 `app_settings`。
 - Settings 导航：仅保留 General 与 Error logs 两项；移除顶部搜索框、Shortcuts、Manage Metadata 占位区域。
+- Text Novel：新增独立侧栏入口与独立列表页；TXT 不进入 Library 主列表；右侧详情栏可展示 `info_text` 预览。
+- Text 规则：支持路径级规则步骤编辑（source + steps），支持 `txt_head_text` 来源，并在扫描时应用到标题/作者/标签提取。
+- 扫描容错：当 PyMuPDF（`fitz`）不可用时，PDF 扫描自动降级为“仅入库+标题兜底”，跳过元数据/缩略图并输出单条聚合 warning，避免错误风暴弹窗。
+- 缺失记录治理：扫描按 scope 检查已入库源路径；缺失项写入 `src/Scan_error_logs` 后硬删除，不再进入 Missed 体系；重名冲突遇到陈旧路径会先清理再导入。
+- 任务触发：启动扫描支持配置开关（默认关闭）；路径变更自动扫描支持独立开关（默认开启）。
+- 缩略图任务：Library 与 Comic 分 scope 清理/重建；结果摘要包含 `scope + task_kind + total/succeeded/skipped/failed`。
 - Reading Now 与 Tools 占位页已下线：主窗口不再注册对应页面，侧栏仅保留可用功能入口；底层 `status` 字段与数据结构保持不变。
 - TopBar：移除右侧 IMPORT/NEW LIST/刷新/菜单占位区，搜索栏填充顶部可用宽度。
 - TopBar：搜索框支持最小高度与字号放大；搜索输入与建议下拉字号可在 Settings 调节并持久化（默认 15px）。
-- 网格布局：Library/Missed/Favorites/CollectionDetail 的书籍网格统一左内边距 12px，避免左侧贴边溢出观感。
+- 网格布局：Library/Favorites/CollectionDetail 的书籍网格统一左内边距 12px，避免左侧贴边溢出观感。
 - 交互规则：单击看详情（无门控延迟）、双击外部打开。
 
 ## 5. 边界与约束
 - 当前导入粒度：目录导入（不支持单文件导入）。
-- 当前支持格式：PDF、EPUB。
+- 当前支持格式：Library 支持 PDF/EPUB，Comic 支持目录封面提取，Text Novel 支持 TXT（含预览与规则导入）。
 - 外部打开：依赖系统默认关联程序。
 
 ## 6. 维护要求
