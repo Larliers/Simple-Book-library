@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import QTimer
+from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QHBoxLayout,
     QMainWindow,
@@ -24,7 +28,14 @@ from bookhub.ui.resources.layout_config import (
     normalize_card_spacing,
     normalize_topbar_search_font_size,
 )
-from bookhub.ui.resources.styles import APP_STYLE
+from bookhub.ui.resources.font_runtime import (
+    DEFAULT_PROJECT_FONTS_DIR,
+    FontScanResult,
+    ResolvedFont,
+    resolve_effective_font,
+    scan_project_fonts_and_register,
+)
+from bookhub.ui.resources.styles import DEFAULT_FONT_STACK, build_app_style
 from bookhub.ui.viewmodels.library_viewmodel import LibraryViewModel
 from bookhub.ui.widgets.sidebar import SidebarWidget
 from bookhub.ui.widgets.slide_toast import SlideToast
@@ -57,6 +68,8 @@ class AppWindow(QMainWindow):
         self._scan_conflict_toast = SlideToast(self)
         self._scan_warning_toast = SlideToast(self)
         self._scan_missing_removed_toast = SlideToast(self)
+        self._font_toast = SlideToast(self)
+        self._project_font_families: list[str] = []
         self._search_render_timer = QTimer(self)
         self._search_render_timer.setSingleShot(True)
         self._search_render_timer.setInterval(self.SEARCH_RENDER_DEBOUNCE_MS)
@@ -120,6 +133,7 @@ class AppWindow(QMainWindow):
         self.settings_page.card_spacing_changed.connect(self._on_card_spacing_changed)
         self.settings_page.topbar_search_font_size_changed.connect(self._on_topbar_search_font_size_changed)
         self.settings_page.font_changed.connect(self._on_font_changed)
+        self.settings_page.reload_fonts_requested.connect(self._on_reload_fonts_requested)
         self.settings_page.cleanup_library_thumbnails_requested.connect(
             lambda: self._start_thumbnail_task("cleanup", scope="library")
         )
@@ -134,10 +148,11 @@ class AppWindow(QMainWindow):
         )
         self._register_page("settings", self.settings_page)
 
-        self.setStyleSheet(APP_STYLE)
+        self.setStyleSheet(build_app_style(DEFAULT_FONT_STACK))
         self.retranslate_ui()
         self._reload_resources_from_repository()
         self._refresh_settings_state()
+        self._refresh_fonts_runtime(ensure_project_dir=False, show_feedback=False)
         self._refresh_search_suggestions()
         self._last_committed_query = self._library_vm.ui_state.filter
         self._show_page("library")
@@ -335,8 +350,94 @@ class AppWindow(QMainWindow):
         self._repository.set_auto_scan_on_path_change(enabled)
 
     def _on_font_changed(self, source: str, family: str) -> None:
-        self._repository.set_font_source(source)
-        self._repository.set_font_family(family)
+        self._apply_font_selection(source=source, family=family, persist=True)
+
+    def _on_reload_fonts_requested(self) -> None:
+        self._refresh_fonts_runtime(ensure_project_dir=True, show_feedback=True)
+
+    def _refresh_fonts_runtime(self, *, ensure_project_dir: bool, show_feedback: bool) -> None:
+        scan_result = self._reload_project_fonts(ensure_project_dir=ensure_project_dir)
+        source = self._repository.get_font_source()
+        family = self._repository.get_font_family()
+        resolved = self._apply_font_selection(source=source, family=family, persist=True)
+        if show_feedback:
+            self._show_font_reload_feedback(scan_result=scan_result, resolved=resolved)
+
+    def _reload_project_fonts(self, *, ensure_project_dir: bool) -> FontScanResult:
+        scan_result = scan_project_fonts_and_register(DEFAULT_PROJECT_FONTS_DIR, ensure_dir=ensure_project_dir)
+        self._project_font_families = list(scan_result.registered_families)
+        self.settings_page.set_available_project_fonts(self._project_font_families)
+        return scan_result
+
+    def _apply_font_selection(self, *, source: str, family: str, persist: bool) -> ResolvedFont:
+        system_families = sorted({str(name).strip() for name in QFontDatabase.families() if str(name).strip()})
+        resolved = resolve_effective_font(source, family, system_families, self._project_font_families)
+        self.settings_page.set_font_selection(resolved.source, resolved.family)
+        self._apply_font_to_ui(resolved.family)
+        if persist:
+            self._repository.set_font_source(resolved.source)
+            self._repository.set_font_family(resolved.family)
+        return resolved
+
+    def _apply_font_to_ui(self, family: str) -> None:
+        app = QApplication.instance()
+        selected = str(family or "").strip()
+        if app is not None and selected:
+            app.setFont(QFont(selected))
+        self.setStyleSheet(build_app_style(self._build_font_stack(selected)))
+        self._stabilize_dropdown_layer()
+
+    def _build_font_stack(self, selected_family: str) -> list[str]:
+        stack: list[str] = []
+        selected = str(selected_family or "").strip()
+        if selected:
+            stack.append(selected)
+        for fallback in DEFAULT_FONT_STACK:
+            if fallback not in stack:
+                stack.append(fallback)
+        return stack
+
+    def _show_font_reload_feedback(self, *, scan_result: FontScanResult, resolved: ResolvedFont) -> None:
+        lines: list[str] = []
+        if scan_result.directory_created:
+            lines.append(
+                tr(
+                    "settings.font.toast.dir_created",
+                    "Created {path}. Put font files there and reload again.",
+                ).format(path=str(Path(scan_result.directory)))
+            )
+        if not scan_result.registered_families:
+            lines.append(
+                tr(
+                    "settings.font.toast.project_empty",
+                    "No project fonts found in {path}.",
+                ).format(path=str(Path(scan_result.directory)))
+            )
+        if scan_result.failed_files:
+            lines.append(
+                tr(
+                    "settings.font.toast.failed_files",
+                    "Failed to load {count} font files: {files}",
+                ).format(count=len(scan_result.failed_files), files=", ".join(scan_result.failed_files[:3]))
+            )
+        if resolved.fallback_reason:
+            lines.append(
+                tr(
+                    "settings.font.toast.fallback",
+                    "Selected font is unavailable. Applied fallback font: {family}.",
+                ).format(family=resolved.family or tr("settings.font.none", "No fonts available"))
+            )
+        if not lines:
+            lines.append(
+                tr("settings.font.toast.success", "Fonts reloaded and applied: {family}.").format(
+                    family=resolved.family or tr("settings.font.none", "No fonts available")
+                )
+            )
+        self._font_toast.show_toast(
+            title=tr("settings.font.reload", "Reload Fonts"),
+            message="\n".join(lines),
+            duration_seconds=8,
+        )
 
     def _on_scan_depth_changed(self, depth: int) -> None:
         self._repository.set_scan_depth(depth)
@@ -578,6 +679,7 @@ class AppWindow(QMainWindow):
         self._scan_conflict_toast.reposition()
         self._scan_warning_toast.reposition()
         self._scan_missing_removed_toast.reposition()
+        self._font_toast.reposition()
         self._stabilize_dropdown_layer()
 
     def retranslate_ui(self) -> None:

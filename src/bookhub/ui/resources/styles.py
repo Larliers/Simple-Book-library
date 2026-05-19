@@ -1,11 +1,27 @@
 ﻿from __future__ import annotations
 
+DEFAULT_FONT_STACK = ["Inter", "Segoe UI", "Microsoft YaHei"]
 
-APP_STYLE = """
+
+def _quote_font_family(name: str) -> str:
+    value = str(name or "").strip().replace('"', "")
+    if not value:
+        return ""
+    return f'"{value}"'
+
+
+def build_app_style(font_stack: list[str] | tuple[str, ...] | None = None) -> str:
+    families = [_quote_font_family(item) for item in (font_stack or DEFAULT_FONT_STACK)]
+    normalized = [item for item in families if item]
+    if not normalized:
+        normalized = [_quote_font_family(item) for item in DEFAULT_FONT_STACK]
+    return _APP_STYLE_TEMPLATE.replace("__FONT_STACK__", ", ".join(normalized))
+
+_APP_STYLE_TEMPLATE = """
 QWidget {
     background: #f3f3f3;
     color: #1f2530;
-    font-family: "Inter", "Segoe UI", "Microsoft YaHei";
+    font-family: __FONT_STACK__;
     font-size: 13px;
 }
 QMainWindow {
@@ -508,3 +524,6 @@ QScrollBar::sub-page:horizontal {
     background: transparent;
 }
 """
+
+APP_STYLE = build_app_style(DEFAULT_FONT_STACK)
+

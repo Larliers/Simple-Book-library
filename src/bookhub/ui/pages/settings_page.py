@@ -61,6 +61,7 @@ class SettingsPage(QWidget):
     cleanup_comic_thumbnails_requested = Signal()
     regenerate_comic_thumbnails_requested = Signal()
     font_changed = Signal(str, str)
+    reload_fonts_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -160,8 +161,7 @@ class SettingsPage(QWidget):
         font_row.addWidget(self.font_source_label)
         self.font_source_combo = QComboBox()
         self.font_source_combo.setObjectName("SettingsLanguageCombo")
-        self.font_source_combo.addItem("System", "system")
-        self.font_source_combo.addItem("Project (src/fonts)", "project")
+        self._set_font_source_options()
         self.font_source_combo.currentIndexChanged.connect(self._on_font_source_changed)
         font_row.addWidget(self.font_source_combo, 1)
 
@@ -255,9 +255,7 @@ class SettingsPage(QWidget):
         options_row.addWidget(self.scan_depth_label)
         self.scan_depth_combo = QComboBox()
         self.scan_depth_combo.setObjectName("SettingsLanguageCombo")
-        self.scan_depth_combo.addItem("1 - Root only", 1)
-        self.scan_depth_combo.addItem("2 - Include child folders", 2)
-        self.scan_depth_combo.addItem("3 - Include grandchild folders", 3)
+        self._set_scan_depth_options()
         self.scan_depth_combo.currentIndexChanged.connect(self._emit_scan_depth_changed)
         options_row.addWidget(self.scan_depth_combo, 1)
 
@@ -265,9 +263,7 @@ class SettingsPage(QWidget):
         options_row.addWidget(self.hash_strategy_label)
         self.hash_strategy_combo = QComboBox()
         self.hash_strategy_combo.setObjectName("SettingsLanguageCombo")
-        self.hash_strategy_combo.addItem("File size + modified time", "size_mtime")
-        self.hash_strategy_combo.addItem("SHA-256 full file", "sha256")
-        self.hash_strategy_combo.addItem("Quick hash (first 4MB)", "quick")
+        self._set_hash_strategy_options()
         self.hash_strategy_combo.currentIndexChanged.connect(self._emit_hash_strategy_changed)
         options_row.addWidget(self.hash_strategy_combo, 1)
 
@@ -508,7 +504,8 @@ class SettingsPage(QWidget):
 
     def set_available_project_fonts(self, families: list[str]) -> None:
         self._project_font_families = sorted({str(item).strip() for item in families if str(item).strip()})
-        self._rebuild_font_family_options()
+        current = str(self.font_family_combo.currentData() or "")
+        self._rebuild_font_family_options(preferred_family=current)
 
     def set_font_selection(self, source: str, family: str) -> None:
         source_value = "project" if source == "project" else "system"
@@ -627,6 +624,7 @@ class SettingsPage(QWidget):
             item = self.nav.item(idx)
             if item is not None:
                 item.setText(tr(key, fallback))
+        self.app_title.setText(tr("settings.app_title", "System Architect"))
         self.title.setText(tr("settings.title", "General Settings"))
         self.startup_label.setText(tr("settings.startup_options", "Startup Options"))
         self.launch_check.setText(tr("settings.scan_on_startup", "Scan on startup"))
@@ -666,6 +664,9 @@ class SettingsPage(QWidget):
         self.set_text_roots(self._current_text_roots)
         self.set_text_preview_chars(int(self.text_preview_chars_combo.currentData() or DEFAULT_TEXT_PREVIEW_CHARS))
         self._set_language_options()
+        self._set_scan_depth_options()
+        self._set_hash_strategy_options()
+        self._set_font_source_options()
         self.set_scan_summary(self._last_summary)
 
     def _set_language_options(self) -> None:
@@ -677,6 +678,47 @@ class SettingsPage(QWidget):
         index = self.language_combo.findData(current or "en")
         self.language_combo.setCurrentIndex(index if index >= 0 else 0)
         self.language_combo.blockSignals(False)
+
+    def _set_scan_depth_options(self) -> None:
+        current = self.scan_depth_combo.currentData()
+        self.scan_depth_combo.blockSignals(True)
+        self.scan_depth_combo.clear()
+        self.scan_depth_combo.addItem(tr("settings.scan_depth.option.1", "1 - Root only"), 1)
+        self.scan_depth_combo.addItem(tr("settings.scan_depth.option.2", "2 - Include child folders"), 2)
+        self.scan_depth_combo.addItem(tr("settings.scan_depth.option.3", "3 - Include grandchild folders"), 3)
+        index = self.scan_depth_combo.findData(current if current is not None else 2)
+        self.scan_depth_combo.setCurrentIndex(index if index >= 0 else 1)
+        self.scan_depth_combo.blockSignals(False)
+
+    def _set_hash_strategy_options(self) -> None:
+        current = self.hash_strategy_combo.currentData()
+        self.hash_strategy_combo.blockSignals(True)
+        self.hash_strategy_combo.clear()
+        self.hash_strategy_combo.addItem(
+            tr("settings.hash.option.size_mtime", "File size + modified time"),
+            "size_mtime",
+        )
+        self.hash_strategy_combo.addItem(
+            tr("settings.hash.option.sha256", "SHA-256 full file"),
+            "sha256",
+        )
+        self.hash_strategy_combo.addItem(
+            tr("settings.hash.option.quick", "Quick hash (first 4MB)"),
+            "quick",
+        )
+        index = self.hash_strategy_combo.findData(current if current is not None else "size_mtime")
+        self.hash_strategy_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.hash_strategy_combo.blockSignals(False)
+
+    def _set_font_source_options(self) -> None:
+        current = self.font_source_combo.currentData()
+        self.font_source_combo.blockSignals(True)
+        self.font_source_combo.clear()
+        self.font_source_combo.addItem(tr("settings.font.source.system", "System"), "system")
+        self.font_source_combo.addItem(tr("settings.font.source.project", "Project (src/fonts)"), "project")
+        index = self.font_source_combo.findData(current if current is not None else "system")
+        self.font_source_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.font_source_combo.blockSignals(False)
 
     def _pick_folder(self) -> None:
         directory = QFileDialog.getExistingDirectory(self, tr("settings.pick_folder", "Select Library Folder"))
@@ -827,7 +869,7 @@ class SettingsPage(QWidget):
         self.text_preview_chars_changed.emit(value)
 
     def _on_reload_fonts_clicked(self) -> None:
-        self._emit_font_changed()
+        self.reload_fonts_requested.emit()
 
     def _on_font_source_changed(self) -> None:
         self._font_source = str(self.font_source_combo.currentData() or "system")
@@ -846,10 +888,11 @@ class SettingsPage(QWidget):
             families = sorted({family for family in QFontDatabase.families() if family})
 
         if not families:
-            families = [tr("settings.font.none", "No fonts available")]
-
-        for family in families:
-            self.font_family_combo.addItem(family, family)
+            empty_label = tr("settings.font.none", "No fonts available")
+            self.font_family_combo.addItem(empty_label, "")
+        else:
+            for family in families:
+                self.font_family_combo.addItem(family, family)
 
         target = preferred_family or ""
         index = self.font_family_combo.findData(target) if target else -1

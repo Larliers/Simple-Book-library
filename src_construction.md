@@ -1,6 +1,6 @@
 ﻿# src 结构说明书（精简且完整）
 
-更新时间：2026-05-17
+更新时间：2026-05-19
 
 ## 1. 文档目标
 - 保留字符串式文件路径结构。
@@ -11,6 +11,9 @@
 ```text
 src/
 ├─ main.py
+├─ tests/
+│  ├─ test_rule_engine.py
+│  └─ test_scan_pdf_degrade.py
 ├─ sql/
 │  └─ .gitkeep
 ├─ assets/
@@ -55,9 +58,10 @@ src/
       │  ├─ __init__.py
       │  ├─ add_tag_dialog.py
       │  ├─ add_to_collection_dialog.py
-      │  ├─ import_dialog.py
-      │  ├─ quick_add_dialog.py
-      │  └─ text_rule_dialog.py
+       │  ├─ import_dialog.py
+       │  ├─ quick_add_dialog.py
+       │  ├─ text_rule_dialog.py
+       │  └─ text_rule_help_dialog.py
       ├─ models/
       │  ├─ __init__.py
       │  └─ resource.py
@@ -72,6 +76,7 @@ src/
       ├─ resources/
       │  ├─ __init__.py
       │  ├─ assets.py
+      │  ├─ font_runtime.py
       │  ├─ layout_config.py
       │  └─ styles.py
       ├─ viewmodels/
@@ -89,6 +94,8 @@ src/
 
 ### 3.1 入口与运行目录
 - `src/main.py`：应用入口；创建 Qt 应用并启动主窗口。
+- `src/tests/test_rule_engine.py`：Text 规则引擎回归测试（步骤提取、回退链、非法正则容错）。
+- `src/tests/test_scan_pdf_degrade.py`：PDF 后端降级容错回归测试（PyMuPDF 不可用时的聚合 warning 与入库行为）。
 - `src/sql/.gitkeep`：运行数据目录占位，实际运行时生成 `library.db`、`scan_report.json`。
 
 ### 3.2 bookhub 包根
@@ -126,6 +133,7 @@ src/
 - `src/bookhub/ui/dialogs/add_to_collection_dialog.py`：旧版加入书单对话框（兼容保留）。
 - `src/bookhub/ui/dialogs/quick_add_dialog.py`：快速添加标签/加入书单弹窗。
 - `src/bookhub/ui/dialogs/text_rule_dialog.py`：Text Novel 规则步骤编辑对话框。
+- `src/bookhub/ui/dialogs/text_rule_help_dialog.py`：Text Rules 内置使用文档窗口。
 
 ### 3.7 UI 数据模型（bookhub/ui/models）
 - `src/bookhub/ui/models/__init__.py`：模型包入口。
@@ -143,8 +151,9 @@ src/
 ### 3.9 UI 资源组件（bookhub/ui/resources）
 - `src/bookhub/ui/resources/__init__.py`：资源包入口。
 - `src/bookhub/ui/resources/assets.py`：图标/资源加载。
+- `src/bookhub/ui/resources/font_runtime.py`：运行时字体服务；扫描并注册 `src/fonts` 字体文件、解析有效字体与回退策略。
 - `src/bookhub/ui/resources/layout_config.py`：布局尺寸与间距配置。
-- `src/bookhub/ui/resources/styles.py`：全局 QSS 样式。
+- `src/bookhub/ui/resources/styles.py`：全局 QSS 样式；支持基于选中字体动态构建 `font-family` 栈。
 
 ### 3.10 视图模型组件（bookhub/ui/viewmodels）
 - `src/bookhub/ui/viewmodels/__init__.py`：视图模型包入口。
@@ -178,6 +187,7 @@ src/
 - TopBar：搜索框支持最小高度与字号放大；搜索输入与建议下拉字号可在 Settings 调节并持久化（默认 15px）。
 - 网格布局：Library/Favorites/CollectionDetail 的书籍网格统一左内边距 12px，避免左侧贴边溢出观感。
 - 交互规则：单击看详情（无门控延迟）、双击外部打开。
+- 字体重载：`Reload Fonts` 现在执行完整链路（重扫 `src/fonts` -> 注册字体 -> 解析回退 -> `QApplication.setFont` + 动态 QSS 立即生效 -> 持久化设置）；目录不存在时自动创建并通过右下角 Toast 提示。
 
 ## 5. 边界与约束
 - 当前导入粒度：目录导入（不支持单文件导入）。
