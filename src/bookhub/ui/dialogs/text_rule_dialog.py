@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QFormLayout,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -21,10 +22,25 @@ from PySide6.QtWidgets import (
 
 from bookhub.i18n import tr
 from bookhub.library.text_rules import ImportRule, RuleStep, dump_rules_to_json, load_rules_from_json
+from bookhub.ui.dialogs.text_rule_help_dialog import TextRuleHelpDialog
 
 
 class TextRuleDialog(QDialog):
     FIELDS = ("title", "author", "series", "tag")
+    SOURCE_CODES = ("filename", "stem", "full_path", "parent_folder", "txt_first_line", "txt_head_text")
+    STEP_TYPE_CODES = (
+        "trim",
+        "remove_extension",
+        "take_bracket_content",
+        "take_after_text",
+        "take_before_text",
+        "take_between_texts",
+        "split_and_take",
+        "remove_prefix",
+        "remove_suffix",
+        "replace_text",
+        "regex_extract",
+    )
 
     def __init__(self, root_path: str, rules_json: str, parent=None) -> None:
         super().__init__(parent)
@@ -33,7 +49,7 @@ class TextRuleDialog(QDialog):
         self._load_rules(rules_json)
 
         self.setWindowTitle(tr("text.rules.title", "Text Rules"))
-        self.resize(980, 620)
+        self.resize(1100, 700)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
@@ -46,11 +62,51 @@ class TextRuleDialog(QDialog):
         top_row = QHBoxLayout()
         top_row.addWidget(QLabel(tr("text.rules.field", "Field")))
         self.field_combo = QComboBox()
-        self.field_combo.addItems(list(self.FIELDS))
+        for code in self.FIELDS:
+            self.field_combo.addItem(self._field_label(code), code)
         self.field_combo.currentIndexChanged.connect(self._refresh_rule_list)
         top_row.addWidget(self.field_combo)
+        self.help_btn = QPushButton(tr("text.rules.help.button", "Usage Guide"))
+        self.help_btn.setObjectName("GhostButton")
+        self.help_btn.clicked.connect(self._open_help_dialog)
+        top_row.addWidget(self.help_btn)
         top_row.addStretch(1)
         root.addLayout(top_row)
+
+        guide_box = QFrame()
+        guide_box.setObjectName("PageSection")
+        guide_layout = QVBoxLayout(guide_box)
+        guide_layout.setContentsMargins(10, 10, 10, 10)
+        guide_layout.setSpacing(6)
+        guide_title = QLabel(tr("text.rules.guide.title", "Quick Guide"))
+        guide_title.setObjectName("PageSubtitle")
+        guide_layout.addWidget(guide_title)
+        guide_content = QLabel(
+            "\n".join(
+                [
+                    tr("text.rules.guide.step1", "1. Pick field and source for the target value."),
+                    tr("text.rules.guide.step2", "2. Add rule, then add steps from top to bottom."),
+                    tr("text.rules.guide.step3", "3. Save rules and rescan Text Novel folders."),
+                ]
+            )
+        )
+        guide_content.setWordWrap(True)
+        guide_layout.addWidget(guide_content)
+
+        template_row = QHBoxLayout()
+        template_row.addWidget(QLabel(tr("text.rules.templates.title", "Template Rules")))
+        self.template_title_btn = QPushButton(tr("text.rules.template.title_line", "Title from first line"))
+        self.template_title_btn.clicked.connect(self._insert_template_title_rule)
+        template_row.addWidget(self.template_title_btn)
+        self.template_author_btn = QPushButton(tr("text.rules.template.author_bracket", "Author from bracket"))
+        self.template_author_btn.clicked.connect(self._insert_template_author_rule)
+        template_row.addWidget(self.template_author_btn)
+        self.template_fallback_btn = QPushButton(tr("text.rules.template.fallback_stem", "Fallback from stem"))
+        self.template_fallback_btn.clicked.connect(self._insert_template_fallback_rule)
+        template_row.addWidget(self.template_fallback_btn)
+        template_row.addStretch(1)
+        guide_layout.addLayout(template_row)
+        root.addWidget(guide_box)
 
         content = QHBoxLayout()
         content.setSpacing(12)
@@ -80,9 +136,8 @@ class TextRuleDialog(QDialog):
 
         rule_form = QFormLayout()
         self.source_combo = QComboBox()
-        self.source_combo.addItems(
-            ["filename", "stem", "full_path", "parent_folder", "txt_first_line", "txt_head_text"]
-        )
+        for code in self.SOURCE_CODES:
+            self.source_combo.addItem(self._source_label(code), code)
         rule_form.addRow(tr("text.rules.source", "Source"), self.source_combo)
         editor_col.addLayout(rule_form)
 
@@ -98,21 +153,9 @@ class TextRuleDialog(QDialog):
         step_form.setVerticalSpacing(6)
 
         self.step_type_combo = QComboBox()
-        self.step_type_combo.addItems(
-            [
-                "trim",
-                "remove_extension",
-                "take_bracket_content",
-                "take_after_text",
-                "take_before_text",
-                "take_between_texts",
-                "split_and_take",
-                "remove_prefix",
-                "remove_suffix",
-                "replace_text",
-                "regex_extract",
-            ]
-        )
+        for code in self.STEP_TYPE_CODES:
+            self.step_type_combo.addItem(self._step_type_label(code), code)
+
         self.bracket_combo = QComboBox()
         self.bracket_combo.addItems(["[]", "【】", "()", "（）", "<>", "《》"])
 
@@ -139,32 +182,32 @@ class TextRuleDialog(QDialog):
         self.group_spin.setValue(1)
 
         row = 0
-        step_form.addWidget(QLabel("type"), row, 0)
+        step_form.addWidget(QLabel(tr("text.rules.param.type", "Type")), row, 0)
         step_form.addWidget(self.step_type_combo, row, 1)
-        step_form.addWidget(QLabel("value"), row, 2)
+        step_form.addWidget(QLabel(tr("text.rules.param.value", "Value")), row, 2)
         step_form.addWidget(self.value_combo, row, 3)
         row += 1
-        step_form.addWidget(QLabel("start"), row, 0)
+        step_form.addWidget(QLabel(tr("text.rules.param.start", "Start")), row, 0)
         step_form.addWidget(self.start_combo, row, 1)
-        step_form.addWidget(QLabel("end"), row, 2)
+        step_form.addWidget(QLabel(tr("text.rules.param.end", "End")), row, 2)
         step_form.addWidget(self.end_combo, row, 3)
         row += 1
-        step_form.addWidget(QLabel("separator"), row, 0)
+        step_form.addWidget(QLabel(tr("text.rules.param.separator", "Separator")), row, 0)
         step_form.addWidget(self.sep_combo, row, 1)
-        step_form.addWidget(QLabel("bracket"), row, 2)
+        step_form.addWidget(QLabel(tr("text.rules.param.bracket", "Bracket")), row, 2)
         step_form.addWidget(self.bracket_combo, row, 3)
         row += 1
-        step_form.addWidget(QLabel("index"), row, 0)
+        step_form.addWidget(QLabel(tr("text.rules.param.index", "Index")), row, 0)
         step_form.addWidget(self.index_spin, row, 1)
-        step_form.addWidget(QLabel("group"), row, 2)
+        step_form.addWidget(QLabel(tr("text.rules.param.group", "Group")), row, 2)
         step_form.addWidget(self.group_spin, row, 3)
         row += 1
-        step_form.addWidget(QLabel("old"), row, 0)
+        step_form.addWidget(QLabel(tr("text.rules.param.old", "Old")), row, 0)
         step_form.addWidget(self.old_combo, row, 1)
-        step_form.addWidget(QLabel("new"), row, 2)
+        step_form.addWidget(QLabel(tr("text.rules.param.new", "New")), row, 2)
         step_form.addWidget(self.new_combo, row, 3)
         row += 1
-        step_form.addWidget(QLabel("pattern"), row, 0)
+        step_form.addWidget(QLabel(tr("text.rules.param.pattern", "Pattern")), row, 0)
         step_form.addWidget(self.pattern_combo, row, 1, 1, 3)
 
         editor_col.addWidget(step_form_wrap)
@@ -215,7 +258,7 @@ class TextRuleDialog(QDialog):
         return json.dumps(payload, ensure_ascii=False, indent=2)
 
     def _current_field(self) -> str:
-        return str(self.field_combo.currentText())
+        return str(self.field_combo.currentData() or "title")
 
     def _current_rules(self) -> list[ImportRule]:
         return self._rules_by_field[self._current_field()]
@@ -223,7 +266,11 @@ class TextRuleDialog(QDialog):
     def _refresh_rule_list(self) -> None:
         self.rule_list.clear()
         for idx, rule in enumerate(self._current_rules(), start=1):
-            label = f"{idx}. source={rule.source} steps={len(rule.steps)}"
+            label = tr("text.rules.rule_item", "{index}. Source: {source} · Steps: {count}").format(
+                index=idx,
+                source=self._source_label(rule.source),
+                count=len(rule.steps),
+            )
             self.rule_list.addItem(QListWidgetItem(label))
         if self.rule_list.count() > 0:
             self.rule_list.setCurrentRow(0)
@@ -236,7 +283,7 @@ class TextRuleDialog(QDialog):
         if idx < 0 or idx >= len(rules):
             return
         rule = rules[idx]
-        source_idx = self.source_combo.findText(rule.source)
+        source_idx = self.source_combo.findData(rule.source)
         if source_idx >= 0:
             self.source_combo.setCurrentIndex(source_idx)
         self._render_steps(rule.steps)
@@ -244,17 +291,20 @@ class TextRuleDialog(QDialog):
     def _render_steps(self, steps: list[RuleStep]) -> None:
         self.step_list.clear()
         for idx, step in enumerate(steps, start=1):
-            self.step_list.addItem(QListWidgetItem(f"{idx}. {self._step_label(step)}"))
+            self.step_list.addItem(
+                QListWidgetItem(
+                    tr("text.rules.step_item", "{index}. {step}").format(index=idx, step=self._format_step_label(step))
+                )
+            )
         if self.step_list.count() > 0:
             self.step_list.setCurrentRow(0)
 
-    @staticmethod
-    def _step_label(step: RuleStep) -> str:
-        params = step.params
-        if not params:
-            return step.type
-        details = ", ".join(f"{k}={v}" for k, v in params.items())
-        return f"{step.type} ({details})"
+    def _format_step_label(self, step: RuleStep) -> str:
+        step_name = self._step_type_label(step.type)
+        if not step.params:
+            return step_name
+        details = ", ".join(f"{self._param_label(k)}={v}" for k, v in step.params.items())
+        return f"{step_name} ({details})"
 
     def _load_selected_step(self) -> None:
         rule_idx = self.rule_list.currentRow()
@@ -266,7 +316,7 @@ class TextRuleDialog(QDialog):
         if step_idx < 0 or step_idx >= len(steps):
             return
         step = steps[step_idx]
-        type_idx = self.step_type_combo.findText(step.type)
+        type_idx = self.step_type_combo.findData(step.type)
         if type_idx >= 0:
             self.step_type_combo.setCurrentIndex(type_idx)
 
@@ -303,7 +353,7 @@ class TextRuleDialog(QDialog):
         return {}
 
     def _build_step_from_form(self) -> RuleStep:
-        step_type = self.step_type_combo.currentText()
+        step_type = str(self.step_type_combo.currentData() or "trim")
         params = self._collect_step_params(step_type)
         return RuleStep(type=step_type, params=params)
 
@@ -311,7 +361,11 @@ class TextRuleDialog(QDialog):
         idx = self.rule_list.currentRow()
         rules = self._current_rules()
         if idx < 0 or idx >= len(rules):
-            QMessageBox.warning(self, tr("text.rules.need_rule", "No rule selected"), tr("text.rules.need_rule_msg", "Please add/select a rule first."))
+            QMessageBox.warning(
+                self,
+                tr("text.rules.need_rule", "No rule selected"),
+                tr("text.rules.need_rule_msg", "Please add/select a rule first."),
+            )
             return
         step = self._build_step_from_form()
         rules[idx].steps.append(step)
@@ -365,7 +419,7 @@ class TextRuleDialog(QDialog):
         self.rule_list.setCurrentRow(rule_idx)
 
     def _build_rule_from_form(self) -> ImportRule:
-        source = self.source_combo.currentText()
+        source = str(self.source_combo.currentData() or "filename")
         return ImportRule(field=self._current_field(), source=source, steps=[])
 
     def _add_rule(self) -> None:
@@ -380,7 +434,7 @@ class TextRuleDialog(QDialog):
         rules = self._current_rules()
         if idx < 0 or idx >= len(rules):
             return
-        rules[idx].source = self.source_combo.currentText()
+        rules[idx].source = str(self.source_combo.currentData() or "filename")
         self._refresh_rule_list()
         self.rule_list.setCurrentRow(idx)
 
@@ -391,3 +445,101 @@ class TextRuleDialog(QDialog):
             return
         del rules[idx]
         self._refresh_rule_list()
+
+    def _open_help_dialog(self) -> None:
+        dialog = TextRuleHelpDialog(self)
+        dialog.exec()
+
+    def _insert_template_title_rule(self) -> None:
+        self._current_rules().append(
+            ImportRule(
+                field=self._current_field(),
+                source="txt_first_line",
+                steps=[
+                    RuleStep(type="take_after_text", params={"value": "T"}),
+                    RuleStep(type="trim", params={}),
+                ],
+            )
+        )
+        self._refresh_rule_list()
+        self.rule_list.setCurrentRow(self.rule_list.count() - 1)
+
+    def _insert_template_author_rule(self) -> None:
+        self._current_rules().append(
+            ImportRule(
+                field=self._current_field(),
+                source="filename",
+                steps=[
+                    RuleStep(type="take_bracket_content", params={"bracket": "【】", "index": 1}),
+                    RuleStep(type="trim", params={}),
+                ],
+            )
+        )
+        self._refresh_rule_list()
+        self.rule_list.setCurrentRow(self.rule_list.count() - 1)
+
+    def _insert_template_fallback_rule(self) -> None:
+        self._current_rules().append(
+            ImportRule(
+                field=self._current_field(),
+                source="stem",
+                steps=[RuleStep(type="trim", params={})],
+            )
+        )
+        self._refresh_rule_list()
+        self.rule_list.setCurrentRow(self.rule_list.count() - 1)
+
+    @staticmethod
+    def _field_label(code: str) -> str:
+        mapping = {
+            "title": tr("text.rules.field.title", "Title"),
+            "author": tr("text.rules.field.author", "Author"),
+            "series": tr("text.rules.field.series", "Series"),
+            "tag": tr("text.rules.field.tag", "Tag"),
+        }
+        return mapping.get(code, code)
+
+    @staticmethod
+    def _source_label(code: str) -> str:
+        mapping = {
+            "filename": tr("text.rules.source.filename", "File name"),
+            "stem": tr("text.rules.source.stem", "Stem (without extension)"),
+            "full_path": tr("text.rules.source.full_path", "Full path"),
+            "parent_folder": tr("text.rules.source.parent_folder", "Parent folder"),
+            "txt_first_line": tr("text.rules.source.txt_first_line", "TXT first line"),
+            "txt_head_text": tr("text.rules.source.txt_head_text", "TXT head text"),
+        }
+        return mapping.get(code, code)
+
+    @staticmethod
+    def _step_type_label(code: str) -> str:
+        mapping = {
+            "trim": tr("text.rules.step.trim", "Trim"),
+            "remove_extension": tr("text.rules.step.remove_extension", "Remove extension"),
+            "take_bracket_content": tr("text.rules.step.take_bracket_content", "Take bracket content"),
+            "take_after_text": tr("text.rules.step.take_after_text", "Take after text"),
+            "take_before_text": tr("text.rules.step.take_before_text", "Take before text"),
+            "take_between_texts": tr("text.rules.step.take_between_texts", "Take between texts"),
+            "split_and_take": tr("text.rules.step.split_and_take", "Split and take"),
+            "remove_prefix": tr("text.rules.step.remove_prefix", "Remove prefix"),
+            "remove_suffix": tr("text.rules.step.remove_suffix", "Remove suffix"),
+            "replace_text": tr("text.rules.step.replace_text", "Replace text"),
+            "regex_extract": tr("text.rules.step.regex_extract", "Regex extract"),
+        }
+        return mapping.get(code, code)
+
+    @staticmethod
+    def _param_label(code: str) -> str:
+        mapping = {
+            "value": tr("text.rules.param.value", "Value"),
+            "start": tr("text.rules.param.start", "Start"),
+            "end": tr("text.rules.param.end", "End"),
+            "separator": tr("text.rules.param.separator", "Separator"),
+            "bracket": tr("text.rules.param.bracket", "Bracket"),
+            "index": tr("text.rules.param.index", "Index"),
+            "group": tr("text.rules.param.group", "Group"),
+            "old": tr("text.rules.param.old", "Old"),
+            "new": tr("text.rules.param.new", "New"),
+            "pattern": tr("text.rules.param.pattern", "Pattern"),
+        }
+        return mapping.get(code, code)

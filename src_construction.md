@@ -113,6 +113,7 @@ src/
 - `src/bookhub/library/worker.py`：扫描任务线程包装。
 - `src/bookhub/library/thumbnail_tasks.py`：缩略图清理与重建任务实现。
 - `src/bookhub/library/thumbnail_worker.py`：缩略图任务线程包装。
+- `src/bookhub/library/error_logs.py`：扫描/冲突日志读写；日志目录固定解析为项目根下 `src/Scan_error_logs`（避免相对路径导致 `src/src/Scan_error_logs`）。
 
 ### 3.5 UI 主组件（bookhub/ui）
 - `src/bookhub/ui/__init__.py`：UI 包导出入口。
@@ -165,7 +166,9 @@ src/
 - Settings 导航：仅保留 General 与 Error logs 两项；移除顶部搜索框、Shortcuts、Manage Metadata 占位区域。
 - Text Novel：新增独立侧栏入口与独立列表页；TXT 不进入 Library 主列表；右侧详情栏可展示 `info_text` 预览。
 - 详情面板语义统一：`info_text` 仅作为“文本预览”渲染一次；“所属书单”仅在 `book` 资源类型显示，Comic/Text Novel 不再复用该字段。
-- Text 规则：支持路径级规则步骤编辑（source + steps），支持 `txt_head_text` 来源，并在扫描时应用到标题/作者/标签提取。
+- Text 规则：规则弹窗新增“使用文档”入口、三步引导区与一键模板（标题/作者/兜底）；source 与 step type 显示文案与内部 code 分离（`userData` 持久化 code），在不改 JSON 协议前提下增强可读性。
+- Text 规则 i18n：补齐规则弹窗内参数字段名、source/step 文案、规则/步骤列表格式与帮助文档文案键，减少硬编码英文暴露。
+- i18n 治理基线：新增 `scripts/i18n_hardcoded_scan.py`，用于扫描 UI 常见硬编码文案候选并输出清单（仅报告，不阻断）。
 - 扫描容错：当 PyMuPDF（`fitz`）不可用时，PDF 扫描自动降级为“仅入库+标题兜底”，跳过元数据/缩略图并输出单条聚合 warning，避免错误风暴弹窗。
 - 缺失记录治理：扫描按 scope 检查已入库源路径；缺失项写入 `src/Scan_error_logs` 后硬删除，不再进入 Missed 体系；重名冲突遇到陈旧路径会先清理再导入。
 - 任务触发：启动扫描支持配置开关（默认关闭）；路径变更自动扫描支持独立开关（默认开启）。

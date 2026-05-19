@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-_LOG_DIR = Path("src") / "Scan_error_logs"
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_LOG_DIR = _PROJECT_ROOT / "src" / "Scan_error_logs"
 
 
 def get_log_dir() -> Path:
