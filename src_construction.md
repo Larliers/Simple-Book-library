@@ -12,6 +12,7 @@
 src/
 ├─ main.py
 ├─ tests/
+│  ├─ test_comic_preview_pipeline.py
 │  ├─ test_rule_engine.py
 │  └─ test_scan_pdf_degrade.py
 ├─ sql/
@@ -41,6 +42,7 @@ src/
    │  ├─ models.py
    │  ├─ repository.py
    │  ├─ scanner.py
+   │  ├─ preview_paths.py
    │  ├─ text_rules/
    │  │  ├─ __init__.py
    │  │  ├─ rule_engine.py
@@ -96,6 +98,7 @@ src/
 - `src/main.py`：应用入口；创建 Qt 应用并启动主窗口。
 - `src/tests/test_rule_engine.py`：Text 规则引擎回归测试（步骤提取、回退链、非法正则容错）。
 - `src/tests/test_scan_pdf_degrade.py`：PDF 后端降级容错回归测试（PyMuPDF 不可用时的聚合 warning 与入库行为）。
+- `src/tests/test_comic_preview_pipeline.py`：漫画快扫占位与后台并行补图回归测试（占位复制、压缩替换、原图删除）。
 - `src/sql/.gitkeep`：运行数据目录占位，实际运行时生成 `library.db`、`scan_report.json`。
 
 ### 3.2 bookhub 包根
@@ -110,6 +113,7 @@ src/
 - `src/bookhub/library/__init__.py`：后端模块导出入口。
 - `src/bookhub/library/repository.py`：SQLite 读写中心；设置、书籍、书单、收藏、标签操作。
 - `src/bookhub/library/scanner.py`：目录扫描与文件过滤；构建入库候选（PDF/EPUB、Comic、Text Novel）。
+- `src/bookhub/library/preview_paths.py`：预览图目录结构与路径构建服务（`resource_type + variant`）。
 - `src/bookhub/library/metadata.py`：元数据提取与缩略图生成（WebP，`file://` 路径）。
 - `src/bookhub/library/models.py`：扫描/任务的数据结构定义。
 - `src/bookhub/library/text_rules/rule_models.py`：Text Novel 规则模型（`ImportRule`/`RuleStep`/`RuleContext`/`RuleResult`）。
@@ -188,6 +192,7 @@ src/
 - 网格布局：Library/Favorites/CollectionDetail 的书籍网格统一左内边距 12px，避免左侧贴边溢出观感。
 - 交互规则：单击看详情（无门控延迟）、双击外部打开。
 - 字体重载：`Reload Fonts` 现在执行完整链路（重扫 `src/fonts` -> 注册字体 -> 解析回退 -> `QApplication.setFont` + 动态 QSS 立即生效 -> 持久化设置）；目录不存在时自动创建并通过右下角 Toast 提示。
+- 漫画性能：扫描阶段改为“快扫入库+可选首图占位复制”，压缩缩略图改为后台并行补全；预览图目录升级为 `img_preview/<resource_type>/<original|compressed>`。
 
 ## 5. 边界与约束
 - 当前导入粒度：目录导入（不支持单文件导入）。

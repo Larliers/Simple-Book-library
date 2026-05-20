@@ -24,12 +24,14 @@ class ThumbnailTaskWorker(QThread):
         scan_report_path: str | Path,
         task_kind: str,
         task_scope: str,
+        comic_workers: int | None = None,
     ) -> None:
         super().__init__()
         self._db_path = Path(db_path)
         self._scan_report_path = Path(scan_report_path)
         self._task_kind = task_kind
         self._task_scope = task_scope
+        self._comic_workers = comic_workers
 
     def run(self) -> None:
         try:
@@ -46,7 +48,18 @@ class ThumbnailTaskWorker(QThread):
                 if self._task_kind == "cleanup":
                     result = cleanup_comic_thumbnails(repository, progress_cb=progress_cb)
                 elif self._task_kind == "regenerate":
-                    result = regenerate_comic_thumbnails(repository=repository, progress_cb=progress_cb)
+                    result = regenerate_comic_thumbnails(
+                        repository=repository,
+                        workers=self._comic_workers,
+                        progress_cb=progress_cb,
+                    )
+                elif self._task_kind == "regenerate_missing":
+                    result = regenerate_comic_thumbnails(
+                        repository=repository,
+                        only_missing=True,
+                        workers=self._comic_workers,
+                        progress_cb=progress_cb,
+                    )
                 else:
                     raise RuntimeError(f"Unsupported thumbnail task: {self._task_kind}")
             else:

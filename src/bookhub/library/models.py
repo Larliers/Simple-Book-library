@@ -12,7 +12,7 @@ HASH_STRATEGIES = {
     HASH_STRATEGY_QUICK,
 }
 HashStrategy = Literal["sha256", "size_mtime", "quick"]
-ThumbnailTaskKind = Literal["cleanup", "regenerate"]
+ThumbnailTaskKind = Literal["cleanup", "regenerate", "regenerate_missing"]
 ScanScope = Literal["library", "comic", "text", "all"]
 ThumbnailScope = Literal["library", "comic"]
 
@@ -73,6 +73,7 @@ class ScanRequest:
 class ComicScanRequest:
     roots: list[str]
     max_depth: int = 5
+    placeholder_copy_enabled: bool = True
 
 
 @dataclass(slots=True)
@@ -105,6 +106,9 @@ class ScanResult:
     comic_scanned_dirs: int = 0
     comic_detected_folders: int = 0
     comic_errors: list[str] = field(default_factory=list)
+    comic_placeholder_copied_count: int = 0
+    comic_thumbnail_enqueued_count: int = 0
+    comic_thumbnail_workers_used: int = 0
     text_added_count: int = 0
     text_updated_count: int = 0
     text_scanned_files: int = 0
@@ -128,6 +132,9 @@ class ScanResult:
             "comic_scanned_dirs": self.comic_scanned_dirs,
             "comic_detected_folders": self.comic_detected_folders,
             "comic_errors": list(self.comic_errors),
+            "comic_placeholder_copied_count": self.comic_placeholder_copied_count,
+            "comic_thumbnail_enqueued_count": self.comic_thumbnail_enqueued_count,
+            "comic_thumbnail_workers_used": self.comic_thumbnail_workers_used,
             "text_added_count": self.text_added_count,
             "text_updated_count": self.text_updated_count,
             "text_scanned_files": self.text_scanned_files,

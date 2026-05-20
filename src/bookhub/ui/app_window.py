@@ -65,6 +65,7 @@ class AppWindow(QMainWindow):
         self._thumbnail_worker: ThumbnailTaskWorker | None = None
         self._active_thumbnail_task_kind: str | None = None
         self._active_thumbnail_task_scope: str | None = None
+        self._pending_auto_comic_thumbnail = False
         self._scan_conflict_toast = SlideToast(self)
         self._scan_warning_toast = SlideToast(self)
         self._scan_missing_removed_toast = SlideToast(self)
@@ -130,6 +131,13 @@ class AppWindow(QMainWindow):
         self.settings_page.scan_text_requested.connect(lambda: self._start_scan("manual_text", scope="text"))
         self.settings_page.scan_depth_changed.connect(self._on_scan_depth_changed)
         self.settings_page.hash_strategy_changed.connect(self._on_hash_strategy_changed)
+        self.settings_page.comic_placeholder_copy_enabled_changed.connect(
+            self._on_comic_placeholder_copy_enabled_changed
+        )
+        self.settings_page.comic_thumbnail_workers_changed.connect(self._on_comic_thumbnail_workers_changed)
+        self.settings_page.auto_generate_comic_thumbnails_after_scan_changed.connect(
+            self._on_auto_generate_comic_thumbnails_after_scan_changed
+        )
         self.settings_page.card_spacing_changed.connect(self._on_card_spacing_changed)
         self.settings_page.topbar_search_font_size_changed.connect(self._on_topbar_search_font_size_changed)
         self.settings_page.font_changed.connect(self._on_font_changed)
@@ -262,6 +270,11 @@ class AppWindow(QMainWindow):
         self.settings_page.set_font_selection(self._repository.get_font_source(), self._repository.get_font_family())
         self.settings_page.set_scan_depth(self._repository.get_scan_depth())
         self.settings_page.set_hash_strategy(self._repository.get_hash_strategy())
+        self.settings_page.set_comic_placeholder_copy_enabled(self._repository.get_comic_placeholder_copy_enabled())
+        self.settings_page.set_comic_thumbnail_workers(self._repository.get_comic_thumbnail_workers_raw())
+        self.settings_page.set_auto_generate_comic_thumbnails_after_scan(
+            self._repository.get_auto_generate_comic_thumbnails_after_scan()
+        )
         self.settings_page.set_card_spacing(self._repository.get_card_spacing())
         self.settings_page.set_topbar_search_font_size(self._repository.get_topbar_search_font_size())
         self.settings_page.set_scan_summary(self._repository.read_scan_report())
@@ -445,6 +458,15 @@ class AppWindow(QMainWindow):
     def _on_hash_strategy_changed(self, strategy: str) -> None:
         self._repository.set_hash_strategy(strategy)
 
+    def _on_comic_placeholder_copy_enabled_changed(self, enabled: bool) -> None:
+        self._repository.set_comic_placeholder_copy_enabled(enabled)
+
+    def _on_comic_thumbnail_workers_changed(self, value: str) -> None:
+        self._repository.set_comic_thumbnail_workers(value)
+
+    def _on_auto_generate_comic_thumbnails_after_scan_changed(self, enabled: bool) -> None:
+        self._repository.set_auto_generate_comic_thumbnails_after_scan(enabled)
+
     def _on_card_spacing_changed(self, spacing: int) -> None:
         normalized = normalize_card_spacing(spacing)
         self._repository.set_card_spacing(normalized)
@@ -481,6 +503,8 @@ class AppWindow(QMainWindow):
             text_preview_chars=self._repository.get_text_preview_chars(),
             scan_depth=self._repository.get_scan_depth(),
             hash_strategy=self._repository.get_hash_strategy(),
+            comic_placeholder_copy_enabled=self._repository.get_comic_placeholder_copy_enabled(),
+            comic_thumbnail_workers_used=self._repository.get_comic_thumbnail_workers(),
             trigger=trigger,
             scope=scope,
         )
@@ -508,6 +532,23 @@ class AppWindow(QMainWindow):
         removed_missing_count = int(summary.get("removed_missing_count", 0) or 0)
         if removed_missing_count > 0:
             self._show_missing_removed_toast(removed_missing_count)
+        should_auto_queue = (
+            self._repository.get_auto_generate_comic_thumbnails_after_scan()
+            and scope in {"comic", "all"}
+            and int(summary.get("comic_thumbnail_enqueued_count", 0) or 0) > 0
+        )
+        self._pending_auto_comic_thumbnail = should_auto_queue
+        if should_auto_queue:
+            queued = int(summary.get("comic_thumbnail_enqueued_count", 0) or 0)
+            workers = int(summary.get("comic_thumbnail_workers_used", self._repository.get_comic_thumbnail_workers()) or 0)
+            self._scan_warning_toast.show_toast(
+                title=tr("settings.thumb.auto.title", "Comic thumbnails queued"),
+                message=tr(
+                    "settings.thumb.auto.msg",
+                    "Comic scan finished. Queued {count} thumbnails for background generation ({workers} workers).",
+                ).format(count=queued, workers=workers),
+                duration_seconds=7,
+            )
 
     def _on_scan_failed(self, message: str) -> None:
         self.settings_page.set_scan_running(False, "all")
@@ -515,6 +556,10 @@ class AppWindow(QMainWindow):
 
     def _on_worker_finished(self) -> None:
         self._scan_worker = None
+        if self._pending_auto_comic_thumbnail:
+            self._pending_auto_comic_thumbnail = False
+            if self._thumbnail_worker is None or not self._thumbnail_worker.isRunning():
+                self._start_thumbnail_task("regenerate_missing", scope="comic")
 
     def _show_name_conflicts(self, conflicts: list[object]) -> None:
         normalized = [item for item in conflicts if isinstance(item, dict)]
@@ -616,6 +661,7 @@ class AppWindow(QMainWindow):
             scan_report_path=self._repository.scan_report_path,
             task_kind=task_kind,
             task_scope=scope,
+            comic_workers=self._repository.get_comic_thumbnail_workers() if scope == "comic" else None,
         )
         worker.progress.connect(self._on_thumbnail_task_progress)
         worker.completed.connect(self._on_thumbnail_task_completed)
@@ -647,6 +693,16 @@ class AppWindow(QMainWindow):
         skipped = int(summary.get("skipped", 0) or 0)
         failed = int(summary.get("failed", 0) or 0)
         self._repository.record_scan_event(f"thumbnail_{task_kind}", summary)
+        if task_kind == "regenerate_missing" and scope == "comic":
+            self._scan_warning_toast.show_toast(
+                title=tr("settings.thumb.auto.done_title", "Comic thumbnails updated"),
+                message=tr(
+                    "settings.thumb.auto.done_msg",
+                    "Background comic thumbnail update finished. Success: {succeeded}, Skipped: {skipped}, Failed: {failed}.",
+                ).format(succeeded=succeeded, skipped=skipped, failed=failed),
+                duration_seconds=7,
+            )
+            return
         QMessageBox.information(
             self,
             tr("settings.thumb.result_title", "Thumbnail task finished"),

@@ -16,6 +16,7 @@ from bookhub.library.models import (
     TEXT_PREVIEW_CHAR_OPTIONS,
     HashStrategy,
 )
+from bookhub.library.preview_paths import ensure_preview_structure
 
 DEFAULT_CARD_SPACING = 14
 CARD_SPACING_MIN = 6
@@ -59,6 +60,7 @@ class LibraryRepository:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.scan_report_path.parent.mkdir(parents=True, exist_ok=True)
         self.preview_dir.mkdir(parents=True, exist_ok=True)
+        ensure_preview_structure(self.preview_dir)
         self._init_db()
         self._ensure_defaults()
 
@@ -139,6 +141,7 @@ class LibraryRepository:
                     comic_root TEXT,
                     cover_image_path TEXT,
                     thumbnail_path TEXT,
+                    cover_fingerprint TEXT,
                     image_count INTEGER NOT NULL DEFAULT 0,
                     info_text TEXT,
                     is_missing INTEGER NOT NULL DEFAULT 0,
@@ -165,6 +168,7 @@ class LibraryRepository:
                 """
             )
             self._ensure_column(conn, "books", "info_text", "ALTER TABLE books ADD COLUMN info_text TEXT")
+            self._ensure_column(conn, "comics", "cover_fingerprint", "ALTER TABLE comics ADD COLUMN cover_fingerprint TEXT")
 
     @staticmethod
     def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, ddl_sql: str) -> None:
@@ -195,6 +199,12 @@ class LibraryRepository:
             self.set_setting("font_source", "system")
         if self.get_setting("font_family", None) is None:
             self.set_setting("font_family", "")
+        if self.get_setting("comic_placeholder_copy_enabled", None) is None:
+            self.set_setting("comic_placeholder_copy_enabled", True)
+        if self.get_setting("auto_generate_comic_thumbnails_after_scan", None) is None:
+            self.set_setting("auto_generate_comic_thumbnails_after_scan", True)
+        if self.get_setting("comic_thumbnail_workers", None) is None:
+            self.set_setting("comic_thumbnail_workers", "auto")
 
     @staticmethod
     def normalize_path(path: str | Path) -> str:
@@ -308,6 +318,53 @@ class LibraryRepository:
 
     def set_font_family(self, family: str) -> None:
         self.set_setting("font_family", str(family or ""))
+
+    @staticmethod
+    def _default_comic_workers() -> int:
+        cpu = os.cpu_count() or 4
+        return max(2, min(8, cpu - 1))
+
+    def get_comic_placeholder_copy_enabled(self) -> bool:
+        return bool(self.get_setting("comic_placeholder_copy_enabled", True))
+
+    def set_comic_placeholder_copy_enabled(self, enabled: bool) -> None:
+        self.set_setting("comic_placeholder_copy_enabled", bool(enabled))
+
+    def get_auto_generate_comic_thumbnails_after_scan(self) -> bool:
+        return bool(self.get_setting("auto_generate_comic_thumbnails_after_scan", True))
+
+    def set_auto_generate_comic_thumbnails_after_scan(self, enabled: bool) -> None:
+        self.set_setting("auto_generate_comic_thumbnails_after_scan", bool(enabled))
+
+    def get_comic_thumbnail_workers_raw(self) -> str:
+        raw = self.get_setting("comic_thumbnail_workers", "auto")
+        if isinstance(raw, int):
+            return str(max(1, min(16, int(raw))))
+        text = str(raw or "auto").strip().lower()
+        if text == "auto":
+            return "auto"
+        try:
+            return str(max(1, min(16, int(text))))
+        except ValueError:
+            return "auto"
+
+    def get_comic_thumbnail_workers(self) -> int:
+        raw = self.get_comic_thumbnail_workers_raw()
+        if raw == "auto":
+            return self._default_comic_workers()
+        return max(1, min(16, int(raw)))
+
+    def set_comic_thumbnail_workers(self, value: str | int) -> None:
+        text = str(value or "").strip().lower()
+        if text == "auto":
+            self.set_setting("comic_thumbnail_workers", "auto")
+            return
+        try:
+            worker_count = max(1, min(16, int(text)))
+        except ValueError:
+            self.set_setting("comic_thumbnail_workers", "auto")
+            return
+        self.set_setting("comic_thumbnail_workers", worker_count)
 
     def list_roots(self) -> list[str]:
         with self._connection() as conn:
@@ -693,6 +750,9 @@ class LibraryRepository:
             "text_updated_count": 0,
             "text_scanned_files": 0,
             "text_errors": [],
+            "comic_placeholder_copied_count": 0,
+            "comic_thumbnail_enqueued_count": 0,
+            "comic_thumbnail_workers_used": 0,
             "updated_at": None,
         }
         if not self.scan_report_path.exists():
@@ -740,6 +800,7 @@ class LibraryRepository:
             rows = conn.execute(
                 """
                 SELECT id, resource_id, title, path, cover_image_path, thumbnail_path
+                     , cover_fingerprint
                 FROM comics
                 WHERE is_missing = 0
                 ORDER BY lower(title)
@@ -816,6 +877,19 @@ class LibraryRepository:
                 (thumbnail_path, now_utc_iso(), int(comic_id)),
             )
 
+    def update_comic_thumbnail_state(
+        self,
+        comic_id: int,
+        *,
+        thumbnail_path: str | None,
+        cover_fingerprint: str | None = None,
+    ) -> None:
+        with self._connection() as conn:
+            conn.execute(
+                "UPDATE comics SET thumbnail_path = ?, cover_fingerprint = ?, updated_at = ? WHERE id = ?",
+                (thumbnail_path, cover_fingerprint, now_utc_iso(), int(comic_id)),
+            )
+
     def get_book_int_id(self, resource_id: str) -> int | None:
         """Return the integer primary key for a given resource_id (UUID hex)."""
         with self._connection() as conn:
@@ -835,7 +909,7 @@ class LibraryRepository:
                     """
                     UPDATE comics
                     SET title = ?, comic_root = ?, cover_image_path = ?, thumbnail_path = ?,
-                        image_count = ?, info_text = ?, is_missing = 0, missing_reason = NULL, updated_at = ?
+                        cover_fingerprint = ?, image_count = ?, info_text = ?, is_missing = 0, missing_reason = NULL, updated_at = ?
                     WHERE id = ?
                     """,
                     (
@@ -843,6 +917,7 @@ class LibraryRepository:
                         payload.get("comic_root"),
                         payload.get("cover_image_path"),
                         payload.get("thumbnail_path"),
+                        payload.get("cover_fingerprint"),
                         int(payload.get("image_count") or 0),
                         payload.get("info_text"),
                         timestamp,
@@ -855,10 +930,10 @@ class LibraryRepository:
             conn.execute(
                 """
                 INSERT INTO comics(
-                    resource_id, title, path, comic_root, cover_image_path, thumbnail_path,
+                    resource_id, title, path, comic_root, cover_image_path, thumbnail_path, cover_fingerprint,
                     image_count, info_text, is_missing, missing_reason, created_at, updated_at
                 )
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
                 """,
                 (
                     resource_id,
@@ -867,6 +942,7 @@ class LibraryRepository:
                     payload.get("comic_root"),
                     payload.get("cover_image_path"),
                     payload.get("thumbnail_path"),
+                    payload.get("cover_fingerprint"),
                     int(payload.get("image_count") or 0),
                     payload.get("info_text"),
                     timestamp,
@@ -884,7 +960,7 @@ class LibraryRepository:
 
         query = f"""
             SELECT resource_id, title, path, comic_root, cover_image_path, thumbnail_path,
-                   image_count, info_text, is_missing, missing_reason
+                   cover_fingerprint, image_count, info_text, is_missing, missing_reason
             FROM comics
             {where_clause}
             ORDER BY lower(title)

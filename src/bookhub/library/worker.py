@@ -29,6 +29,8 @@ class ScanWorker(QThread):
         text_preview_chars: int,
         scan_depth: int,
         hash_strategy: str,
+        comic_placeholder_copy_enabled: bool,
+        comic_thumbnail_workers_used: int,
         trigger: str,
         scope: str = "all",
     ) -> None:
@@ -45,6 +47,8 @@ class ScanWorker(QThread):
             if hash_strategy in {"sha256", "size_mtime", "quick"}
             else HASH_STRATEGY_SIZE_MTIME
         )
+        self._comic_placeholder_copy_enabled = bool(comic_placeholder_copy_enabled)
+        self._comic_thumbnail_workers_used = max(1, int(comic_thumbnail_workers_used))
         self._trigger = trigger
         self._scope = str(scope or "all").strip().lower()
 
@@ -65,7 +69,11 @@ class ScanWorker(QThread):
                 result = ScanResult()
 
             if self._scope in {"all", "comic"}:
-                comic_request = ComicScanRequest(roots=self._comic_roots, max_depth=5)
+                comic_request = ComicScanRequest(
+                    roots=self._comic_roots,
+                    max_depth=5,
+                    placeholder_copy_enabled=self._comic_placeholder_copy_enabled,
+                )
                 comic_result = scan_comic_roots(repository, comic_request)
             else:
                 from bookhub.library.models import ScanResult
@@ -94,6 +102,9 @@ class ScanWorker(QThread):
             summary["comic_scanned_dirs"] = int(comic_summary.get("comic_scanned_dirs", 0) or 0)
             summary["comic_detected_folders"] = int(comic_summary.get("comic_detected_folders", 0) or 0)
             summary["comic_errors"] = list(comic_summary.get("comic_errors", []))
+            summary["comic_placeholder_copied_count"] = int(comic_summary.get("comic_placeholder_copied_count", 0) or 0)
+            summary["comic_thumbnail_enqueued_count"] = int(comic_summary.get("comic_thumbnail_enqueued_count", 0) or 0)
+            summary["comic_thumbnail_workers_used"] = self._comic_thumbnail_workers_used
             merged_conflicts = list(summary.get("name_conflicts", []))
             merged_conflicts.extend(list(text_summary.get("name_conflicts", [])))
             summary["name_conflicts"] = merged_conflicts

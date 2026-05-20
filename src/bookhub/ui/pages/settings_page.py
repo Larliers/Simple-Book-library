@@ -53,6 +53,9 @@ class SettingsPage(QWidget):
     scan_text_requested = Signal()
     scan_depth_changed = Signal(int)
     hash_strategy_changed = Signal(str)
+    comic_placeholder_copy_enabled_changed = Signal(bool)
+    comic_thumbnail_workers_changed = Signal(str)
+    auto_generate_comic_thumbnails_after_scan_changed = Signal(bool)
     card_spacing_changed = Signal(int)
     topbar_search_font_size_changed = Signal(int)
     text_preview_chars_changed = Signal(int)
@@ -297,6 +300,25 @@ class SettingsPage(QWidget):
         options_row.addWidget(self.text_preview_chars_combo, 1)
         library_layout.addLayout(options_row)
 
+        comic_perf_row = QHBoxLayout()
+        comic_perf_row.setSpacing(10)
+        self.comic_placeholder_copy_check = QCheckBox("Comic scan: copy first image as placeholder")
+        self.comic_placeholder_copy_check.setChecked(True)
+        self.comic_placeholder_copy_check.stateChanged.connect(self._emit_comic_placeholder_copy_enabled_changed)
+        comic_perf_row.addWidget(self.comic_placeholder_copy_check, 2)
+        self.auto_comic_thumb_check = QCheckBox("Auto generate comic thumbnails after scan")
+        self.auto_comic_thumb_check.setChecked(True)
+        self.auto_comic_thumb_check.stateChanged.connect(self._emit_auto_generate_comic_thumbnails_after_scan_changed)
+        comic_perf_row.addWidget(self.auto_comic_thumb_check, 2)
+        self.comic_thumbnail_workers_label = QLabel("Comic thumbnail workers")
+        comic_perf_row.addWidget(self.comic_thumbnail_workers_label)
+        self.comic_thumbnail_workers_combo = QComboBox()
+        self.comic_thumbnail_workers_combo.setObjectName("SettingsLanguageCombo")
+        self._set_comic_thumbnail_worker_options()
+        self.comic_thumbnail_workers_combo.currentIndexChanged.connect(self._emit_comic_thumbnail_workers_changed)
+        comic_perf_row.addWidget(self.comic_thumbnail_workers_combo, 1)
+        library_layout.addLayout(comic_perf_row)
+
         self.formats_hint = QLabel(
             "Library supports PDF/EPUB. Text Novel roots support TXT with configurable preview extraction."
         )
@@ -470,6 +492,27 @@ class SettingsPage(QWidget):
         self.hash_strategy_combo.setCurrentIndex(index if index >= 0 else 0)
         self.hash_strategy_combo.blockSignals(False)
 
+    def set_comic_placeholder_copy_enabled(self, enabled: bool) -> None:
+        self.comic_placeholder_copy_check.blockSignals(True)
+        self.comic_placeholder_copy_check.setChecked(bool(enabled))
+        self.comic_placeholder_copy_check.blockSignals(False)
+
+    def set_comic_thumbnail_workers(self, value: str) -> None:
+        raw = str(value or "auto").strip().lower()
+        index = self.comic_thumbnail_workers_combo.findData(raw)
+        if index < 0:
+            index = self.comic_thumbnail_workers_combo.findData("auto")
+        if index < 0:
+            index = 0
+        self.comic_thumbnail_workers_combo.blockSignals(True)
+        self.comic_thumbnail_workers_combo.setCurrentIndex(index)
+        self.comic_thumbnail_workers_combo.blockSignals(False)
+
+    def set_auto_generate_comic_thumbnails_after_scan(self, enabled: bool) -> None:
+        self.auto_comic_thumb_check.blockSignals(True)
+        self.auto_comic_thumb_check.setChecked(bool(enabled))
+        self.auto_comic_thumb_check.blockSignals(False)
+
     def set_card_spacing(self, spacing: int) -> None:
         value = normalize_card_spacing(spacing)
         index = self.card_spacing_combo.findData(value)
@@ -551,6 +594,14 @@ class SettingsPage(QWidget):
             "\nText Novel - scanned:{scanned} added:{added} updated:{updated}",
         ).format(scanned=text_scanned, added=text_added, updated=text_updated)
         self.scan_summary.setText(self.scan_summary.text() + text_suffix)
+        comic_placeholder_copied = int(summary.get("comic_placeholder_copied_count", 0) or 0)
+        comic_thumbnail_enqueued = int(summary.get("comic_thumbnail_enqueued_count", 0) or 0)
+        comic_workers_used = int(summary.get("comic_thumbnail_workers_used", 0) or 0)
+        comic_perf_suffix = tr(
+            "settings.comic.scan_perf_summary",
+            "\nComic - placeholder copied:{copied} queued thumbnails:{queued} workers:{workers}",
+        ).format(copied=comic_placeholder_copied, queued=comic_thumbnail_enqueued, workers=comic_workers_used)
+        self.scan_summary.setText(self.scan_summary.text() + comic_perf_suffix)
         warnings = summary.get("warnings", [])
         if isinstance(warnings, list):
             pdf_warning = next(
@@ -642,6 +693,15 @@ class SettingsPage(QWidget):
         self.card_spacing_label.setText(tr("settings.card_spacing", "Card spacing"))
         self.topbar_search_font_size_label.setText(tr("settings.topbar_search_font_size", "Search font size"))
         self.text_preview_chars_label.setText(tr("settings.text_preview_chars", "Text preview chars"))
+        self.comic_placeholder_copy_check.setText(
+            tr("settings.comic.placeholder_copy", "Comic scan: copy first image as placeholder")
+        )
+        self.auto_comic_thumb_check.setText(
+            tr("settings.comic.auto_thumb_after_scan", "Auto generate comic thumbnails after scan")
+        )
+        self.comic_thumbnail_workers_label.setText(
+            tr("settings.comic.thumbnail_workers", "Comic thumbnail workers")
+        )
         self.font_title.setText(tr("settings.font.title", "Font"))
         self.font_source_label.setText(tr("settings.font.source", "Font source"))
         self.font_family_label.setText(tr("settings.font.family", "Font family"))
@@ -667,6 +727,7 @@ class SettingsPage(QWidget):
         self._set_scan_depth_options()
         self._set_hash_strategy_options()
         self._set_font_source_options()
+        self._set_comic_thumbnail_worker_options()
         self.set_scan_summary(self._last_summary)
 
     def _set_language_options(self) -> None:
@@ -719,6 +780,17 @@ class SettingsPage(QWidget):
         index = self.font_source_combo.findData(current if current is not None else "system")
         self.font_source_combo.setCurrentIndex(index if index >= 0 else 0)
         self.font_source_combo.blockSignals(False)
+
+    def _set_comic_thumbnail_worker_options(self) -> None:
+        current = self.comic_thumbnail_workers_combo.currentData()
+        self.comic_thumbnail_workers_combo.blockSignals(True)
+        self.comic_thumbnail_workers_combo.clear()
+        self.comic_thumbnail_workers_combo.addItem(tr("settings.comic.workers.auto", "Auto"), "auto")
+        for worker in (2, 4, 6, 8, 12, 16):
+            self.comic_thumbnail_workers_combo.addItem(str(worker), str(worker))
+        index = self.comic_thumbnail_workers_combo.findData(current if current is not None else "auto")
+        self.comic_thumbnail_workers_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.comic_thumbnail_workers_combo.blockSignals(False)
 
     def _pick_folder(self) -> None:
         directory = QFileDialog.getExistingDirectory(self, tr("settings.pick_folder", "Select Library Folder"))
@@ -856,6 +928,16 @@ class SettingsPage(QWidget):
         strategy = str(self.hash_strategy_combo.currentData() or "size_mtime")
         self.hash_strategy_changed.emit(strategy)
 
+    def _emit_comic_placeholder_copy_enabled_changed(self) -> None:
+        self.comic_placeholder_copy_enabled_changed.emit(self.comic_placeholder_copy_check.isChecked())
+
+    def _emit_comic_thumbnail_workers_changed(self) -> None:
+        value = str(self.comic_thumbnail_workers_combo.currentData() or "auto")
+        self.comic_thumbnail_workers_changed.emit(value)
+
+    def _emit_auto_generate_comic_thumbnails_after_scan_changed(self) -> None:
+        self.auto_generate_comic_thumbnails_after_scan_changed.emit(self.auto_comic_thumb_check.isChecked())
+
     def _emit_card_spacing_changed(self) -> None:
         value = normalize_card_spacing(self.card_spacing_combo.currentData())
         self.card_spacing_changed.emit(value)
@@ -940,6 +1022,12 @@ class SettingsPage(QWidget):
         self.thumbnail_task_progress.setValue(100)
         if task_kind == "cleanup":
             self.thumbnail_task_status.setText(tr("settings.thumb.cleanup_done", "{scope} cleanup finished").format(scope=scope))
+        elif task_kind == "regenerate_missing":
+            self.thumbnail_task_status.setText(
+                tr("settings.thumb.regenerate_missing_done", "{scope} missing thumbnail generation finished").format(
+                    scope=scope
+                )
+            )
         else:
             self.thumbnail_task_status.setText(
                 tr("settings.thumb.regenerate_done", "{scope} regenerate finished").format(scope=scope)
