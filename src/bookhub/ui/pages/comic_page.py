@@ -5,14 +5,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QMenu,
-    QPushButton,
     QScrollArea,
     QSplitter,
     QVBoxLayout,
@@ -25,18 +25,49 @@ from bookhub.ui.pages.library_page import BookDetailPanel
 from bookhub.ui.resources.layout_config import UI_LAYOUT
 from bookhub.ui.widgets.book_card import BookCardWidget
 
+COMIC_SORT_SETTING_KEY_MAIN = "comic_sort_order_main"
+COMIC_SORT_SETTING_KEY_FAV = "comic_sort_order_fav"
+COMIC_SORT_MTIME_ASC = "folder_mtime_asc"
+COMIC_SORT_MTIME_DESC = "folder_mtime_desc"
+COMIC_SORT_NAME_ASC = "folder_name_asc"
+COMIC_SORT_NAME_DESC = "folder_name_desc"
+DEFAULT_COMIC_RENDER_BATCH_SIZE = 40
+
+
+def _normalize_sort_order(value: object) -> str:
+    normalized = str(value or "").strip().lower()
+    allowed = {COMIC_SORT_MTIME_ASC, COMIC_SORT_MTIME_DESC, COMIC_SORT_NAME_ASC, COMIC_SORT_NAME_DESC}
+    return normalized if normalized in allowed else COMIC_SORT_MTIME_DESC
+
 
 class ComicPage(QWidget):
-    def __init__(self, repository, favorite_only: bool = False, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        repository,
+        favorite_only: bool = False,
+        parent: QWidget | None = None,
+        sort_setting_key: str | None = None,
+    ) -> None:
         super().__init__(parent)
         self._repo = repository
         self._favorite_only = favorite_only
+        self._sort_setting_key = sort_setting_key or (
+            COMIC_SORT_SETTING_KEY_FAV if self._favorite_only else COMIC_SORT_SETTING_KEY_MAIN
+        )
+        self._sort_order = self._load_sort_order()
+        self._render_batch_size = DEFAULT_COMIC_RENDER_BATCH_SIZE
         self._resources: list[ResourceItem] = []
         self._resource_by_id: dict[str, ResourceItem] = {}
         self._comic_id_by_resource_id: dict[str, int] = {}
         self._selected_resource_id: str | None = None
         self._card_by_resource_id: dict[str, BookCardWidget] = {}
         self._last_columns = 0
+        self._render_token = 0
+        self._render_in_progress = False
+        self._reflow_timer = QTimer(self)
+        self._reflow_timer.setSingleShot(True)
+        self._reflow_timer.setInterval(120)
+        self._reflow_timer.timeout.connect(self._rerender_grid_for_layout)
         self._setup_ui()
         self.refresh()
 
@@ -54,6 +85,14 @@ class ComicPage(QWidget):
         title_col.addWidget(self._title)
         title_col.addWidget(self._subtitle)
         header_row.addLayout(title_col, 1)
+
+        self._sort_label = QLabel()
+        self._sort_label.setObjectName("PageSubtitle")
+        self._sort_combo = QComboBox()
+        self._sort_combo.setMinimumWidth(260)
+        self._sort_combo.currentIndexChanged.connect(self._on_sort_changed)
+        header_row.addWidget(self._sort_label, 0, Qt.AlignRight | Qt.AlignVCenter)
+        header_row.addWidget(self._sort_combo, 0, Qt.AlignRight | Qt.AlignVCenter)
         root.addLayout(header_row)
 
         self.main_splitter = QSplitter(Qt.Horizontal)
@@ -105,13 +144,35 @@ class ComicPage(QWidget):
         else:
             self._title.setText(tr("comic.page.title", "Comic"))
             self._empty_label.setText(tr("comic.page.empty", "No comics found yet."))
+        self._sort_label.setText(tr("comic.sort.label", "Sort"))
+        self._sort_combo.blockSignals(True)
+        self._sort_combo.clear()
+        self._sort_combo.addItem(tr("comic.sort.folder_mtime_asc", "Folder Date: Oldest First"), COMIC_SORT_MTIME_ASC)
+        self._sort_combo.addItem(tr("comic.sort.folder_mtime_desc", "Folder Date: Newest First"), COMIC_SORT_MTIME_DESC)
+        self._sort_combo.addItem(tr("comic.sort.folder_name_asc", "Folder Name: A-Z"), COMIC_SORT_NAME_ASC)
+        self._sort_combo.addItem(tr("comic.sort.folder_name_desc", "Folder Name: Z-A"), COMIC_SORT_NAME_DESC)
+        selected = self._sort_combo.findData(self._sort_order)
+        self._sort_combo.setCurrentIndex(selected if selected >= 0 else 1)
+        self._sort_combo.blockSignals(False)
         self.refresh()
+
+    def set_render_batch_size(self, size: int) -> None:
+        try:
+            value = int(size)
+        except (TypeError, ValueError):
+            value = DEFAULT_COMIC_RENDER_BATCH_SIZE
+        self._render_batch_size = min(200, max(10, value))
+        if self._resources:
+            self._start_grid_render()
 
     def refresh(self) -> None:
         if self._repo is None:
             self._resources = []
         else:
-            records = self._repo.get_favorite_comics() if self._favorite_only else self._repo.list_comics(include_missing=False)
+            if self._favorite_only:
+                records = self._repo.get_favorite_comics(order_by=self._sort_order)
+            else:
+                records = self._repo.list_comics(include_missing=False, order_by=self._sort_order)
             self._resources = []
             self._comic_id_by_resource_id.clear()
             for record in records:
@@ -150,11 +211,7 @@ class ComicPage(QWidget):
             self._selected_resource_id = None
 
         if not self._resources:
-            while self._grid.count():
-                item = self._grid.takeAt(0)
-                if item and item.widget():
-                    item.widget().deleteLater()
-            self._card_by_resource_id.clear()
+            self._clear_grid()
             self._scroll.hide()
             self._empty_label.show()
             self.detail_panel.clear_selection()
@@ -162,24 +219,29 @@ class ComicPage(QWidget):
 
         self._empty_label.hide()
         self._scroll.show()
-        self._render_grid()
+        self._start_grid_render()
         if self._selected_resource_id:
             self._update_detail_panel(self._selected_resource_id)
         else:
             self.detail_panel.clear_selection()
 
-    def _render_grid(self) -> None:
+    def _start_grid_render(self) -> None:
+        self._render_token += 1
+        current_token = self._render_token
+        self._render_in_progress = True
         self._grid.setHorizontalSpacing(UI_LAYOUT.card_spacing)
         self._grid.setVerticalSpacing(UI_LAYOUT.card_spacing)
-        self._card_by_resource_id.clear()
-        while self._grid.count():
-            item = self._grid.takeAt(0)
-            if item and item.widget():
-                item.widget().deleteLater()
+        self._clear_grid()
+        self._last_columns = self._calculate_columns()
+        self._render_grid_batch(current_token, 0)
 
-        columns = self._calculate_columns()
-        self._last_columns = columns
-        for idx, resource in enumerate(self._resources):
+    def _render_grid_batch(self, token: int, start_index: int) -> None:
+        if token != self._render_token:
+            return
+        columns = max(1, self._last_columns)
+        end_index = min(len(self._resources), start_index + self._render_batch_size)
+        for idx in range(start_index, end_index):
+            resource = self._resources[idx]
             row = idx // columns
             col = idx % columns
             card = BookCardWidget(resource, cover_only=True)
@@ -192,6 +254,18 @@ class ComicPage(QWidget):
                 lambda pos, res=resource, widget=card: self._show_card_menu(res, widget.mapToGlobal(pos))
             )
             self._grid.addWidget(card, row, col, alignment=Qt.AlignLeft | Qt.AlignTop)
+
+        if end_index >= len(self._resources):
+            self._render_in_progress = False
+            return
+        QTimer.singleShot(0, lambda: self._render_grid_batch(token, end_index))
+
+    def _clear_grid(self) -> None:
+        while self._grid.count():
+            item = self._grid.takeAt(0)
+            if item and item.widget():
+                item.widget().deleteLater()
+        self._card_by_resource_id.clear()
 
     def _show_card_menu(self, resource: ResourceItem, global_pos) -> None:
         menu = QMenu(self)
@@ -252,19 +326,61 @@ class ComicPage(QWidget):
         cell_width = UI_LAYOUT.card_width + UI_LAYOUT.card_spacing
         return max(1, available_width // max(1, cell_width))
 
+    def _on_sort_changed(self, _index: int) -> None:
+        selected = _normalize_sort_order(self._sort_combo.currentData())
+        if selected == self._sort_order:
+            return
+        self._sort_order = selected
+        self._save_sort_order(selected)
+        self.refresh()
+
+    def _load_sort_order(self) -> str:
+        if self._repo is None:
+            return COMIC_SORT_MTIME_DESC
+        default_value = COMIC_SORT_MTIME_DESC
+        if self._sort_setting_key == COMIC_SORT_SETTING_KEY_MAIN and hasattr(self._repo, "get_comic_sort_order_main"):
+            return _normalize_sort_order(self._repo.get_comic_sort_order_main())
+        if self._sort_setting_key == COMIC_SORT_SETTING_KEY_FAV and hasattr(self._repo, "get_comic_sort_order_fav"):
+            return _normalize_sort_order(self._repo.get_comic_sort_order_fav())
+        return _normalize_sort_order(self._repo.get_setting(self._sort_setting_key, default_value))
+
+    def _save_sort_order(self, order: str) -> None:
+        if self._repo is None:
+            return
+        normalized = _normalize_sort_order(order)
+        if self._sort_setting_key == COMIC_SORT_SETTING_KEY_MAIN and hasattr(self._repo, "set_comic_sort_order_main"):
+            self._repo.set_comic_sort_order_main(normalized)
+            return
+        if self._sort_setting_key == COMIC_SORT_SETTING_KEY_FAV and hasattr(self._repo, "set_comic_sort_order_fav"):
+            self._repo.set_comic_sort_order_fav(normalized)
+            return
+        self._repo.set_setting(self._sort_setting_key, normalized)
+
     def apply_card_spacing(self, _spacing: int) -> None:
         self._grid.setHorizontalSpacing(UI_LAYOUT.card_spacing)
         self._grid.setVerticalSpacing(UI_LAYOUT.card_spacing)
         if self._resources:
-            self._render_grid()
+            self._start_grid_render()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
+        if not self._resources:
+            return
         columns = self._calculate_columns()
-        if columns != self._last_columns and self._resources:
-            self._render_grid()
+        if columns != self._last_columns:
+            self._request_grid_reflow()
 
     def _on_main_splitter_moved(self, _pos: int, _index: int) -> None:
+        if not self._resources:
+            return
         columns = self._calculate_columns()
-        if columns != self._last_columns and self._resources:
-            self._render_grid()
+        if columns != self._last_columns:
+            self._request_grid_reflow()
+
+    def _request_grid_reflow(self) -> None:
+        self._reflow_timer.start()
+
+    def _rerender_grid_for_layout(self) -> None:
+        if not self._resources:
+            return
+        self._start_grid_render()

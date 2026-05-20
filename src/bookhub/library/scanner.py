@@ -8,6 +8,8 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from PIL import Image
+
 from bookhub.library.metadata import (
     build_metadata_tags,
     compute_fingerprints,
@@ -34,6 +36,13 @@ from bookhub.library.preview_paths import build_preview_path, is_preview_variant
 from bookhub.library.repository import LibraryRepository
 from bookhub.library.text_rules import ImportRule, RuleContext, apply_rule_chain, load_rules_from_json
 from bookhub.library.text_rules.rule_examples import default_text_title_rule_chain
+
+
+def _lanczos_resample() -> object:
+    resampling = getattr(Image, "Resampling", None)
+    if resampling is not None and hasattr(resampling, "LANCZOS"):
+        return resampling.LANCZOS
+    return getattr(Image, "LANCZOS", getattr(Image, "BICUBIC", 3))
 
 
 def _iter_files_with_depth(root: Path, depth: int):
@@ -234,12 +243,24 @@ def _natural_sort_key(path: Path) -> list[object]:
     return [int(part) if part.isdigit() else part for part in parts]
 
 
-def _select_comic_cover_and_count(file_names: list[str], folder_path: Path) -> tuple[Path | None, int]:
+def _collect_comic_folder_metrics(file_names: list[str], folder_path: Path) -> tuple[Path | None, int, str, int]:
     image_names = [name for name in file_names if Path(name).suffix.lower() in COMIC_IMAGE_EXTENSIONS]
     if not image_names:
-        return None, 0
+        return None, 0, "", 0
     sorted_names = sorted(image_names, key=lambda name: _natural_sort_key(Path(name)))
-    return folder_path / sorted_names[0], len(sorted_names)
+    image_count = len(sorted_names)
+    total_size = 0
+    max_mtime = 0
+    for name in sorted_names:
+        image_path = folder_path / name
+        try:
+            stat = image_path.stat()
+        except OSError:
+            continue
+        total_size += int(stat.st_size)
+        max_mtime = max(max_mtime, int(stat.st_mtime))
+    snapshot = f"{total_size}:{max_mtime}:{image_count}"
+    return folder_path / sorted_names[0], image_count, snapshot, max_mtime
 
 
 def _collect_comic_info_text(folder: Path) -> str | None:
@@ -281,29 +302,57 @@ def _cover_fingerprint(path: Path) -> str:
 def _collect_leaf_comic_candidates(
     root: Path,
     max_depth: int,
-) -> tuple[list[tuple[Path, Path, int]], int]:
-    candidates: list[tuple[Path, Path, int, int]] = []
+) -> tuple[list[tuple[Path, Path, int, str, int]], int]:
+    candidates: list[tuple[Path, Path, int, str, int, int]] = []
     scanned_dirs = 0
     for folder_path, relative_depth, file_names in _iter_dirs_with_depth(root, max_depth):
         scanned_dirs += 1
         if relative_depth > max_depth:
             continue
-        cover_path, image_count = _select_comic_cover_and_count(file_names, folder_path)
+        cover_path, image_count, folder_snapshot, folder_mtime = _collect_comic_folder_metrics(file_names, folder_path)
         if cover_path is None or image_count <= 0:
             continue
-        candidates.append((folder_path, cover_path, image_count, relative_depth))
+        candidates.append((folder_path, cover_path, image_count, folder_snapshot, folder_mtime, relative_depth))
 
     candidate_paths = {item[0] for item in candidates}
     has_image_children: dict[Path, bool] = {item[0]: False for item in candidates}
-    for folder_path, _cover_path, _count, _depth in candidates:
+    for folder_path, _cover_path, _count, _snapshot, _mtime, _depth in candidates:
         for parent in folder_path.parents:
             if parent == root.parent:
                 break
             if parent in candidate_paths:
                 has_image_children[parent] = True
-    leaf = [(folder, cover, count) for folder, cover, count, _depth in candidates if not has_image_children[folder]]
+    leaf = [
+        (folder, cover, count, snapshot, folder_mtime)
+        for folder, cover, count, snapshot, folder_mtime, _depth in candidates
+        if not has_image_children[folder]
+    ]
     leaf.sort(key=lambda item: str(item[0]).lower())
     return leaf, scanned_dirs
+
+
+def _copy_or_downscale_comic_placeholder(
+    cover_path: Path,
+    placeholder_path: Path,
+    *,
+    max_decode_bytes: int,
+) -> tuple[Path, bool]:
+    placeholder_path.parent.mkdir(parents=True, exist_ok=True)
+    downscaled_path = placeholder_path.with_suffix(".png")
+    try:
+        with Image.open(str(cover_path)) as img:
+            width, height = img.size
+            projected_bytes = int(width) * int(height) * 4
+            if projected_bytes <= max_decode_bytes:
+                shutil.copy2(cover_path, placeholder_path)
+                return placeholder_path, False
+            safe_img = img.convert("RGB")
+            safe_img.thumbnail((1400, 2000), _lanczos_resample())
+            safe_img.save(downscaled_path, format="PNG", icc_profile=None, optimize=True)
+            return downscaled_path, True
+    except Exception:
+        shutil.copy2(cover_path, placeholder_path)
+        return placeholder_path, False
 
 
 def _extract_text_fields(
@@ -326,6 +375,7 @@ def scan_comic_roots(repository: LibraryRepository, request: ComicScanRequest) -
     result = ScanResult()
     max_depth = min(5, max(1, int(request.max_depth or 5)))
     placeholder_copy_enabled = bool(request.placeholder_copy_enabled)
+    max_image_decode_bytes = max(1, int(request.max_image_decode_bytes or 0))
     scanned_roots = [repository.normalize_path(path) for path in request.roots]
     removed_missing = _remove_missing_comics_in_scope(repository, scanned_roots)
     if removed_missing > 0:
@@ -347,21 +397,16 @@ def scan_comic_roots(repository: LibraryRepository, request: ComicScanRequest) -
             result.comic_errors.append(f"Comic root traversal failed for {raw_root}: {exc}")
             continue
         result.comic_scanned_dirs += scanned_dir_count
-        for folder_path, cover_path, image_count in leaf_candidates:
+        for folder_path, cover_path, image_count, folder_snapshot, folder_mtime in leaf_candidates:
             result.comic_detected_folders += 1
             normalized_folder = repository.normalize_path(folder_path)
             normalized_root = repository.normalize_path(root)
             normalized_cover = repository.normalize_path(cover_path)
-            current_fingerprint: str | None
-            try:
-                current_fingerprint = _cover_fingerprint(cover_path)
-            except OSError as exc:
-                result.comic_errors.append(f"Comic cover stat failed for {normalized_cover}: {exc}")
-                current_fingerprint = None
 
             existing = existing_by_path.get(normalized_folder)
             existing_thumb = str(existing.get("thumbnail_path") or "") if isinstance(existing, dict) else ""
             existing_fingerprint = str(existing.get("cover_fingerprint") or "") if isinstance(existing, dict) else ""
+            existing_snapshot = str(existing.get("folder_size_mtime") or "") if isinstance(existing, dict) else ""
             thumb_file = uri_to_path(existing_thumb)
             has_valid_thumb = bool(thumb_file and thumb_file.exists() and thumb_file.is_file())
             points_to_original = is_preview_variant_uri(
@@ -369,14 +414,25 @@ def scan_comic_roots(repository: LibraryRepository, request: ComicScanRequest) -
                 resource_type="comic",
                 variant="original",
             )
-            need_regenerate = (
-                existing is None
-                or not existing_thumb
-                or not has_valid_thumb
-                or points_to_original
-                or not current_fingerprint
-                or existing_fingerprint != current_fingerprint
-            )
+            snapshot_unchanged = bool(existing) and existing_snapshot == folder_snapshot
+            current_fingerprint = existing_fingerprint or None
+            if snapshot_unchanged and has_valid_thumb and not points_to_original:
+                need_regenerate = False
+            else:
+                try:
+                    current_fingerprint = _cover_fingerprint(cover_path)
+                except OSError as exc:
+                    result.comic_errors.append(f"Comic cover stat failed for {normalized_cover}: {exc}")
+                    current_fingerprint = None
+                need_regenerate = (
+                    existing is None
+                    or not existing_thumb
+                    or not has_valid_thumb
+                    or points_to_original
+                    or not current_fingerprint
+                    or existing_fingerprint != current_fingerprint
+                    or not snapshot_unchanged
+                )
 
             thumbnail_path = existing_thumb or None
             if need_regenerate and placeholder_copy_enabled:
@@ -388,10 +444,15 @@ def scan_comic_roots(repository: LibraryRepository, request: ComicScanRequest) -
                     extension=cover_path.suffix,
                 )
                 try:
-                    placeholder_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(cover_path, placeholder_path)
-                    thumbnail_path = placeholder_path.resolve(strict=False).as_uri()
+                    effective_placeholder_path, downscaled = _copy_or_downscale_comic_placeholder(
+                        cover_path,
+                        placeholder_path,
+                        max_decode_bytes=max_image_decode_bytes,
+                    )
+                    thumbnail_path = effective_placeholder_path.resolve(strict=False).as_uri()
                     result.comic_placeholder_copied_count += 1
+                    if downscaled:
+                        result.comic_large_image_downscaled_count += 1
                 except OSError as exc:
                     result.comic_errors.append(f"Comic placeholder copy failed for {normalized_cover}: {exc}")
                     thumbnail_path = existing_thumb or None
@@ -399,7 +460,10 @@ def scan_comic_roots(repository: LibraryRepository, request: ComicScanRequest) -
             if need_regenerate:
                 result.comic_thumbnail_enqueued_count += 1
 
-            info_text = _collect_comic_info_text(folder_path)
+            if snapshot_unchanged and isinstance(existing, dict):
+                info_text = str(existing.get("info_text") or "") or None
+            else:
+                info_text = _collect_comic_info_text(folder_path)
             payload = {
                 "path": normalized_folder,
                 "title": folder_path.name,
@@ -407,6 +471,8 @@ def scan_comic_roots(repository: LibraryRepository, request: ComicScanRequest) -
                 "cover_image_path": normalized_cover,
                 "thumbnail_path": thumbnail_path,
                 "cover_fingerprint": current_fingerprint,
+                "folder_size_mtime": folder_snapshot,
+                "folder_mtime": folder_mtime,
                 "image_count": image_count,
                 "info_text": info_text,
             }
@@ -419,7 +485,19 @@ def scan_comic_roots(repository: LibraryRepository, request: ComicScanRequest) -
                 "path": normalized_folder,
                 "thumbnail_path": thumbnail_path,
                 "cover_fingerprint": current_fingerprint,
+                "folder_size_mtime": folder_snapshot,
+                "folder_mtime": folder_mtime,
+                "info_text": info_text,
             }
+
+    if result.comic_large_image_downscaled_count > 0:
+        result.warnings.append(
+            {
+                "code": "comic_large_image_downscaled",
+                "count": result.comic_large_image_downscaled_count,
+                "reason": "Some placeholder covers were downscaled to avoid Qt image allocation limits.",
+            }
+        )
 
     return result
 

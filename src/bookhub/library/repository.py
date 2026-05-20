@@ -142,6 +142,8 @@ class LibraryRepository:
                     cover_image_path TEXT,
                     thumbnail_path TEXT,
                     cover_fingerprint TEXT,
+                    folder_size_mtime TEXT,
+                    folder_mtime INTEGER NOT NULL DEFAULT 0,
                     image_count INTEGER NOT NULL DEFAULT 0,
                     info_text TEXT,
                     is_missing INTEGER NOT NULL DEFAULT 0,
@@ -169,6 +171,8 @@ class LibraryRepository:
             )
             self._ensure_column(conn, "books", "info_text", "ALTER TABLE books ADD COLUMN info_text TEXT")
             self._ensure_column(conn, "comics", "cover_fingerprint", "ALTER TABLE comics ADD COLUMN cover_fingerprint TEXT")
+            self._ensure_column(conn, "comics", "folder_size_mtime", "ALTER TABLE comics ADD COLUMN folder_size_mtime TEXT")
+            self._ensure_column(conn, "comics", "folder_mtime", "ALTER TABLE comics ADD COLUMN folder_mtime INTEGER")
 
     @staticmethod
     def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, ddl_sql: str) -> None:
@@ -205,6 +209,12 @@ class LibraryRepository:
             self.set_setting("auto_generate_comic_thumbnails_after_scan", True)
         if self.get_setting("comic_thumbnail_workers", None) is None:
             self.set_setting("comic_thumbnail_workers", "auto")
+        if self.get_setting("comic_render_batch_size", None) is None:
+            self.set_setting("comic_render_batch_size", 40)
+        if self.get_setting("comic_sort_order_main", None) is None:
+            self.set_setting("comic_sort_order_main", "folder_mtime_desc")
+        if self.get_setting("comic_sort_order_fav", None) is None:
+            self.set_setting("comic_sort_order_fav", "folder_mtime_desc")
 
     @staticmethod
     def normalize_path(path: str | Path) -> str:
@@ -365,6 +375,39 @@ class LibraryRepository:
             self.set_setting("comic_thumbnail_workers", "auto")
             return
         self.set_setting("comic_thumbnail_workers", worker_count)
+
+    @staticmethod
+    def _normalize_comic_render_batch_size(value: int | str | None) -> int:
+        try:
+            size = int(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            size = 40
+        return min(200, max(10, size))
+
+    def get_comic_render_batch_size(self) -> int:
+        raw = self.get_setting("comic_render_batch_size", 40)
+        return self._normalize_comic_render_batch_size(raw)
+
+    def set_comic_render_batch_size(self, value: int | str) -> None:
+        self.set_setting("comic_render_batch_size", self._normalize_comic_render_batch_size(value))
+
+    @staticmethod
+    def _normalize_comic_sort_order(value: str | None) -> str:
+        normalized = str(value or "").strip().lower()
+        allowed = {"folder_mtime_asc", "folder_mtime_desc", "folder_name_asc", "folder_name_desc"}
+        return normalized if normalized in allowed else "folder_mtime_desc"
+
+    def get_comic_sort_order_main(self) -> str:
+        return self._normalize_comic_sort_order(self.get_setting("comic_sort_order_main", "folder_mtime_desc"))
+
+    def set_comic_sort_order_main(self, value: str) -> None:
+        self.set_setting("comic_sort_order_main", self._normalize_comic_sort_order(value))
+
+    def get_comic_sort_order_fav(self) -> str:
+        return self._normalize_comic_sort_order(self.get_setting("comic_sort_order_fav", "folder_mtime_desc"))
+
+    def set_comic_sort_order_fav(self, value: str) -> None:
+        self.set_setting("comic_sort_order_fav", self._normalize_comic_sort_order(value))
 
     def list_roots(self) -> list[str]:
         with self._connection() as conn:
@@ -554,6 +597,17 @@ class LibraryRepository:
             cursor = conn.execute(f"DELETE FROM comics WHERE id IN ({placeholders})", tuple(ids))  # noqa: S608
             deleted = cursor.rowcount if cursor.rowcount is not None else 0
         return max(0, int(deleted))
+
+    @staticmethod
+    def _comic_order_clause(order_by: str | None) -> str:
+        normalized = str(order_by or "").strip().lower()
+        if normalized == "folder_mtime_asc":
+            return "COALESCE(folder_mtime, 0) ASC, lower(title) ASC"
+        if normalized == "folder_name_asc":
+            return "lower(title) ASC"
+        if normalized == "folder_name_desc":
+            return "lower(title) DESC"
+        return "COALESCE(folder_mtime, 0) DESC, lower(title) ASC"
 
     def upsert_book(self, payload: dict[str, Any]) -> bool:
         path = payload["path"]
@@ -753,6 +807,7 @@ class LibraryRepository:
             "comic_placeholder_copied_count": 0,
             "comic_thumbnail_enqueued_count": 0,
             "comic_thumbnail_workers_used": 0,
+            "comic_large_image_downscaled_count": 0,
             "updated_at": None,
         }
         if not self.scan_report_path.exists():
@@ -909,7 +964,8 @@ class LibraryRepository:
                     """
                     UPDATE comics
                     SET title = ?, comic_root = ?, cover_image_path = ?, thumbnail_path = ?,
-                        cover_fingerprint = ?, image_count = ?, info_text = ?, is_missing = 0, missing_reason = NULL, updated_at = ?
+                        cover_fingerprint = ?, folder_size_mtime = ?, folder_mtime = ?, image_count = ?,
+                        info_text = ?, is_missing = 0, missing_reason = NULL, updated_at = ?
                     WHERE id = ?
                     """,
                     (
@@ -918,6 +974,8 @@ class LibraryRepository:
                         payload.get("cover_image_path"),
                         payload.get("thumbnail_path"),
                         payload.get("cover_fingerprint"),
+                        payload.get("folder_size_mtime"),
+                        int(payload.get("folder_mtime") or 0),
                         int(payload.get("image_count") or 0),
                         payload.get("info_text"),
                         timestamp,
@@ -931,9 +989,9 @@ class LibraryRepository:
                 """
                 INSERT INTO comics(
                     resource_id, title, path, comic_root, cover_image_path, thumbnail_path, cover_fingerprint,
-                    image_count, info_text, is_missing, missing_reason, created_at, updated_at
+                    folder_size_mtime, folder_mtime, image_count, info_text, is_missing, missing_reason, created_at, updated_at
                 )
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
                 """,
                 (
                     resource_id,
@@ -943,6 +1001,8 @@ class LibraryRepository:
                     payload.get("cover_image_path"),
                     payload.get("thumbnail_path"),
                     payload.get("cover_fingerprint"),
+                    payload.get("folder_size_mtime"),
+                    int(payload.get("folder_mtime") or 0),
                     int(payload.get("image_count") or 0),
                     payload.get("info_text"),
                     timestamp,
@@ -951,19 +1011,20 @@ class LibraryRepository:
             )
             return True
 
-    def list_comics(self, include_missing: bool | None = None) -> list[dict[str, Any]]:
+    def list_comics(self, include_missing: bool | None = None, order_by: str = "folder_mtime_desc") -> list[dict[str, Any]]:
         where_clause = ""
         if include_missing is True:
             where_clause = "WHERE is_missing = 1"
         elif include_missing is False:
             where_clause = "WHERE is_missing = 0"
+        order_clause = self._comic_order_clause(order_by)
 
         query = f"""
             SELECT resource_id, title, path, comic_root, cover_image_path, thumbnail_path,
-                   cover_fingerprint, image_count, info_text, is_missing, missing_reason
+                   cover_fingerprint, folder_size_mtime, folder_mtime, image_count, info_text, is_missing, missing_reason
             FROM comics
             {where_clause}
-            ORDER BY lower(title)
+            ORDER BY {order_clause}
         """
         with self._connection() as conn:
             rows = conn.execute(query).fetchall()
@@ -992,13 +1053,14 @@ class LibraryRepository:
                 (comic_id,),
             )
 
-    def get_favorite_comics(self, order: str = "desc") -> list[dict[str, Any]]:
+    def get_favorite_comics(self, order: str = "desc", order_by: str | None = None) -> list[dict[str, Any]]:
         order_text = str(order or "").strip().lower()
         order_sql = "ASC" if order_text == "asc" else "DESC"
+        order_clause = self._comic_order_clause(order_by) if order_by else f"fc.added_at {order_sql}"
         query = f"""SELECT c.*, fc.added_at AS favorite_added_at
                     FROM comics c
                     INNER JOIN favorite_comics fc ON c.id = fc.comic_id
-                    ORDER BY fc.added_at {order_sql}"""
+                    ORDER BY {order_clause}, fc.added_at DESC"""
         with self._connection() as conn:
             rows = conn.execute(query).fetchall()
         return [dict(row) for row in rows]

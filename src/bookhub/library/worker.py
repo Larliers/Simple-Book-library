@@ -105,6 +105,9 @@ class ScanWorker(QThread):
             summary["comic_placeholder_copied_count"] = int(comic_summary.get("comic_placeholder_copied_count", 0) or 0)
             summary["comic_thumbnail_enqueued_count"] = int(comic_summary.get("comic_thumbnail_enqueued_count", 0) or 0)
             summary["comic_thumbnail_workers_used"] = self._comic_thumbnail_workers_used
+            summary["comic_large_image_downscaled_count"] = int(
+                comic_summary.get("comic_large_image_downscaled_count", 0) or 0
+            )
             merged_conflicts = list(summary.get("name_conflicts", []))
             merged_conflicts.extend(list(text_summary.get("name_conflicts", [])))
             summary["name_conflicts"] = merged_conflicts
@@ -112,6 +115,10 @@ class ScanWorker(QThread):
             summary["text_updated_count"] = int(text_summary.get("text_updated_count", 0) or 0)
             summary["text_scanned_files"] = int(text_summary.get("text_scanned_files", 0) or 0)
             summary["text_errors"] = list(text_summary.get("text_errors", []))
+            merged_warnings = list(summary.get("warnings", []))
+            merged_warnings.extend(list(comic_summary.get("warnings", [])))
+            merged_warnings.extend(list(text_summary.get("warnings", [])))
+            summary["warnings"] = merged_warnings
             summary["removed_missing_count"] = int(summary.get("removed_missing_count", 0) or 0) + int(
                 comic_summary.get("removed_missing_count", 0) or 0
             ) + int(text_summary.get("removed_missing_count", 0) or 0)

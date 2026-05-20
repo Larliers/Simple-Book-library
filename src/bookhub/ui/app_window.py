@@ -21,7 +21,11 @@ from bookhub.library.error_logs import append_conflict_if_new, read_latest_log_t
 from bookhub.ui.models.resource import ResourceItem
 from bookhub.ui.pages.library_page import LibraryPage
 from bookhub.ui.pages.settings_page import SettingsPage
-from bookhub.ui.pages.comic_page import ComicPage
+from bookhub.ui.pages.comic_page import (
+    COMIC_SORT_SETTING_KEY_FAV,
+    COMIC_SORT_SETTING_KEY_MAIN,
+    ComicPage,
+)
 from bookhub.ui.pages.text_novel_page import TextNovelPage
 from bookhub.ui.resources.layout_config import (
     UI_LAYOUT,
@@ -110,9 +114,17 @@ class AppWindow(QMainWindow):
         self._register_page("text_novel", self.text_page)
         self._register_page("collections", CollectionsPage(self._repository))
         self._register_page("favorites", FavoritesPage(self._repository))
-        self.comic_page = ComicPage(self._repository, favorite_only=False)
+        self.comic_page = ComicPage(
+            self._repository,
+            favorite_only=False,
+            sort_setting_key=COMIC_SORT_SETTING_KEY_MAIN,
+        )
         self._register_page("comic", self.comic_page)
-        self.comic_fav_page = ComicPage(self._repository, favorite_only=True)
+        self.comic_fav_page = ComicPage(
+            self._repository,
+            favorite_only=True,
+            sort_setting_key=COMIC_SORT_SETTING_KEY_FAV,
+        )
         self._register_page("comic_fav", self.comic_fav_page)
         self.settings_page = SettingsPage()
         self.settings_page.language_changed.connect(self._on_language_changed)
@@ -135,6 +147,7 @@ class AppWindow(QMainWindow):
             self._on_comic_placeholder_copy_enabled_changed
         )
         self.settings_page.comic_thumbnail_workers_changed.connect(self._on_comic_thumbnail_workers_changed)
+        self.settings_page.comic_render_batch_size_changed.connect(self._on_comic_render_batch_size_changed)
         self.settings_page.auto_generate_comic_thumbnails_after_scan_changed.connect(
             self._on_auto_generate_comic_thumbnails_after_scan_changed
         )
@@ -272,9 +285,12 @@ class AppWindow(QMainWindow):
         self.settings_page.set_hash_strategy(self._repository.get_hash_strategy())
         self.settings_page.set_comic_placeholder_copy_enabled(self._repository.get_comic_placeholder_copy_enabled())
         self.settings_page.set_comic_thumbnail_workers(self._repository.get_comic_thumbnail_workers_raw())
+        self.settings_page.set_comic_render_batch_size(self._repository.get_comic_render_batch_size())
         self.settings_page.set_auto_generate_comic_thumbnails_after_scan(
             self._repository.get_auto_generate_comic_thumbnails_after_scan()
         )
+        self.comic_page.set_render_batch_size(self._repository.get_comic_render_batch_size())
+        self.comic_fav_page.set_render_batch_size(self._repository.get_comic_render_batch_size())
         self.settings_page.set_card_spacing(self._repository.get_card_spacing())
         self.settings_page.set_topbar_search_font_size(self._repository.get_topbar_search_font_size())
         self.settings_page.set_scan_summary(self._repository.read_scan_report())
@@ -464,6 +480,12 @@ class AppWindow(QMainWindow):
     def _on_comic_thumbnail_workers_changed(self, value: str) -> None:
         self._repository.set_comic_thumbnail_workers(value)
 
+    def _on_comic_render_batch_size_changed(self, value: int) -> None:
+        self._repository.set_comic_render_batch_size(value)
+        normalized = self._repository.get_comic_render_batch_size()
+        self.comic_page.set_render_batch_size(normalized)
+        self.comic_fav_page.set_render_batch_size(normalized)
+
     def _on_auto_generate_comic_thumbnails_after_scan_changed(self, enabled: bool) -> None:
         self._repository.set_auto_generate_comic_thumbnails_after_scan(enabled)
 
@@ -615,6 +637,21 @@ class AppWindow(QMainWindow):
             None,
         )
         if not pdf_warning:
+            comic_warning = next(
+                (item for item in normalized if str(item.get("code") or "") == "comic_large_image_downscaled"),
+                None,
+            )
+            if not comic_warning:
+                return
+            comic_count = int(comic_warning.get("count", 0) or 0)
+            self._scan_warning_toast.show_toast(
+                title=tr("scan.warning_title", "Scan warning"),
+                message=tr(
+                    "scan.warning.comic_large_image_downscaled",
+                    "Downscaled {count} large comic covers for placeholder rendering to avoid Qt decode limit.",
+                ).format(count=comic_count),
+                duration_seconds=8,
+            )
             return
 
         count = int(pdf_warning.get("count", 0) or 0)
@@ -625,6 +662,16 @@ class AppWindow(QMainWindow):
         ).format(count=count)
         if reason:
             message = f"{message}\n{reason}"
+        comic_warning = next(
+            (item for item in normalized if str(item.get("code") or "") == "comic_large_image_downscaled"),
+            None,
+        )
+        if comic_warning:
+            comic_count = int(comic_warning.get("count", 0) or 0)
+            message = f"{message}\n" + tr(
+                "scan.warning.comic_large_image_downscaled",
+                "Downscaled {count} large comic covers for placeholder rendering to avoid Qt decode limit.",
+            ).format(count=comic_count)
         self._scan_warning_toast.show_toast(
             title=tr("scan.warning_title", "Scan warning"),
             message=message,

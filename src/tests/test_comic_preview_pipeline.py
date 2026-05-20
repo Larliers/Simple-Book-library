@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -63,6 +64,56 @@ class ComicPreviewPipelineTests(unittest.TestCase):
         compressed_uri = str(records[0].get("thumbnail_path") or "")
         self.assertTrue(is_preview_variant_uri(compressed_uri, resource_type="comic", variant="compressed"))
         self.assertFalse(is_preview_variant_uri(compressed_uri, resource_type="comic", variant="original"))
+
+    def test_large_cover_is_downscaled_for_placeholder(self) -> None:
+        comic_root = self.tmp_path / "comic_root"
+        chapter = comic_root / "series_b" / "ch_001"
+        chapter.mkdir(parents=True, exist_ok=True)
+        cover = chapter / "001.png"
+        Image.new("RGB", (120, 180), color=(40, 60, 80)).save(cover)
+
+        result = scan_comic_roots(
+            self.repo,
+            ComicScanRequest(
+                roots=[str(comic_root)],
+                max_depth=5,
+                placeholder_copy_enabled=True,
+                max_image_decode_bytes=1,
+            ),
+        )
+        self.assertEqual(result.comic_large_image_downscaled_count, 1)
+        self.assertTrue(any(str(item.get("code") or "") == "comic_large_image_downscaled" for item in result.warnings))
+
+    def test_comic_sort_order_by_folder_mtime_and_name(self) -> None:
+        comic_root = self.tmp_path / "comic_root"
+        alpha = comic_root / "A_alpha"
+        beta = comic_root / "B_beta"
+        alpha.mkdir(parents=True, exist_ok=True)
+        beta.mkdir(parents=True, exist_ok=True)
+        alpha_cover = alpha / "001.png"
+        beta_cover = beta / "001.png"
+        Image.new("RGB", (100, 120), color=(100, 100, 100)).save(alpha_cover)
+        Image.new("RGB", (100, 120), color=(120, 120, 120)).save(beta_cover)
+        os.utime(alpha_cover, (1_700_000_000, 1_700_000_000))
+        os.utime(beta_cover, (1_800_000_000, 1_800_000_000))
+
+        scan_comic_roots(
+            self.repo,
+            ComicScanRequest(
+                roots=[str(comic_root)],
+                max_depth=5,
+                placeholder_copy_enabled=False,
+            ),
+        )
+        by_mtime_asc = self.repo.list_comics(include_missing=False, order_by="folder_mtime_asc")
+        by_mtime_desc = self.repo.list_comics(include_missing=False, order_by="folder_mtime_desc")
+        by_name_asc = self.repo.list_comics(include_missing=False, order_by="folder_name_asc")
+        by_name_desc = self.repo.list_comics(include_missing=False, order_by="folder_name_desc")
+
+        self.assertEqual([item["title"] for item in by_mtime_asc], ["A_alpha", "B_beta"])
+        self.assertEqual([item["title"] for item in by_mtime_desc], ["B_beta", "A_alpha"])
+        self.assertEqual([item["title"] for item in by_name_asc], ["A_alpha", "B_beta"])
+        self.assertEqual([item["title"] for item in by_name_desc], ["B_beta", "A_alpha"])
 
 
 if __name__ == "__main__":

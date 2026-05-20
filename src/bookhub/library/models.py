@@ -74,6 +74,7 @@ class ComicScanRequest:
     roots: list[str]
     max_depth: int = 5
     placeholder_copy_enabled: bool = True
+    max_image_decode_bytes: int = 256 * 1024 * 1024
 
 
 @dataclass(slots=True)
@@ -109,6 +110,7 @@ class ScanResult:
     comic_placeholder_copied_count: int = 0
     comic_thumbnail_enqueued_count: int = 0
     comic_thumbnail_workers_used: int = 0
+    comic_large_image_downscaled_count: int = 0
     text_added_count: int = 0
     text_updated_count: int = 0
     text_scanned_files: int = 0
@@ -135,6 +137,7 @@ class ScanResult:
             "comic_placeholder_copied_count": self.comic_placeholder_copied_count,
             "comic_thumbnail_enqueued_count": self.comic_thumbnail_enqueued_count,
             "comic_thumbnail_workers_used": self.comic_thumbnail_workers_used,
+            "comic_large_image_downscaled_count": self.comic_large_image_downscaled_count,
             "text_added_count": self.text_added_count,
             "text_updated_count": self.text_updated_count,
             "text_scanned_files": self.text_scanned_files,

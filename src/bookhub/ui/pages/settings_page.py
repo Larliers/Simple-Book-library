@@ -55,6 +55,7 @@ class SettingsPage(QWidget):
     hash_strategy_changed = Signal(str)
     comic_placeholder_copy_enabled_changed = Signal(bool)
     comic_thumbnail_workers_changed = Signal(str)
+    comic_render_batch_size_changed = Signal(int)
     auto_generate_comic_thumbnails_after_scan_changed = Signal(bool)
     card_spacing_changed = Signal(int)
     topbar_search_font_size_changed = Signal(int)
@@ -317,6 +318,14 @@ class SettingsPage(QWidget):
         self._set_comic_thumbnail_worker_options()
         self.comic_thumbnail_workers_combo.currentIndexChanged.connect(self._emit_comic_thumbnail_workers_changed)
         comic_perf_row.addWidget(self.comic_thumbnail_workers_combo, 1)
+        self.comic_render_batch_size_label = QLabel("Comic render batch size")
+        comic_perf_row.addWidget(self.comic_render_batch_size_label)
+        self.comic_render_batch_size_combo = QComboBox()
+        self.comic_render_batch_size_combo.setObjectName("SettingsLanguageCombo")
+        for batch_size in (20, 40, 60, 100):
+            self.comic_render_batch_size_combo.addItem(str(batch_size), batch_size)
+        self.comic_render_batch_size_combo.currentIndexChanged.connect(self._emit_comic_render_batch_size_changed)
+        comic_perf_row.addWidget(self.comic_render_batch_size_combo, 1)
         library_layout.addLayout(comic_perf_row)
 
         self.formats_hint = QLabel(
@@ -508,6 +517,20 @@ class SettingsPage(QWidget):
         self.comic_thumbnail_workers_combo.setCurrentIndex(index)
         self.comic_thumbnail_workers_combo.blockSignals(False)
 
+    def set_comic_render_batch_size(self, size: int) -> None:
+        try:
+            value = int(size)
+        except (TypeError, ValueError):
+            value = 40
+        index = self.comic_render_batch_size_combo.findData(value)
+        if index < 0:
+            index = self.comic_render_batch_size_combo.findData(40)
+        if index < 0:
+            index = 0
+        self.comic_render_batch_size_combo.blockSignals(True)
+        self.comic_render_batch_size_combo.setCurrentIndex(index)
+        self.comic_render_batch_size_combo.blockSignals(False)
+
     def set_auto_generate_comic_thumbnails_after_scan(self, enabled: bool) -> None:
         self.auto_comic_thumb_check.blockSignals(True)
         self.auto_comic_thumb_check.setChecked(bool(enabled))
@@ -597,10 +620,16 @@ class SettingsPage(QWidget):
         comic_placeholder_copied = int(summary.get("comic_placeholder_copied_count", 0) or 0)
         comic_thumbnail_enqueued = int(summary.get("comic_thumbnail_enqueued_count", 0) or 0)
         comic_workers_used = int(summary.get("comic_thumbnail_workers_used", 0) or 0)
+        comic_large_downscaled = int(summary.get("comic_large_image_downscaled_count", 0) or 0)
         comic_perf_suffix = tr(
             "settings.comic.scan_perf_summary",
-            "\nComic - placeholder copied:{copied} queued thumbnails:{queued} workers:{workers}",
-        ).format(copied=comic_placeholder_copied, queued=comic_thumbnail_enqueued, workers=comic_workers_used)
+            "\nComic - placeholder copied:{copied} queued thumbnails:{queued} workers:{workers} large-image downscaled:{downscaled}",
+        ).format(
+            copied=comic_placeholder_copied,
+            queued=comic_thumbnail_enqueued,
+            workers=comic_workers_used,
+            downscaled=comic_large_downscaled,
+        )
         self.scan_summary.setText(self.scan_summary.text() + comic_perf_suffix)
         warnings = summary.get("warnings", [])
         if isinstance(warnings, list):
@@ -701,6 +730,9 @@ class SettingsPage(QWidget):
         )
         self.comic_thumbnail_workers_label.setText(
             tr("settings.comic.thumbnail_workers", "Comic thumbnail workers")
+        )
+        self.comic_render_batch_size_label.setText(
+            tr("settings.comic.render_batch_size", "Comic render batch size")
         )
         self.font_title.setText(tr("settings.font.title", "Font"))
         self.font_source_label.setText(tr("settings.font.source", "Font source"))
@@ -934,6 +966,10 @@ class SettingsPage(QWidget):
     def _emit_comic_thumbnail_workers_changed(self) -> None:
         value = str(self.comic_thumbnail_workers_combo.currentData() or "auto")
         self.comic_thumbnail_workers_changed.emit(value)
+
+    def _emit_comic_render_batch_size_changed(self) -> None:
+        value = int(self.comic_render_batch_size_combo.currentData() or 40)
+        self.comic_render_batch_size_changed.emit(value)
 
     def _emit_auto_generate_comic_thumbnails_after_scan_changed(self) -> None:
         self.auto_generate_comic_thumbnails_after_scan_changed.emit(self.auto_comic_thumb_check.isChecked())

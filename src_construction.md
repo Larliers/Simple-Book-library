@@ -1,6 +1,6 @@
 ﻿# src 结构说明书（精简且完整）
 
-更新时间：2026-05-19
+更新时间：2026-05-20
 
 ## 1. 文档目标
 - 保留字符串式文件路径结构。
@@ -98,7 +98,7 @@ src/
 - `src/main.py`：应用入口；创建 Qt 应用并启动主窗口。
 - `src/tests/test_rule_engine.py`：Text 规则引擎回归测试（步骤提取、回退链、非法正则容错）。
 - `src/tests/test_scan_pdf_degrade.py`：PDF 后端降级容错回归测试（PyMuPDF 不可用时的聚合 warning 与入库行为）。
-- `src/tests/test_comic_preview_pipeline.py`：漫画快扫占位与后台并行补图回归测试（占位复制、压缩替换、原图删除）。
+- `src/tests/test_comic_preview_pipeline.py`：漫画快扫占位与后台并行补图回归测试（占位复制、压缩替换、原图删除、超大图降采样、排序顺序）。
 - `src/sql/.gitkeep`：运行数据目录占位，实际运行时生成 `library.db`、`scan_report.json`。
 
 ### 3.2 bookhub 包根
@@ -111,8 +111,8 @@ src/
 
 ### 3.4 书库后端组件（bookhub/library）
 - `src/bookhub/library/__init__.py`：后端模块导出入口。
-- `src/bookhub/library/repository.py`：SQLite 读写中心；设置、书籍、书单、收藏、标签操作。
-- `src/bookhub/library/scanner.py`：目录扫描与文件过滤；构建入库候选（PDF/EPUB、Comic、Text Novel）。
+- `src/bookhub/library/repository.py`：SQLite 读写中心；设置、书籍、书单、收藏、标签操作；漫画排序与分批渲染设置持久化。
+- `src/bookhub/library/scanner.py`：目录扫描与文件过滤；构建入库候选（PDF/EPUB、Comic、Text Novel）；漫画目录快照判定与超大封面降采样占位。
 - `src/bookhub/library/preview_paths.py`：预览图目录结构与路径构建服务（`resource_type + variant`）。
 - `src/bookhub/library/metadata.py`：元数据提取与缩略图生成（WebP，`file://` 路径）。
 - `src/bookhub/library/models.py`：扫描/任务的数据结构定义。
@@ -121,7 +121,7 @@ src/
 - `src/bookhub/library/text_rules/source_resolver.py`：规则 source 解析（`filename`/`stem`/`txt_first_line`/`txt_head_text` 等）。
 - `src/bookhub/library/text_rules/step_handlers.py`：规则步骤处理（trim、split、括号提取、regex_extract 等）。
 - `src/bookhub/library/text_rules/rule_examples.py`：默认规则链示例。
-- `src/bookhub/library/worker.py`：扫描任务线程包装。
+- `src/bookhub/library/worker.py`：扫描任务线程包装；汇总多 scope 统计与 warning。
 - `src/bookhub/library/thumbnail_tasks.py`：缩略图清理与重建任务实现。
 - `src/bookhub/library/thumbnail_worker.py`：缩略图任务线程包装。
 - `src/bookhub/library/error_logs.py`：扫描/冲突日志读写；日志目录固定解析为项目根下 `src/Scan_error_logs`（避免相对路径导致 `src/src/Scan_error_logs`）。
@@ -145,11 +145,11 @@ src/
 
 ### 3.8 页面组件（bookhub/ui/pages）
 - `src/bookhub/ui/pages/__init__.py`：页面包入口。
-- `src/bookhub/ui/pages/comic_page.py`：Comic/Comic Fav 页面；仅 grid 视图；封面双击外部打开；右键添加/移除收藏。
+- `src/bookhub/ui/pages/comic_page.py`：Comic/Comic Fav 页面；新增排序下拉、分批渲染与重排防抖；封面双击外部打开；右键添加/移除收藏。
 - `src/bookhub/ui/pages/library_page.py`：Library 页面；grid/list；右侧详情栏；单/双击交互。
 - `src/bookhub/ui/pages/collections_page.py`：书单页与书单详情页；详情支持 grid/list 视图与侧键返回上一级。
 - `src/bookhub/ui/pages/favorites_page.py`：收藏页；支持 grid/list 视图与排序持久化。
-- `src/bookhub/ui/pages/settings_page.py`：设置页（扫描、匹配策略、卡片间距、缩略图任务、错误日志、Text Novel）；导航仅保留 General 与 Error logs；Text Novel 路径行支持“Delete + Rules + Path”布局；支持 Text 预览长度配置；扫描/缩略图任务按 Library/Comic/Text 分类型入口。
+- `src/bookhub/ui/pages/settings_page.py`：设置页（扫描、匹配策略、卡片间距、缩略图任务、错误日志、Text Novel）；导航仅保留 General 与 Error logs；Text Novel 路径行支持“Delete + Rules + Path”布局；支持 Text 预览长度与漫画分批渲染步数配置；扫描/缩略图任务按 Library/Comic/Text 分类型入口。
 - `src/bookhub/ui/pages/text_novel_page.py`：Text Novel 页面；固定列表视图；右侧详情栏展示 TXT 预览文本；双击外部打开。
 
 ### 3.9 UI 资源组件（bookhub/ui/resources）
@@ -193,6 +193,7 @@ src/
 - 交互规则：单击看详情（无门控延迟）、双击外部打开。
 - 字体重载：`Reload Fonts` 现在执行完整链路（重扫 `src/fonts` -> 注册字体 -> 解析回退 -> `QApplication.setFont` + 动态 QSS 立即生效 -> 持久化设置）；目录不存在时自动创建并通过右下角 Toast 提示。
 - 漫画性能：扫描阶段改为“快扫入库+可选首图占位复制”，压缩缩略图改为后台并行补全；预览图目录升级为 `img_preview/<resource_type>/<original|compressed>`。
+- 漫画性能（本轮）：Comic/Comic Fav 页改为按步数分批渲染卡片，并支持按文件夹日期/名称排序；扫描侧新增目录快照（`folder_size_mtime`）快速判定，未变更目录跳过重入队；超大封面占位自动降采样以规避 Qt 256MB 解码限制。
 
 ## 5. 边界与约束
 - 当前导入粒度：目录导入（不支持单文件导入）。
