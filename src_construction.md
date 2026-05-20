@@ -111,8 +111,8 @@ src/
 
 ### 3.4 书库后端组件（bookhub/library）
 - `src/bookhub/library/__init__.py`：后端模块导出入口。
-- `src/bookhub/library/repository.py`：SQLite 读写中心；设置、书籍、书单、收藏、标签操作；漫画排序与分批渲染设置持久化。
-- `src/bookhub/library/scanner.py`：目录扫描与文件过滤；构建入库候选（PDF/EPUB、Comic、Text Novel）；漫画目录快照判定与超大封面降采样占位。
+- `src/bookhub/library/repository.py`：SQLite 读写中心；设置、书籍、书单、收藏、标签操作；漫画排序与显示模式设置持久化（含 `folder_modified_at` 排序字段）。
+- `src/bookhub/library/scanner.py`：目录扫描与文件过滤；构建入库候选（PDF/EPUB、Comic、Text Novel）；漫画目录快照判定、`folder_modified_at` 写入与超大封面降采样占位。
 - `src/bookhub/library/preview_paths.py`：预览图目录结构与路径构建服务（`resource_type + variant`）。
 - `src/bookhub/library/metadata.py`：元数据提取与缩略图生成（WebP，`file://` 路径）。
 - `src/bookhub/library/models.py`：扫描/任务的数据结构定义。
@@ -145,11 +145,11 @@ src/
 
 ### 3.8 页面组件（bookhub/ui/pages）
 - `src/bookhub/ui/pages/__init__.py`：页面包入口。
-- `src/bookhub/ui/pages/comic_page.py`：Comic/Comic Fav 页面；新增排序下拉、分批渲染与重排防抖；封面双击外部打开；右键添加/移除收藏。
+- `src/bookhub/ui/pages/comic_page.py`：Comic/Comic Fav 页面；支持文件夹日期/名称排序与显示模式二选一（瀑布流/分页）；封面双击外部打开；右键添加/移除收藏。
 - `src/bookhub/ui/pages/library_page.py`：Library 页面；grid/list；右侧详情栏；单/双击交互。
 - `src/bookhub/ui/pages/collections_page.py`：书单页与书单详情页；详情支持 grid/list 视图与侧键返回上一级。
 - `src/bookhub/ui/pages/favorites_page.py`：收藏页；支持 grid/list 视图与排序持久化。
-- `src/bookhub/ui/pages/settings_page.py`：设置页（扫描、匹配策略、卡片间距、缩略图任务、错误日志、Text Novel）；导航仅保留 General 与 Error logs；Text Novel 路径行支持“Delete + Rules + Path”布局；支持 Text 预览长度与漫画分批渲染步数配置；扫描/缩略图任务按 Library/Comic/Text 分类型入口。
+- `src/bookhub/ui/pages/settings_page.py`：设置页（扫描、匹配策略、卡片间距、缩略图任务、错误日志、Text Novel）；导航仅保留 General 与 Error logs；Text Novel 路径行支持“Delete + Rules + Path”布局；支持 Text 预览长度与漫画显示模式（瀑布流/分页）及分页容量配置；扫描/缩略图任务按 Library/Comic/Text 分类型入口。
 - `src/bookhub/ui/pages/text_novel_page.py`：Text Novel 页面；固定列表视图；右侧详情栏展示 TXT 预览文本；双击外部打开。
 
 ### 3.9 UI 资源组件（bookhub/ui/resources）
@@ -193,7 +193,7 @@ src/
 - 交互规则：单击看详情（无门控延迟）、双击外部打开。
 - 字体重载：`Reload Fonts` 现在执行完整链路（重扫 `src/fonts` -> 注册字体 -> 解析回退 -> `QApplication.setFont` + 动态 QSS 立即生效 -> 持久化设置）；目录不存在时自动创建并通过右下角 Toast 提示。
 - 漫画性能：扫描阶段改为“快扫入库+可选首图占位复制”，压缩缩略图改为后台并行补全；预览图目录升级为 `img_preview/<resource_type>/<original|compressed>`。
-- 漫画性能（本轮）：Comic/Comic Fav 页改为按步数分批渲染卡片，并支持按文件夹日期/名称排序；扫描侧新增目录快照（`folder_size_mtime`）快速判定，未变更目录跳过重入队；超大封面占位自动降采样以规避 Qt 256MB 解码限制。
+- 漫画性能（本轮）：Comic/Comic Fav 页显示模式改为 Settings 全局二选一（瀑布流/分页），分页容量可配（24/48/72/96）；扫描侧排序字段改为 `folder_modified_at`（目录 mtime）并保留 `folder_size_mtime` 仅作增量判定；超大封面占位自动降采样以规避 Qt 256MB 解码限制。
 
 ## 5. 边界与约束
 - 当前导入粒度：目录导入（不支持单文件导入）。

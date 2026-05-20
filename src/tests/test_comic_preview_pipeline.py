@@ -94,8 +94,8 @@ class ComicPreviewPipelineTests(unittest.TestCase):
         beta_cover = beta / "001.png"
         Image.new("RGB", (100, 120), color=(100, 100, 100)).save(alpha_cover)
         Image.new("RGB", (100, 120), color=(120, 120, 120)).save(beta_cover)
-        os.utime(alpha_cover, (1_700_000_000, 1_700_000_000))
-        os.utime(beta_cover, (1_800_000_000, 1_800_000_000))
+        os.utime(alpha, (1_700_000_000, 1_700_000_000))
+        os.utime(beta, (1_800_000_000, 1_800_000_000))
 
         scan_comic_roots(
             self.repo,
@@ -114,6 +114,7 @@ class ComicPreviewPipelineTests(unittest.TestCase):
         self.assertEqual([item["title"] for item in by_mtime_desc], ["B_beta", "A_alpha"])
         self.assertEqual([item["title"] for item in by_name_asc], ["A_alpha", "B_beta"])
         self.assertEqual([item["title"] for item in by_name_desc], ["B_beta", "A_alpha"])
+        self.assertGreater(int(by_mtime_desc[0].get("folder_modified_at") or 0), int(by_mtime_desc[1].get("folder_modified_at") or 0))
 
 
 if __name__ == "__main__":

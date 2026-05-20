@@ -147,7 +147,8 @@ class AppWindow(QMainWindow):
             self._on_comic_placeholder_copy_enabled_changed
         )
         self.settings_page.comic_thumbnail_workers_changed.connect(self._on_comic_thumbnail_workers_changed)
-        self.settings_page.comic_render_batch_size_changed.connect(self._on_comic_render_batch_size_changed)
+        self.settings_page.comic_view_mode_changed.connect(self._on_comic_view_mode_changed)
+        self.settings_page.comic_page_size_changed.connect(self._on_comic_page_size_changed)
         self.settings_page.auto_generate_comic_thumbnails_after_scan_changed.connect(
             self._on_auto_generate_comic_thumbnails_after_scan_changed
         )
@@ -238,6 +239,7 @@ class AppWindow(QMainWindow):
 
     def _reload_resources_from_repository(self) -> None:
         records = self._repository.list_books(include_missing=None)
+        self._repository.backfill_comic_folder_modified_at()
         library_resources: list[ResourceItem] = []
         text_resources: list[ResourceItem] = []
         for record in records:
@@ -285,12 +287,15 @@ class AppWindow(QMainWindow):
         self.settings_page.set_hash_strategy(self._repository.get_hash_strategy())
         self.settings_page.set_comic_placeholder_copy_enabled(self._repository.get_comic_placeholder_copy_enabled())
         self.settings_page.set_comic_thumbnail_workers(self._repository.get_comic_thumbnail_workers_raw())
-        self.settings_page.set_comic_render_batch_size(self._repository.get_comic_render_batch_size())
+        comic_view_mode = self._repository.get_comic_view_mode()
+        comic_page_size = self._repository.get_comic_page_size()
+        self.settings_page.set_comic_view_mode(comic_view_mode)
+        self.settings_page.set_comic_page_size(comic_page_size)
         self.settings_page.set_auto_generate_comic_thumbnails_after_scan(
             self._repository.get_auto_generate_comic_thumbnails_after_scan()
         )
-        self.comic_page.set_render_batch_size(self._repository.get_comic_render_batch_size())
-        self.comic_fav_page.set_render_batch_size(self._repository.get_comic_render_batch_size())
+        self.comic_page.set_view_mode(comic_view_mode, comic_page_size)
+        self.comic_fav_page.set_view_mode(comic_view_mode, comic_page_size)
         self.settings_page.set_card_spacing(self._repository.get_card_spacing())
         self.settings_page.set_topbar_search_font_size(self._repository.get_topbar_search_font_size())
         self.settings_page.set_scan_summary(self._repository.read_scan_report())
@@ -480,11 +485,21 @@ class AppWindow(QMainWindow):
     def _on_comic_thumbnail_workers_changed(self, value: str) -> None:
         self._repository.set_comic_thumbnail_workers(value)
 
-    def _on_comic_render_batch_size_changed(self, value: int) -> None:
-        self._repository.set_comic_render_batch_size(value)
-        normalized = self._repository.get_comic_render_batch_size()
-        self.comic_page.set_render_batch_size(normalized)
-        self.comic_fav_page.set_render_batch_size(normalized)
+    def _on_comic_view_mode_changed(self, mode: str) -> None:
+        self._repository.set_comic_view_mode(mode)
+        normalized_mode = self._repository.get_comic_view_mode()
+        page_size = self._repository.get_comic_page_size()
+        self.settings_page.set_comic_view_mode(normalized_mode)
+        self.comic_page.set_view_mode(normalized_mode, page_size)
+        self.comic_fav_page.set_view_mode(normalized_mode, page_size)
+
+    def _on_comic_page_size_changed(self, value: int) -> None:
+        self._repository.set_comic_page_size(value)
+        page_size = self._repository.get_comic_page_size()
+        mode = self._repository.get_comic_view_mode()
+        self.settings_page.set_comic_page_size(page_size)
+        self.comic_page.set_view_mode(mode, page_size)
+        self.comic_fav_page.set_view_mode(mode, page_size)
 
     def _on_auto_generate_comic_thumbnails_after_scan_changed(self, enabled: bool) -> None:
         self._repository.set_auto_generate_comic_thumbnails_after_scan(enabled)

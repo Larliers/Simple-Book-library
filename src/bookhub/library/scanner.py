@@ -243,10 +243,10 @@ def _natural_sort_key(path: Path) -> list[object]:
     return [int(part) if part.isdigit() else part for part in parts]
 
 
-def _collect_comic_folder_metrics(file_names: list[str], folder_path: Path) -> tuple[Path | None, int, str, int]:
+def _collect_comic_folder_metrics(file_names: list[str], folder_path: Path) -> tuple[Path | None, int, str, int, int]:
     image_names = [name for name in file_names if Path(name).suffix.lower() in COMIC_IMAGE_EXTENSIONS]
     if not image_names:
-        return None, 0, "", 0
+        return None, 0, "", 0, 0
     sorted_names = sorted(image_names, key=lambda name: _natural_sort_key(Path(name)))
     image_count = len(sorted_names)
     total_size = 0
@@ -260,7 +260,11 @@ def _collect_comic_folder_metrics(file_names: list[str], folder_path: Path) -> t
         total_size += int(stat.st_size)
         max_mtime = max(max_mtime, int(stat.st_mtime))
     snapshot = f"{total_size}:{max_mtime}:{image_count}"
-    return folder_path / sorted_names[0], image_count, snapshot, max_mtime
+    try:
+        folder_modified_at = int(folder_path.stat().st_mtime)
+    except OSError:
+        folder_modified_at = max_mtime
+    return folder_path / sorted_names[0], image_count, snapshot, max_mtime, folder_modified_at
 
 
 def _collect_comic_info_text(folder: Path) -> str | None:
@@ -302,29 +306,34 @@ def _cover_fingerprint(path: Path) -> str:
 def _collect_leaf_comic_candidates(
     root: Path,
     max_depth: int,
-) -> tuple[list[tuple[Path, Path, int, str, int]], int]:
-    candidates: list[tuple[Path, Path, int, str, int, int]] = []
+) -> tuple[list[tuple[Path, Path, int, str, int, int]], int]:
+    candidates: list[tuple[Path, Path, int, str, int, int, int]] = []
     scanned_dirs = 0
     for folder_path, relative_depth, file_names in _iter_dirs_with_depth(root, max_depth):
         scanned_dirs += 1
         if relative_depth > max_depth:
             continue
-        cover_path, image_count, folder_snapshot, folder_mtime = _collect_comic_folder_metrics(file_names, folder_path)
+        cover_path, image_count, folder_snapshot, folder_mtime, folder_modified_at = _collect_comic_folder_metrics(
+            file_names,
+            folder_path,
+        )
         if cover_path is None or image_count <= 0:
             continue
-        candidates.append((folder_path, cover_path, image_count, folder_snapshot, folder_mtime, relative_depth))
+        candidates.append(
+            (folder_path, cover_path, image_count, folder_snapshot, folder_mtime, folder_modified_at, relative_depth)
+        )
 
     candidate_paths = {item[0] for item in candidates}
     has_image_children: dict[Path, bool] = {item[0]: False for item in candidates}
-    for folder_path, _cover_path, _count, _snapshot, _mtime, _depth in candidates:
+    for folder_path, _cover_path, _count, _snapshot, _mtime, _folder_modified_at, _depth in candidates:
         for parent in folder_path.parents:
             if parent == root.parent:
                 break
             if parent in candidate_paths:
                 has_image_children[parent] = True
     leaf = [
-        (folder, cover, count, snapshot, folder_mtime)
-        for folder, cover, count, snapshot, folder_mtime, _depth in candidates
+        (folder, cover, count, snapshot, folder_mtime, folder_modified_at)
+        for folder, cover, count, snapshot, folder_mtime, folder_modified_at, _depth in candidates
         if not has_image_children[folder]
     ]
     leaf.sort(key=lambda item: str(item[0]).lower())
@@ -378,6 +387,7 @@ def scan_comic_roots(repository: LibraryRepository, request: ComicScanRequest) -
     max_image_decode_bytes = max(1, int(request.max_image_decode_bytes or 0))
     scanned_roots = [repository.normalize_path(path) for path in request.roots]
     removed_missing = _remove_missing_comics_in_scope(repository, scanned_roots)
+    repository.backfill_comic_folder_modified_at()
     if removed_missing > 0:
         result.removed_missing_count += removed_missing
         result.removed_missing_comic_count += removed_missing
@@ -397,7 +407,7 @@ def scan_comic_roots(repository: LibraryRepository, request: ComicScanRequest) -
             result.comic_errors.append(f"Comic root traversal failed for {raw_root}: {exc}")
             continue
         result.comic_scanned_dirs += scanned_dir_count
-        for folder_path, cover_path, image_count, folder_snapshot, folder_mtime in leaf_candidates:
+        for folder_path, cover_path, image_count, folder_snapshot, folder_mtime, folder_modified_at in leaf_candidates:
             result.comic_detected_folders += 1
             normalized_folder = repository.normalize_path(folder_path)
             normalized_root = repository.normalize_path(root)
@@ -473,6 +483,7 @@ def scan_comic_roots(repository: LibraryRepository, request: ComicScanRequest) -
                 "cover_fingerprint": current_fingerprint,
                 "folder_size_mtime": folder_snapshot,
                 "folder_mtime": folder_mtime,
+                "folder_modified_at": folder_modified_at,
                 "image_count": image_count,
                 "info_text": info_text,
             }
@@ -487,6 +498,7 @@ def scan_comic_roots(repository: LibraryRepository, request: ComicScanRequest) -
                 "cover_fingerprint": current_fingerprint,
                 "folder_size_mtime": folder_snapshot,
                 "folder_mtime": folder_mtime,
+                "folder_modified_at": folder_modified_at,
                 "info_text": info_text,
             }
 

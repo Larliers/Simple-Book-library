@@ -55,7 +55,8 @@ class SettingsPage(QWidget):
     hash_strategy_changed = Signal(str)
     comic_placeholder_copy_enabled_changed = Signal(bool)
     comic_thumbnail_workers_changed = Signal(str)
-    comic_render_batch_size_changed = Signal(int)
+    comic_view_mode_changed = Signal(str)
+    comic_page_size_changed = Signal(int)
     auto_generate_comic_thumbnails_after_scan_changed = Signal(bool)
     card_spacing_changed = Signal(int)
     topbar_search_font_size_changed = Signal(int)
@@ -318,14 +319,22 @@ class SettingsPage(QWidget):
         self._set_comic_thumbnail_worker_options()
         self.comic_thumbnail_workers_combo.currentIndexChanged.connect(self._emit_comic_thumbnail_workers_changed)
         comic_perf_row.addWidget(self.comic_thumbnail_workers_combo, 1)
-        self.comic_render_batch_size_label = QLabel("Comic render batch size")
-        comic_perf_row.addWidget(self.comic_render_batch_size_label)
-        self.comic_render_batch_size_combo = QComboBox()
-        self.comic_render_batch_size_combo.setObjectName("SettingsLanguageCombo")
-        for batch_size in (20, 40, 60, 100):
-            self.comic_render_batch_size_combo.addItem(str(batch_size), batch_size)
-        self.comic_render_batch_size_combo.currentIndexChanged.connect(self._emit_comic_render_batch_size_changed)
-        comic_perf_row.addWidget(self.comic_render_batch_size_combo, 1)
+        self.comic_view_mode_label = QLabel("Comic view mode")
+        comic_perf_row.addWidget(self.comic_view_mode_label)
+        self.comic_view_mode_combo = QComboBox()
+        self.comic_view_mode_combo.setObjectName("SettingsLanguageCombo")
+        self.comic_view_mode_combo.addItem("Waterfall", "waterfall")
+        self.comic_view_mode_combo.addItem("Pagination", "pagination")
+        self.comic_view_mode_combo.currentIndexChanged.connect(self._emit_comic_view_mode_changed)
+        comic_perf_row.addWidget(self.comic_view_mode_combo, 1)
+        self.comic_page_size_label = QLabel("Comic page size")
+        comic_perf_row.addWidget(self.comic_page_size_label)
+        self.comic_page_size_combo = QComboBox()
+        self.comic_page_size_combo.setObjectName("SettingsLanguageCombo")
+        for page_size in (24, 48, 72, 96):
+            self.comic_page_size_combo.addItem(str(page_size), page_size)
+        self.comic_page_size_combo.currentIndexChanged.connect(self._emit_comic_page_size_changed)
+        comic_perf_row.addWidget(self.comic_page_size_combo, 1)
         library_layout.addLayout(comic_perf_row)
 
         self.formats_hint = QLabel(
@@ -517,19 +526,34 @@ class SettingsPage(QWidget):
         self.comic_thumbnail_workers_combo.setCurrentIndex(index)
         self.comic_thumbnail_workers_combo.blockSignals(False)
 
-    def set_comic_render_batch_size(self, size: int) -> None:
+    def set_comic_view_mode(self, mode: str) -> None:
+        normalized = "pagination" if str(mode or "").strip().lower() == "pagination" else "waterfall"
+        index = self.comic_view_mode_combo.findData(normalized)
+        if index < 0:
+            index = self.comic_view_mode_combo.findData("waterfall")
+        if index < 0:
+            index = 0
+        self.comic_view_mode_combo.blockSignals(True)
+        self.comic_view_mode_combo.setCurrentIndex(index)
+        self.comic_view_mode_combo.blockSignals(False)
+        self._update_comic_page_size_enabled()
+
+    def set_comic_page_size(self, size: int) -> None:
         try:
             value = int(size)
         except (TypeError, ValueError):
-            value = 40
-        index = self.comic_render_batch_size_combo.findData(value)
+            value = 48
+        if value not in {24, 48, 72, 96}:
+            value = 48
+        index = self.comic_page_size_combo.findData(value)
         if index < 0:
-            index = self.comic_render_batch_size_combo.findData(40)
+            index = self.comic_page_size_combo.findData(48)
         if index < 0:
             index = 0
-        self.comic_render_batch_size_combo.blockSignals(True)
-        self.comic_render_batch_size_combo.setCurrentIndex(index)
-        self.comic_render_batch_size_combo.blockSignals(False)
+        self.comic_page_size_combo.blockSignals(True)
+        self.comic_page_size_combo.setCurrentIndex(index)
+        self.comic_page_size_combo.blockSignals(False)
+        self._update_comic_page_size_enabled()
 
     def set_auto_generate_comic_thumbnails_after_scan(self, enabled: bool) -> None:
         self.auto_comic_thumb_check.blockSignals(True)
@@ -731,9 +755,16 @@ class SettingsPage(QWidget):
         self.comic_thumbnail_workers_label.setText(
             tr("settings.comic.thumbnail_workers", "Comic thumbnail workers")
         )
-        self.comic_render_batch_size_label.setText(
-            tr("settings.comic.render_batch_size", "Comic render batch size")
+        self.comic_view_mode_label.setText(
+            tr("settings.comic.view_mode", "Comic view mode")
         )
+        self.comic_page_size_label.setText(
+            tr("settings.comic.page_size", "Comic page size")
+        )
+        self.comic_view_mode_combo.blockSignals(True)
+        self.comic_view_mode_combo.setItemText(0, tr("settings.comic.view_mode.waterfall", "Waterfall"))
+        self.comic_view_mode_combo.setItemText(1, tr("settings.comic.view_mode.pagination", "Pagination"))
+        self.comic_view_mode_combo.blockSignals(False)
         self.font_title.setText(tr("settings.font.title", "Font"))
         self.font_source_label.setText(tr("settings.font.source", "Font source"))
         self.font_family_label.setText(tr("settings.font.family", "Font family"))
@@ -760,6 +791,7 @@ class SettingsPage(QWidget):
         self._set_hash_strategy_options()
         self._set_font_source_options()
         self._set_comic_thumbnail_worker_options()
+        self._update_comic_page_size_enabled()
         self.set_scan_summary(self._last_summary)
 
     def _set_language_options(self) -> None:
@@ -967,9 +999,20 @@ class SettingsPage(QWidget):
         value = str(self.comic_thumbnail_workers_combo.currentData() or "auto")
         self.comic_thumbnail_workers_changed.emit(value)
 
-    def _emit_comic_render_batch_size_changed(self) -> None:
-        value = int(self.comic_render_batch_size_combo.currentData() or 40)
-        self.comic_render_batch_size_changed.emit(value)
+    def _emit_comic_view_mode_changed(self) -> None:
+        mode = str(self.comic_view_mode_combo.currentData() or "waterfall")
+        self._update_comic_page_size_enabled()
+        self.comic_view_mode_changed.emit(mode)
+
+    def _emit_comic_page_size_changed(self) -> None:
+        value = int(self.comic_page_size_combo.currentData() or 48)
+        self.comic_page_size_changed.emit(value)
+
+    def _update_comic_page_size_enabled(self) -> None:
+        mode = str(self.comic_view_mode_combo.currentData() or "waterfall")
+        enabled = mode == "pagination"
+        self.comic_page_size_label.setEnabled(enabled)
+        self.comic_page_size_combo.setEnabled(enabled)
 
     def _emit_auto_generate_comic_thumbnails_after_scan_changed(self) -> None:
         self.auto_generate_comic_thumbnails_after_scan_changed.emit(self.auto_comic_thumb_check.isChecked())

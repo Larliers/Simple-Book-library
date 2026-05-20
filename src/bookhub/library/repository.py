@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from bookhub.library.error_logs import append_scan_log
 from bookhub.library.models import (
     HASH_STRATEGIES,
     HASH_STRATEGY_SIZE_MTIME,
@@ -144,6 +145,7 @@ class LibraryRepository:
                     cover_fingerprint TEXT,
                     folder_size_mtime TEXT,
                     folder_mtime INTEGER NOT NULL DEFAULT 0,
+                    folder_modified_at INTEGER NOT NULL DEFAULT 0,
                     image_count INTEGER NOT NULL DEFAULT 0,
                     info_text TEXT,
                     is_missing INTEGER NOT NULL DEFAULT 0,
@@ -173,6 +175,7 @@ class LibraryRepository:
             self._ensure_column(conn, "comics", "cover_fingerprint", "ALTER TABLE comics ADD COLUMN cover_fingerprint TEXT")
             self._ensure_column(conn, "comics", "folder_size_mtime", "ALTER TABLE comics ADD COLUMN folder_size_mtime TEXT")
             self._ensure_column(conn, "comics", "folder_mtime", "ALTER TABLE comics ADD COLUMN folder_mtime INTEGER")
+            self._ensure_column(conn, "comics", "folder_modified_at", "ALTER TABLE comics ADD COLUMN folder_modified_at INTEGER")
 
     @staticmethod
     def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, ddl_sql: str) -> None:
@@ -209,8 +212,10 @@ class LibraryRepository:
             self.set_setting("auto_generate_comic_thumbnails_after_scan", True)
         if self.get_setting("comic_thumbnail_workers", None) is None:
             self.set_setting("comic_thumbnail_workers", "auto")
-        if self.get_setting("comic_render_batch_size", None) is None:
-            self.set_setting("comic_render_batch_size", 40)
+        if self.get_setting("comic_view_mode", None) is None:
+            self.set_setting("comic_view_mode", "waterfall")
+        if self.get_setting("comic_page_size", None) is None:
+            self.set_setting("comic_page_size", 48)
         if self.get_setting("comic_sort_order_main", None) is None:
             self.set_setting("comic_sort_order_main", "folder_mtime_desc")
         if self.get_setting("comic_sort_order_fav", None) is None:
@@ -377,19 +382,29 @@ class LibraryRepository:
         self.set_setting("comic_thumbnail_workers", worker_count)
 
     @staticmethod
-    def _normalize_comic_render_batch_size(value: int | str | None) -> int:
+    def _normalize_comic_view_mode(value: str | None) -> str:
+        return "pagination" if str(value or "").strip().lower() == "pagination" else "waterfall"
+
+    def get_comic_view_mode(self) -> str:
+        return self._normalize_comic_view_mode(self.get_setting("comic_view_mode", "waterfall"))
+
+    def set_comic_view_mode(self, value: str) -> None:
+        self.set_setting("comic_view_mode", self._normalize_comic_view_mode(value))
+
+    @staticmethod
+    def _normalize_comic_page_size(value: int | str | None) -> int:
         try:
             size = int(value)  # type: ignore[arg-type]
         except (TypeError, ValueError):
-            size = 40
-        return min(200, max(10, size))
+            size = 48
+        allowed = {24, 48, 72, 96}
+        return size if size in allowed else 48
 
-    def get_comic_render_batch_size(self) -> int:
-        raw = self.get_setting("comic_render_batch_size", 40)
-        return self._normalize_comic_render_batch_size(raw)
+    def get_comic_page_size(self) -> int:
+        return self._normalize_comic_page_size(self.get_setting("comic_page_size", 48))
 
-    def set_comic_render_batch_size(self, value: int | str) -> None:
-        self.set_setting("comic_render_batch_size", self._normalize_comic_render_batch_size(value))
+    def set_comic_page_size(self, value: int | str) -> None:
+        self.set_setting("comic_page_size", self._normalize_comic_page_size(value))
 
     @staticmethod
     def _normalize_comic_sort_order(value: str | None) -> str:
@@ -601,13 +616,14 @@ class LibraryRepository:
     @staticmethod
     def _comic_order_clause(order_by: str | None) -> str:
         normalized = str(order_by or "").strip().lower()
+        mtime_expr = "COALESCE(NULLIF(folder_modified_at, 0), folder_mtime, 0)"
         if normalized == "folder_mtime_asc":
-            return "COALESCE(folder_mtime, 0) ASC, lower(title) ASC"
+            return f"{mtime_expr} ASC, lower(title) ASC"
         if normalized == "folder_name_asc":
             return "lower(title) ASC"
         if normalized == "folder_name_desc":
             return "lower(title) DESC"
-        return "COALESCE(folder_mtime, 0) DESC, lower(title) ASC"
+        return f"{mtime_expr} DESC, lower(title) ASC"
 
     def upsert_book(self, payload: dict[str, Any]) -> bool:
         path = payload["path"]
@@ -964,7 +980,7 @@ class LibraryRepository:
                     """
                     UPDATE comics
                     SET title = ?, comic_root = ?, cover_image_path = ?, thumbnail_path = ?,
-                        cover_fingerprint = ?, folder_size_mtime = ?, folder_mtime = ?, image_count = ?,
+                        cover_fingerprint = ?, folder_size_mtime = ?, folder_mtime = ?, folder_modified_at = ?, image_count = ?,
                         info_text = ?, is_missing = 0, missing_reason = NULL, updated_at = ?
                     WHERE id = ?
                     """,
@@ -976,6 +992,7 @@ class LibraryRepository:
                         payload.get("cover_fingerprint"),
                         payload.get("folder_size_mtime"),
                         int(payload.get("folder_mtime") or 0),
+                        int(payload.get("folder_modified_at") or 0),
                         int(payload.get("image_count") or 0),
                         payload.get("info_text"),
                         timestamp,
@@ -989,9 +1006,9 @@ class LibraryRepository:
                 """
                 INSERT INTO comics(
                     resource_id, title, path, comic_root, cover_image_path, thumbnail_path, cover_fingerprint,
-                    folder_size_mtime, folder_mtime, image_count, info_text, is_missing, missing_reason, created_at, updated_at
+                    folder_size_mtime, folder_mtime, folder_modified_at, image_count, info_text, is_missing, missing_reason, created_at, updated_at
                 )
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
                 """,
                 (
                     resource_id,
@@ -1003,6 +1020,7 @@ class LibraryRepository:
                     payload.get("cover_fingerprint"),
                     payload.get("folder_size_mtime"),
                     int(payload.get("folder_mtime") or 0),
+                    int(payload.get("folder_modified_at") or 0),
                     int(payload.get("image_count") or 0),
                     payload.get("info_text"),
                     timestamp,
@@ -1021,7 +1039,8 @@ class LibraryRepository:
 
         query = f"""
             SELECT resource_id, title, path, comic_root, cover_image_path, thumbnail_path,
-                   cover_fingerprint, folder_size_mtime, folder_mtime, image_count, info_text, is_missing, missing_reason
+                   cover_fingerprint, folder_size_mtime, folder_mtime, folder_modified_at,
+                   image_count, info_text, is_missing, missing_reason
             FROM comics
             {where_clause}
             ORDER BY {order_clause}
@@ -1029,6 +1048,36 @@ class LibraryRepository:
         with self._connection() as conn:
             rows = conn.execute(query).fetchall()
         return [dict(row) for row in rows]
+
+    def backfill_comic_folder_modified_at(self) -> int:
+        with self._connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, path
+                FROM comics
+                WHERE COALESCE(folder_modified_at, 0) <= 0
+                """
+            ).fetchall()
+            updated = 0
+            for row in rows:
+                comic_id = int(row["id"])
+                path_value = str(row["path"] or "")
+                folder_path = Path(path_value)
+                if not path_value or not folder_path.exists() or not folder_path.is_dir():
+                    continue
+                try:
+                    folder_mtime = int(folder_path.stat().st_mtime)
+                except OSError as exc:
+                    append_scan_log(
+                        f"comic_folder_mtime_backfill_failed | id={comic_id} | path={path_value} | reason={exc}"
+                    )
+                    continue
+                conn.execute(
+                    "UPDATE comics SET folder_modified_at = ?, updated_at = ? WHERE id = ?",
+                    (folder_mtime, now_utc_iso(), comic_id),
+                )
+                updated += 1
+        return updated
 
     def get_comic_int_id(self, resource_id: str) -> int | None:
         with self._connection() as conn:

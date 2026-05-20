@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMenu,
+    QPushButton,
     QScrollArea,
     QSplitter,
     QVBoxLayout,
@@ -31,13 +32,28 @@ COMIC_SORT_MTIME_ASC = "folder_mtime_asc"
 COMIC_SORT_MTIME_DESC = "folder_mtime_desc"
 COMIC_SORT_NAME_ASC = "folder_name_asc"
 COMIC_SORT_NAME_DESC = "folder_name_desc"
-DEFAULT_COMIC_RENDER_BATCH_SIZE = 40
+COMIC_VIEW_MODE_WATERFALL = "waterfall"
+COMIC_VIEW_MODE_PAGINATION = "pagination"
+DEFAULT_COMIC_PAGE_SIZE = 48
 
 
 def _normalize_sort_order(value: object) -> str:
     normalized = str(value or "").strip().lower()
     allowed = {COMIC_SORT_MTIME_ASC, COMIC_SORT_MTIME_DESC, COMIC_SORT_NAME_ASC, COMIC_SORT_NAME_DESC}
     return normalized if normalized in allowed else COMIC_SORT_MTIME_DESC
+
+
+def _normalize_view_mode(value: object) -> str:
+    normalized = str(value or "").strip().lower()
+    return COMIC_VIEW_MODE_PAGINATION if normalized == COMIC_VIEW_MODE_PAGINATION else COMIC_VIEW_MODE_WATERFALL
+
+
+def _normalize_page_size(value: object) -> int:
+    try:
+        size = int(value)
+    except (TypeError, ValueError):
+        size = DEFAULT_COMIC_PAGE_SIZE
+    return size if size in {24, 48, 72, 96} else DEFAULT_COMIC_PAGE_SIZE
 
 
 class ComicPage(QWidget):
@@ -55,15 +71,15 @@ class ComicPage(QWidget):
             COMIC_SORT_SETTING_KEY_FAV if self._favorite_only else COMIC_SORT_SETTING_KEY_MAIN
         )
         self._sort_order = self._load_sort_order()
-        self._render_batch_size = DEFAULT_COMIC_RENDER_BATCH_SIZE
+        self._view_mode = self._load_view_mode()
+        self._page_size = self._load_page_size()
+        self._current_page = 1
         self._resources: list[ResourceItem] = []
         self._resource_by_id: dict[str, ResourceItem] = {}
         self._comic_id_by_resource_id: dict[str, int] = {}
         self._selected_resource_id: str | None = None
         self._card_by_resource_id: dict[str, BookCardWidget] = {}
         self._last_columns = 0
-        self._render_token = 0
-        self._render_in_progress = False
         self._reflow_timer = QTimer(self)
         self._reflow_timer.setSingleShot(True)
         self._reflow_timer.setInterval(120)
@@ -104,7 +120,7 @@ class ComicPage(QWidget):
         self.main_pane = QWidget()
         pane_layout = QVBoxLayout(self.main_pane)
         pane_layout.setContentsMargins(0, 0, 0, 0)
-        pane_layout.setSpacing(0)
+        pane_layout.setSpacing(6)
 
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
@@ -124,6 +140,21 @@ class ComicPage(QWidget):
         self._empty_label.setAlignment(Qt.AlignCenter)
         pane_layout.addWidget(self._empty_label, 1)
         self._empty_label.hide()
+
+        pagination_row = QHBoxLayout()
+        self._prev_page_btn = QPushButton()
+        self._prev_page_btn.setObjectName("GhostButton")
+        self._prev_page_btn.clicked.connect(self._on_prev_page)
+        self._pagination_label = QLabel()
+        self._pagination_label.setObjectName("PageSubtitle")
+        self._next_page_btn = QPushButton()
+        self._next_page_btn.setObjectName("GhostButton")
+        self._next_page_btn.clicked.connect(self._on_next_page)
+        pagination_row.addStretch(1)
+        pagination_row.addWidget(self._prev_page_btn)
+        pagination_row.addWidget(self._pagination_label)
+        pagination_row.addWidget(self._next_page_btn)
+        pane_layout.addLayout(pagination_row)
 
         self.detail_panel = BookDetailPanel(repository=self._repo)
         self.detail_panel.setMinimumWidth(240)
@@ -154,16 +185,9 @@ class ComicPage(QWidget):
         selected = self._sort_combo.findData(self._sort_order)
         self._sort_combo.setCurrentIndex(selected if selected >= 0 else 1)
         self._sort_combo.blockSignals(False)
-        self.refresh()
-
-    def set_render_batch_size(self, size: int) -> None:
-        try:
-            value = int(size)
-        except (TypeError, ValueError):
-            value = DEFAULT_COMIC_RENDER_BATCH_SIZE
-        self._render_batch_size = min(200, max(10, value))
-        if self._resources:
-            self._start_grid_render()
+        self._prev_page_btn.setText(tr("comic.pagination.prev", "Prev"))
+        self._next_page_btn.setText(tr("comic.pagination.next", "Next"))
+        self._render_current_view()
 
     def refresh(self) -> None:
         if self._repo is None:
@@ -209,39 +233,46 @@ class ComicPage(QWidget):
 
         if self._selected_resource_id and self._selected_resource_id not in self._resource_by_id:
             self._selected_resource_id = None
-
-        if not self._resources:
-            self._clear_grid()
-            self._scroll.hide()
-            self._empty_label.show()
-            self.detail_panel.clear_selection()
-            return
-
-        self._empty_label.hide()
-        self._scroll.show()
-        self._start_grid_render()
+        self._current_page = self._clamp_page(self._current_page)
+        self._render_current_view()
         if self._selected_resource_id:
             self._update_detail_panel(self._selected_resource_id)
         else:
             self.detail_panel.clear_selection()
 
-    def _start_grid_render(self) -> None:
-        self._render_token += 1
-        current_token = self._render_token
-        self._render_in_progress = True
+    def set_view_mode(self, mode: str, page_size: int) -> None:
+        normalized_mode = _normalize_view_mode(mode)
+        normalized_size = _normalize_page_size(page_size)
+        changed = normalized_mode != self._view_mode or normalized_size != self._page_size
+        self._view_mode = normalized_mode
+        self._page_size = normalized_size
+        if changed:
+            self._current_page = 1
+            self._render_current_view()
+
+    def _render_current_view(self) -> None:
+        if not self._resources:
+            self._clear_grid()
+            self._scroll.hide()
+            self._empty_label.show()
+            self._pagination_label.hide()
+            self._prev_page_btn.hide()
+            self._next_page_btn.hide()
+            return
+
+        self._empty_label.hide()
+        self._scroll.show()
+        visible_resources = self._visible_resources()
+        self._render_grid(visible_resources)
+        self._update_pagination_controls()
+
+    def _render_grid(self, resources: list[ResourceItem]) -> None:
         self._grid.setHorizontalSpacing(UI_LAYOUT.card_spacing)
         self._grid.setVerticalSpacing(UI_LAYOUT.card_spacing)
         self._clear_grid()
         self._last_columns = self._calculate_columns()
-        self._render_grid_batch(current_token, 0)
-
-    def _render_grid_batch(self, token: int, start_index: int) -> None:
-        if token != self._render_token:
-            return
         columns = max(1, self._last_columns)
-        end_index = min(len(self._resources), start_index + self._render_batch_size)
-        for idx in range(start_index, end_index):
-            resource = self._resources[idx]
+        for idx, resource in enumerate(resources):
             row = idx // columns
             col = idx % columns
             card = BookCardWidget(resource, cover_only=True)
@@ -255,10 +286,54 @@ class ComicPage(QWidget):
             )
             self._grid.addWidget(card, row, col, alignment=Qt.AlignLeft | Qt.AlignTop)
 
-        if end_index >= len(self._resources):
-            self._render_in_progress = False
+    def _visible_resources(self) -> list[ResourceItem]:
+        if self._view_mode != COMIC_VIEW_MODE_PAGINATION:
+            return list(self._resources)
+        page_size = max(1, self._page_size)
+        start = (self._current_page - 1) * page_size
+        end = start + page_size
+        return self._resources[start:end]
+
+    def _total_pages(self) -> int:
+        if self._view_mode != COMIC_VIEW_MODE_PAGINATION:
+            return 1
+        total = len(self._resources)
+        page_size = max(1, self._page_size)
+        return max(1, (total + page_size - 1) // page_size)
+
+    def _clamp_page(self, page: int) -> int:
+        return min(self._total_pages(), max(1, int(page)))
+
+    def _update_pagination_controls(self) -> None:
+        is_pagination = self._view_mode == COMIC_VIEW_MODE_PAGINATION
+        self._prev_page_btn.setVisible(is_pagination)
+        self._next_page_btn.setVisible(is_pagination)
+        self._pagination_label.setVisible(is_pagination)
+        if not is_pagination:
             return
-        QTimer.singleShot(0, lambda: self._render_grid_batch(token, end_index))
+        self._current_page = self._clamp_page(self._current_page)
+        total_pages = self._total_pages()
+        self._pagination_label.setText(
+            tr("comic.pagination.status", "Page {current}/{total}").format(current=self._current_page, total=total_pages)
+        )
+        self._prev_page_btn.setEnabled(self._current_page > 1)
+        self._next_page_btn.setEnabled(self._current_page < total_pages)
+
+    def _on_prev_page(self) -> None:
+        if self._view_mode != COMIC_VIEW_MODE_PAGINATION:
+            return
+        if self._current_page <= 1:
+            return
+        self._current_page -= 1
+        self._render_current_view()
+
+    def _on_next_page(self) -> None:
+        if self._view_mode != COMIC_VIEW_MODE_PAGINATION:
+            return
+        if self._current_page >= self._total_pages():
+            return
+        self._current_page += 1
+        self._render_current_view()
 
     def _clear_grid(self) -> None:
         while self._grid.count():
@@ -332,6 +407,7 @@ class ComicPage(QWidget):
             return
         self._sort_order = selected
         self._save_sort_order(selected)
+        self._current_page = 1
         self.refresh()
 
     def _load_sort_order(self) -> str:
@@ -343,6 +419,16 @@ class ComicPage(QWidget):
         if self._sort_setting_key == COMIC_SORT_SETTING_KEY_FAV and hasattr(self._repo, "get_comic_sort_order_fav"):
             return _normalize_sort_order(self._repo.get_comic_sort_order_fav())
         return _normalize_sort_order(self._repo.get_setting(self._sort_setting_key, default_value))
+
+    def _load_view_mode(self) -> str:
+        if self._repo is None or not hasattr(self._repo, "get_comic_view_mode"):
+            return COMIC_VIEW_MODE_WATERFALL
+        return _normalize_view_mode(self._repo.get_comic_view_mode())
+
+    def _load_page_size(self) -> int:
+        if self._repo is None or not hasattr(self._repo, "get_comic_page_size"):
+            return DEFAULT_COMIC_PAGE_SIZE
+        return _normalize_page_size(self._repo.get_comic_page_size())
 
     def _save_sort_order(self, order: str) -> None:
         if self._repo is None:
@@ -360,7 +446,7 @@ class ComicPage(QWidget):
         self._grid.setHorizontalSpacing(UI_LAYOUT.card_spacing)
         self._grid.setVerticalSpacing(UI_LAYOUT.card_spacing)
         if self._resources:
-            self._start_grid_render()
+            self._render_current_view()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -383,4 +469,4 @@ class ComicPage(QWidget):
     def _rerender_grid_for_layout(self) -> None:
         if not self._resources:
             return
-        self._start_grid_render()
+        self._render_current_view()
