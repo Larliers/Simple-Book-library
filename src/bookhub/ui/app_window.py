@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+from time import perf_counter
 from pathlib import Path
 
 from PySide6.QtCore import QTimer
@@ -53,6 +55,7 @@ from bookhub.ui.pages.favorites_page import FavoritesPage
 
 class AppWindow(QMainWindow):
     SEARCH_RENDER_DEBOUNCE_MS = 150
+    PERF_LOG_ENV_KEY = "BOOKHUB_PERF_LOG"
 
     def __init__(self) -> None:
         super().__init__()
@@ -119,12 +122,14 @@ class AppWindow(QMainWindow):
             favorite_only=False,
             sort_setting_key=COMIC_SORT_SETTING_KEY_MAIN,
         )
+        self.comic_page.favorites_changed.connect(self._on_comic_favorites_changed)
         self._register_page("comic", self.comic_page)
         self.comic_fav_page = ComicPage(
             self._repository,
             favorite_only=True,
             sort_setting_key=COMIC_SORT_SETTING_KEY_FAV,
         )
+        self.comic_fav_page.favorites_changed.connect(self._on_comic_favorites_changed)
         self._register_page("comic_fav", self.comic_fav_page)
         self.settings_page = SettingsPage()
         self.settings_page.language_changed.connect(self._on_language_changed)
@@ -189,6 +194,7 @@ class AppWindow(QMainWindow):
         index = self._pages.get(page_name)
         if index is None:
             return
+        started_at = perf_counter()
         self.page_stack.setCurrentIndex(index)
         self.sidebar.set_active(page_name)
         current = self.page_stack.currentWidget()
@@ -200,6 +206,34 @@ class AppWindow(QMainWindow):
         elif current is self.text_page:
             self.text_page.render()
         self._stabilize_dropdown_layer()
+        self._log_perf("show_page", started_at, page=page_name)
+
+    def _perf_log_enabled(self) -> bool:
+        raw = str(os.getenv(self.PERF_LOG_ENV_KEY, "") or "").strip().lower()
+        return raw in {"1", "true", "yes", "on"}
+
+    def _log_perf(self, phase: str, started_at: float, **extra: str) -> None:
+        if not self._perf_log_enabled():
+            return
+        elapsed_ms = (perf_counter() - started_at) * 1000.0
+        payload = " ".join([f"{key}={value}" for key, value in extra.items() if value is not None])
+        if payload:
+            print(f"[perf] {phase} elapsed_ms={elapsed_ms:.2f} {payload}")
+            return
+        print(f"[perf] {phase} elapsed_ms={elapsed_ms:.2f}")
+
+    def _invalidate_page_caches(self, page_names: list[str] | tuple[str, ...]) -> None:
+        for page_name in page_names:
+            index = self._pages.get(page_name)
+            if index is None:
+                continue
+            widget = self.page_stack.widget(index)
+            invalidate_fn = getattr(widget, "invalidate_cache", None)
+            if callable(invalidate_fn):
+                invalidate_fn()
+
+    def _on_comic_favorites_changed(self) -> None:
+        self._invalidate_page_caches(("comic", "comic_fav"))
 
     def _on_query_changed(self, query: str) -> None:
         self._pending_query = query
@@ -238,6 +272,8 @@ class AppWindow(QMainWindow):
         QTimer.singleShot(0, self.topbar.ensure_dropdown_on_top)
 
     def _reload_resources_from_repository(self) -> None:
+        started_at = perf_counter()
+        self._invalidate_page_caches(("comic", "comic_fav", "favorites", "collections", "library"))
         records = self._repository.list_books(include_missing=None)
         self._repository.backfill_comic_folder_modified_at()
         library_resources: list[ResourceItem] = []
@@ -270,9 +306,10 @@ class AppWindow(QMainWindow):
         self._last_committed_query = self._library_vm.ui_state.filter
         self.library_page.render()
         self.text_page.render()
-        self.comic_page.refresh()
-        self.comic_fav_page.refresh()
+        self.comic_page.refresh(force=True)
+        self.comic_fav_page.refresh(force=True)
         self._refresh_search_suggestions()
+        self._log_perf("reload_resources", started_at)
 
     def _refresh_settings_state(self) -> None:
         self.settings_page.set_library_roots(self._repository.list_roots())
@@ -312,18 +349,21 @@ class AppWindow(QMainWindow):
 
     def _on_add_root(self, path: str) -> None:
         self._repository.add_root(path)
+        self._invalidate_page_caches(("library",))
         self._refresh_settings_state()
         if self._repository.get_auto_scan_on_path_change():
             self._start_scan("add_path", scope="library")
 
     def _on_add_comic_root(self, path: str) -> None:
         self._repository.add_comic_root(path)
+        self._invalidate_page_caches(("comic", "comic_fav"))
         self._refresh_settings_state()
         if self._repository.get_auto_scan_on_path_change():
             self._start_scan("add_comic_path", scope="comic")
 
     def _on_add_text_root(self, path: str) -> None:
         self._repository.add_text_root(path)
+        self._invalidate_page_caches(("text_novel",))
         self._refresh_settings_state()
         if self._repository.get_auto_scan_on_path_change():
             self._start_scan("add_text_path", scope="text")

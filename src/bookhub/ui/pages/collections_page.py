@@ -215,10 +215,11 @@ class CollectionDetailPage(QWidget):
         self._resource_by_id: dict[str, ResourceItem] = {}
         self._resources: list[ResourceItem] = []
         self._card_by_resource_id: dict[str, BookCardWidget] = {}
+        self._card_signature_by_resource_id: dict[str, tuple[str, str, str]] = {}
         self._selected_resource_id: str | None = None
         self._last_columns = 0
         self._setup_ui()
-        self.refresh()
+        self.refresh(force=True)
 
     def _setup_ui(self) -> None:
         self.setObjectName("CollectionDetailPage")
@@ -356,12 +357,12 @@ class CollectionDetailPage(QWidget):
         for watched in (self, self._scroll.viewport(), self._list_table.viewport(), self._view_stack):
             watched.installEventFilter(self)
 
-    def refresh(self) -> None:
-        self._card_by_resource_id.clear()
+    def refresh(self, force: bool = False) -> None:
+        _ = force
         while self._grid.count():
             item = self._grid.takeAt(0)
             if item.widget():
-                item.widget().deleteLater()
+                item.widget().setParent(None)
         self._list_table.setRowCount(0)
         self._book_id_by_resource_id.clear()
         self._resource_by_id.clear()
@@ -381,6 +382,7 @@ class CollectionDetailPage(QWidget):
             self._view_stack.hide()
             self._selected_resource_id = None
             self.detail_panel.clear_selection()
+            self._prune_grid_card_cache(set())
         else:
             self._empty_label.hide()
             self._view_stack.show()
@@ -412,28 +414,19 @@ class CollectionDetailPage(QWidget):
     def _render_grid(self) -> None:
         self._grid.setHorizontalSpacing(UI_LAYOUT.card_spacing)
         self._grid.setVerticalSpacing(UI_LAYOUT.card_spacing)
-        self._card_by_resource_id.clear()
         while self._grid.count():
             item = self._grid.takeAt(0)
             if item.widget():
-                item.widget().deleteLater()
+                item.widget().setParent(None)
         columns = self._calculate_grid_columns()
         self._last_columns = columns
         for idx, resource in enumerate(self._resources):
             row = idx // columns
             col = idx % columns
-            card = BookCardWidget(resource, cover_only=True)
-            self._card_by_resource_id[resource.resource_id] = card
+            card = self._get_or_create_grid_card(resource)
             card.set_selected(resource.resource_id == self._selected_resource_id)
-            card.clicked.connect(lambda rid=resource.resource_id: self._select_resource(rid))
-            card.open_requested.connect(lambda _pos, path=resource.path: self._open_external(path))
-            card.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-            card.customContextMenuRequested.connect(
-                lambda pos, rid=resource.resource_id, widget=card: self._show_card_menu(
-                    rid, widget.mapToGlobal(pos)
-                )
-            )
             self._grid.addWidget(card, row, col, alignment=Qt.AlignLeft | Qt.AlignTop)
+        self._prune_grid_card_cache({item.resource_id for item in self._resources})
 
     def _render_list(self) -> None:
         self._list_table.setRowCount(len(self._resources))
@@ -644,6 +637,52 @@ class CollectionDetailPage(QWidget):
         self._save_view_mode(normalized)
         self._apply_view_mode()
 
+    @staticmethod
+    def _card_signature(item: ResourceItem) -> tuple[str, str, str]:
+        return (
+            str(item.title or ""),
+            str(item.path or ""),
+            str(item.thumbnail_path or ""),
+        )
+
+    def _get_or_create_grid_card(self, resource: ResourceItem) -> BookCardWidget:
+        resource_id = resource.resource_id
+        signature = self._card_signature(resource)
+        card = self._card_by_resource_id.get(resource_id)
+        cached_signature = self._card_signature_by_resource_id.get(resource_id)
+        if card is not None and cached_signature == signature:
+            return card
+        if card is not None:
+            card.deleteLater()
+        card = BookCardWidget(resource, cover_only=True)
+        self._card_by_resource_id[resource_id] = card
+        self._card_signature_by_resource_id[resource_id] = signature
+        card.clicked.connect(lambda rid=resource_id: self._select_resource(rid))
+        card.open_requested.connect(lambda _pos, rid=resource_id: self._open_resource_by_id(rid))
+        card.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        card.customContextMenuRequested.connect(
+            lambda pos, rid=resource_id, widget=card: self._show_card_menu(rid, widget.mapToGlobal(pos))
+        )
+        return card
+
+    def _prune_grid_card_cache(self, valid_resource_ids: set[str]) -> None:
+        for resource_id in list(self._card_by_resource_id.keys()):
+            if resource_id in valid_resource_ids:
+                continue
+            card = self._card_by_resource_id.pop(resource_id, None)
+            self._card_signature_by_resource_id.pop(resource_id, None)
+            if card is not None:
+                card.deleteLater()
+
+    def _open_resource_by_id(self, resource_id: str) -> None:
+        resource = self._resource_by_id.get(resource_id)
+        if resource is None:
+            return
+        self._open_external(resource.path)
+
+    def invalidate_cache(self) -> None:
+        self._prune_grid_card_cache(set())
+
     def _apply_view_mode(self) -> None:
         is_list = self._view_mode == VIEW_MODE_LIST
         self._view_stack.setCurrentIndex(1 if is_list else 0)
@@ -690,8 +729,10 @@ class CollectionsPage(QWidget):
     def __init__(self, repository, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._repo = repository
+        self._collection_card_by_id: dict[int, CollectionCard] = {}
+        self._collection_card_signature_by_id: dict[int, tuple[str]] = {}
         self._setup_ui()
-        self.refresh()
+        self.refresh(force=True)
 
     def _setup_ui(self) -> None:
         self.setObjectName("CollectionsPage")
@@ -774,7 +815,8 @@ class CollectionsPage(QWidget):
             QLabel#emptyLabel { color: #9E9E9E; font-size: 14px; padding: 40px; }
         """)
 
-    def refresh(self) -> None:
+    def refresh(self, force: bool = False) -> None:
+        _ = force
         """Reload collections from database (grid view)."""
         # Remove detail view if shown
         self._hide_detail_view()
@@ -782,7 +824,7 @@ class CollectionsPage(QWidget):
         while self._grid_layout.count():
             item = self._grid_layout.takeAt(0)
             if item.widget():
-                item.widget().deleteLater()
+                item.widget().setParent(None)
 
         try:
             collections = self._repo.get_all_collections()
@@ -793,6 +835,7 @@ class CollectionsPage(QWidget):
         if not collections:
             self._empty_label.show()
             self._scroll.hide()
+            self._prune_collection_card_cache(set())
         else:
             self._empty_label.hide()
             self._scroll.show()
@@ -800,11 +843,11 @@ class CollectionsPage(QWidget):
             self._grid_layout.setVerticalSpacing(UI_LAYOUT.card_spacing)
             cols_per_row = self._calculate_grid_columns()
             for i, col in enumerate(collections):
-                card = CollectionCard(col, self._repo)
-                card.clicked.connect(self._show_detail_view)
-                card.delete_requested.connect(self._on_delete_collection)
-                card.rename_requested.connect(self._on_rename_collection)
+                card = self._get_or_create_collection_card(col)
                 self._grid_layout.addWidget(card, i // cols_per_row, i % cols_per_row)
+            self._prune_collection_card_cache(
+                {int(item.get("id")) for item in collections if isinstance(item.get("id"), int)}
+            )
 
     def _calculate_grid_columns(self) -> int:
         available_width = max(1, self._scroll.viewport().width())
@@ -819,6 +862,37 @@ class CollectionsPage(QWidget):
             self._detail_view.apply_card_spacing(UI_LAYOUT.card_spacing)
             return
         self.refresh()
+
+    @staticmethod
+    def _collection_card_signature(collection: dict) -> tuple[str]:
+        name = str(collection.get("name") or "")
+        return (name,)
+
+    def _get_or_create_collection_card(self, collection: dict) -> CollectionCard:
+        collection_id = int(collection.get("id"))
+        signature = self._collection_card_signature(collection)
+        card = self._collection_card_by_id.get(collection_id)
+        cached_signature = self._collection_card_signature_by_id.get(collection_id)
+        if card is not None and cached_signature == signature:
+            return card
+        if card is not None:
+            card.deleteLater()
+        card = CollectionCard(collection, self._repo)
+        self._collection_card_by_id[collection_id] = card
+        self._collection_card_signature_by_id[collection_id] = signature
+        card.clicked.connect(self._show_detail_view)
+        card.delete_requested.connect(self._on_delete_collection)
+        card.rename_requested.connect(self._on_rename_collection)
+        return card
+
+    def _prune_collection_card_cache(self, valid_collection_ids: set[int]) -> None:
+        for collection_id in list(self._collection_card_by_id.keys()):
+            if collection_id in valid_collection_ids:
+                continue
+            card = self._collection_card_by_id.pop(collection_id, None)
+            self._collection_card_signature_by_id.pop(collection_id, None)
+            if card is not None:
+                card.deleteLater()
 
     def _show_detail_view(self, collection_id: int, collection_name: str) -> None:
         self._hide_detail_view()
@@ -836,8 +910,14 @@ class CollectionsPage(QWidget):
             self._detail_view = None
         self._grid_view.show()
 
+    def invalidate_cache(self) -> None:
+        self._prune_collection_card_cache(set())
+        if self._detail_view is not None and hasattr(self._detail_view, "invalidate_cache"):
+            self._detail_view.invalidate_cache()
+
     def _on_detail_back(self) -> None:
         self._hide_detail_view()
+        self.invalidate_cache()
         self.refresh()
 
     def _create_new_collection(self) -> None:
@@ -845,6 +925,7 @@ class CollectionsPage(QWidget):
         if ok and name.strip():
             try:
                 self._repo.create_collection(name.strip())
+                self.invalidate_cache()
                 self.refresh()
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to create collection: {e}")
@@ -860,6 +941,7 @@ class CollectionsPage(QWidget):
         if reply == QMessageBox.StandardButton.Yes:
             try:
                 self._repo.delete_collection(collection_id)
+                self.invalidate_cache()
                 self.refresh()
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to delete: {e}")
@@ -874,6 +956,7 @@ class CollectionsPage(QWidget):
         if ok and name.strip():
             try:
                 self._repo.rename_collection(collection_id, name.strip())
+                self.invalidate_cache()
                 self.refresh()
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to rename: {e}")

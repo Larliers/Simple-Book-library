@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -57,6 +57,8 @@ def _normalize_page_size(value: object) -> int:
 
 
 class ComicPage(QWidget):
+    favorites_changed = Signal()
+
     def __init__(
         self,
         repository,
@@ -79,13 +81,15 @@ class ComicPage(QWidget):
         self._comic_id_by_resource_id: dict[str, int] = {}
         self._selected_resource_id: str | None = None
         self._card_by_resource_id: dict[str, BookCardWidget] = {}
+        self._card_signature_by_resource_id: dict[str, tuple[str, str, str, str, int]] = {}
+        self._data_cache_valid = False
         self._last_columns = 0
         self._reflow_timer = QTimer(self)
         self._reflow_timer.setSingleShot(True)
         self._reflow_timer.setInterval(120)
         self._reflow_timer.timeout.connect(self._rerender_grid_for_layout)
         self._setup_ui()
-        self.refresh()
+        self.refresh(force=True)
 
     def _setup_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -189,42 +193,16 @@ class ComicPage(QWidget):
         self._next_page_btn.setText(tr("comic.pagination.next", "Next"))
         self._render_current_view()
 
-    def refresh(self) -> None:
-        if self._repo is None:
-            self._resources = []
-        else:
-            if self._favorite_only:
-                records = self._repo.get_favorite_comics(order_by=self._sort_order)
-            else:
-                records = self._repo.list_comics(include_missing=False, order_by=self._sort_order)
-            self._resources = []
-            self._comic_id_by_resource_id.clear()
-            for record in records:
-                resource_id = str(record.get("resource_id") or "").strip()
-                if not resource_id:
-                    continue
-                comic_id = record.get("id")
-                if isinstance(comic_id, int):
-                    self._comic_id_by_resource_id[resource_id] = comic_id
-                title = str(record.get("title") or "").strip() or Path(str(record.get("path") or "")).name or "Comic"
-                self._resources.append(
-                    ResourceItem(
-                        resource_id=resource_id,
-                        title=title,
-                        author="",
-                        status="UNREAD",
-                        tags=[],
-                        resource_type="comic_folder",
-                        path=str(record.get("path") or ""),
-                        thumbnail_path=record.get("thumbnail_path"),
-                        is_missing=bool(record.get("is_missing")),
-                        info_text=str(record.get("info_text") or "") or None,
-                        cover_image_path=str(record.get("cover_image_path") or "") or None,
-                        image_count=int(record.get("image_count") or 0),
-                    )
-                )
+    def invalidate_cache(self) -> None:
+        self._data_cache_valid = False
 
+    def refresh(self, force: bool = False) -> None:
+        should_reload = force or not self._data_cache_valid
+        if should_reload:
+            self._reload_data_from_repository()
+            self._data_cache_valid = True
         self._resource_by_id = {item.resource_id: item for item in self._resources}
+        self._prune_card_cache_to_resource_ids(set(self._resource_by_id.keys()))
         count = len(self._resources)
         if self._favorite_only:
             self._subtitle.setText(tr("comic_fav.page.subtitle.count", "{count} comics in favorites").format(count=count))
@@ -239,6 +217,42 @@ class ComicPage(QWidget):
             self._update_detail_panel(self._selected_resource_id)
         else:
             self.detail_panel.clear_selection()
+
+    def _reload_data_from_repository(self) -> None:
+        if self._repo is None:
+            self._resources = []
+            self._comic_id_by_resource_id.clear()
+            return
+        if self._favorite_only:
+            records = self._repo.get_favorite_comics(order_by=self._sort_order)
+        else:
+            records = self._repo.list_comics(include_missing=False, order_by=self._sort_order)
+        self._resources = []
+        self._comic_id_by_resource_id.clear()
+        for record in records:
+            resource_id = str(record.get("resource_id") or "").strip()
+            if not resource_id:
+                continue
+            comic_id = record.get("id")
+            if isinstance(comic_id, int):
+                self._comic_id_by_resource_id[resource_id] = comic_id
+            title = str(record.get("title") or "").strip() or Path(str(record.get("path") or "")).name or "Comic"
+            self._resources.append(
+                ResourceItem(
+                    resource_id=resource_id,
+                    title=title,
+                    author="",
+                    status="UNREAD",
+                    tags=[],
+                    resource_type="comic_folder",
+                    path=str(record.get("path") or ""),
+                    thumbnail_path=record.get("thumbnail_path"),
+                    is_missing=bool(record.get("is_missing")),
+                    info_text=str(record.get("info_text") or "") or None,
+                    cover_image_path=str(record.get("cover_image_path") or "") or None,
+                    image_count=int(record.get("image_count") or 0),
+                )
+            )
 
     def set_view_mode(self, mode: str, page_size: int) -> None:
         normalized_mode = _normalize_view_mode(mode)
@@ -269,21 +283,14 @@ class ComicPage(QWidget):
     def _render_grid(self, resources: list[ResourceItem]) -> None:
         self._grid.setHorizontalSpacing(UI_LAYOUT.card_spacing)
         self._grid.setVerticalSpacing(UI_LAYOUT.card_spacing)
-        self._clear_grid()
+        self._detach_all_grid_widgets()
         self._last_columns = self._calculate_columns()
         columns = max(1, self._last_columns)
         for idx, resource in enumerate(resources):
             row = idx // columns
             col = idx % columns
-            card = BookCardWidget(resource, cover_only=True)
-            self._card_by_resource_id[resource.resource_id] = card
+            card = self._get_or_create_card(resource)
             card.set_selected(resource.resource_id == self._selected_resource_id)
-            card.clicked.connect(lambda res_id=resource.resource_id: self._select_resource(res_id))
-            card.open_requested.connect(lambda _pos, res=resource: self._open_external(res.cover_image_path or res.path))
-            card.setContextMenuPolicy(Qt.CustomContextMenu)
-            card.customContextMenuRequested.connect(
-                lambda pos, res=resource, widget=card: self._show_card_menu(res, widget.mapToGlobal(pos))
-            )
             self._grid.addWidget(card, row, col, alignment=Qt.AlignLeft | Qt.AlignTop)
 
     def _visible_resources(self) -> list[ResourceItem]:
@@ -339,8 +346,67 @@ class ComicPage(QWidget):
         while self._grid.count():
             item = self._grid.takeAt(0)
             if item and item.widget():
-                item.widget().deleteLater()
-        self._card_by_resource_id.clear()
+                item.widget().setParent(None)
+
+    def _detach_all_grid_widgets(self) -> None:
+        while self._grid.count():
+            item = self._grid.takeAt(0)
+            if item and item.widget():
+                item.widget().setParent(None)
+
+    def _prune_card_cache_to_resource_ids(self, valid_ids: set[str]) -> None:
+        for resource_id in list(self._card_by_resource_id.keys()):
+            if resource_id in valid_ids:
+                continue
+            card = self._card_by_resource_id.pop(resource_id, None)
+            self._card_signature_by_resource_id.pop(resource_id, None)
+            if card is not None:
+                card.deleteLater()
+
+    @staticmethod
+    def _resource_signature(resource: ResourceItem) -> tuple[str, str, str, str, int]:
+        return (
+            str(resource.title or ""),
+            str(resource.path or ""),
+            str(resource.cover_image_path or ""),
+            str(resource.thumbnail_path or ""),
+            int(resource.image_count or 0),
+        )
+
+    def _get_or_create_card(self, resource: ResourceItem) -> BookCardWidget:
+        resource_id = resource.resource_id
+        signature = self._resource_signature(resource)
+        cached = self._card_by_resource_id.get(resource_id)
+        cached_signature = self._card_signature_by_resource_id.get(resource_id)
+        if cached is not None and cached_signature == signature:
+            return cached
+        if cached is not None:
+            cached.deleteLater()
+        card = BookCardWidget(resource, cover_only=True)
+        self._card_by_resource_id[resource_id] = card
+        self._card_signature_by_resource_id[resource_id] = signature
+        card.clicked.connect(lambda res_id=resource_id: self._select_resource(res_id))
+        card.open_requested.connect(lambda _pos, res_id=resource_id: self._open_resource_cover(res_id))
+        card.setContextMenuPolicy(Qt.CustomContextMenu)
+        card.customContextMenuRequested.connect(
+            lambda pos, res_id=resource_id, widget=card: self._show_card_menu_by_resource_id(
+                res_id,
+                widget.mapToGlobal(pos),
+            )
+        )
+        return card
+
+    def _open_resource_cover(self, resource_id: str) -> None:
+        resource = self._resource_by_id.get(resource_id)
+        if resource is None:
+            return
+        self._open_external(resource.cover_image_path or resource.path)
+
+    def _show_card_menu_by_resource_id(self, resource_id: str, global_pos) -> None:
+        resource = self._resource_by_id.get(resource_id)
+        if resource is None:
+            return
+        self._show_card_menu(resource, global_pos)
 
     def _show_card_menu(self, resource: ResourceItem, global_pos) -> None:
         menu = QMenu(self)
@@ -358,13 +424,17 @@ class ComicPage(QWidget):
     def _toggle_favorite(self, resource: ResourceItem) -> None:
         if self._repo is None:
             return
-        comic_id = self._repo.get_comic_int_id(resource.resource_id)
+        comic_id = self._comic_id_by_resource_id.get(resource.resource_id)
+        if comic_id is None:
+            comic_id = self._repo.get_comic_int_id(resource.resource_id)
         if comic_id is None:
             return
         if self._favorite_only:
             self._repo.remove_comic_from_favorites(comic_id)
         else:
             self._repo.add_comic_to_favorites(comic_id)
+        self.invalidate_cache()
+        self.favorites_changed.emit()
         self.refresh()
 
     def _open_external(self, path: str) -> None:
@@ -408,6 +478,7 @@ class ComicPage(QWidget):
         self._sort_order = selected
         self._save_sort_order(selected)
         self._current_page = 1
+        self.invalidate_cache()
         self.refresh()
 
     def _load_sort_order(self) -> str:

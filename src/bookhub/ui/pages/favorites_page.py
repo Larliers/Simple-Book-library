@@ -77,9 +77,10 @@ class FavoritesPage(QWidget):
         self._resource_by_id: dict[str, ResourceItem] = {}
         self._selected_resource_id: str | None = None
         self._card_by_resource_id: dict[str, BookCardWidget] = {}
+        self._card_signature_by_resource_id: dict[str, tuple[str, str, str]] = {}
         self._last_columns = 0
         self._setup_ui()
-        self.refresh()
+        self.refresh(force=True)
 
     def _setup_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -212,7 +213,8 @@ class FavoritesPage(QWidget):
         )
         self._apply_view_mode()
 
-    def refresh(self) -> None:
+    def refresh(self, force: bool = False) -> None:
+        _ = force
         records = (
             self._repo.get_favorite_books(order=self._sort_order) if self._repo is not None else []
         )
@@ -263,8 +265,8 @@ class FavoritesPage(QWidget):
             while self._grid.count():
                 item = self._grid.takeAt(0)
                 if item and item.widget():
-                    item.widget().deleteLater()
-            self._card_by_resource_id.clear()
+                    item.widget().setParent(None)
+            self._prune_grid_card_cache(set())
             self._list_table.setRowCount(0)
             self._view_stack.hide()
             self._empty_label.show()
@@ -285,27 +287,20 @@ class FavoritesPage(QWidget):
     def _render_grid(self) -> None:
         self._grid.setHorizontalSpacing(UI_LAYOUT.card_spacing)
         self._grid.setVerticalSpacing(UI_LAYOUT.card_spacing)
-        self._card_by_resource_id.clear()
         while self._grid.count():
             item = self._grid.takeAt(0)
             if item and item.widget():
-                item.widget().deleteLater()
+                item.widget().setParent(None)
 
         columns = self._calculate_columns()
         self._last_columns = columns
         for idx, resource in enumerate(self._resources):
             row = idx // columns
             col = idx % columns
-            card = BookCardWidget(resource, cover_only=True)
-            self._card_by_resource_id[resource.resource_id] = card
+            card = self._get_or_create_grid_card(resource)
             card.set_selected(resource.resource_id == self._selected_resource_id)
-            card.clicked.connect(lambda res_id=resource.resource_id: self._select_resource(res_id))
-            card.open_requested.connect(lambda _pos, res=resource: self._open_external(res.path))
-            card.setContextMenuPolicy(Qt.CustomContextMenu)
-            card.customContextMenuRequested.connect(
-                lambda pos, res=resource, widget=card: self._show_card_menu(res, widget.mapToGlobal(pos))
-            )
             self._grid.addWidget(card, row, col, alignment=Qt.AlignLeft | Qt.AlignTop)
+        self._prune_grid_card_cache({item.resource_id for item in self._resources})
 
     def _render_list(self) -> None:
         self._list_table.setRowCount(len(self._resources))
@@ -455,6 +450,55 @@ class FavoritesPage(QWidget):
                 print(f"[FavoritesPage] load collections for detail error: {e}")
         self.detail_panel.set_resource(resource, collection_names)
 
+    @staticmethod
+    def _card_signature(item: ResourceItem) -> tuple[str, str, str]:
+        return (
+            str(item.title or ""),
+            str(item.path or ""),
+            str(item.thumbnail_path or ""),
+        )
+
+    def _get_or_create_grid_card(self, item: ResourceItem) -> BookCardWidget:
+        resource_id = item.resource_id
+        signature = self._card_signature(item)
+        card = self._card_by_resource_id.get(resource_id)
+        cached_signature = self._card_signature_by_resource_id.get(resource_id)
+        if card is not None and cached_signature == signature:
+            return card
+        if card is not None:
+            card.deleteLater()
+        card = BookCardWidget(item, cover_only=True)
+        self._card_by_resource_id[resource_id] = card
+        self._card_signature_by_resource_id[resource_id] = signature
+        card.clicked.connect(lambda res_id=resource_id: self._select_resource(res_id))
+        card.open_requested.connect(lambda _pos, res_id=resource_id: self._open_resource_by_id(res_id))
+        card.setContextMenuPolicy(Qt.CustomContextMenu)
+        card.customContextMenuRequested.connect(
+            lambda pos, res_id=resource_id, widget=card: self._show_card_menu_by_id(res_id, widget.mapToGlobal(pos))
+        )
+        return card
+
+    def _prune_grid_card_cache(self, valid_resource_ids: set[str]) -> None:
+        for resource_id in list(self._card_by_resource_id.keys()):
+            if resource_id in valid_resource_ids:
+                continue
+            card = self._card_by_resource_id.pop(resource_id, None)
+            self._card_signature_by_resource_id.pop(resource_id, None)
+            if card is not None:
+                card.deleteLater()
+
+    def _open_resource_by_id(self, resource_id: str) -> None:
+        resource = self._resource_by_id.get(resource_id)
+        if resource is None:
+            return
+        self._open_external(resource.path)
+
+    def _show_card_menu_by_id(self, resource_id: str, global_pos) -> None:
+        resource = self._resource_by_id.get(resource_id)
+        if resource is None:
+            return
+        self._show_card_menu(resource, global_pos)
+
     def _set_view_mode(self, mode: str) -> None:
         normalized = _normalize_view_mode(mode)
         if normalized == self._view_mode:
@@ -509,6 +553,9 @@ class FavoritesPage(QWidget):
         self._sort_order = selected
         self._save_sort_order(selected)
         self.refresh()
+
+    def invalidate_cache(self) -> None:
+        self._prune_grid_card_cache(set())
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

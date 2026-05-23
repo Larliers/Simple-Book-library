@@ -190,6 +190,7 @@ class LibraryPage(QWidget):
         self._resource_by_id: dict[str, ResourceItem] = {}
         self._active_toasts: list[QLabel] = []
         self._card_by_resource_id: dict[str, BookCardWidget] = {}
+        self._card_signature_by_resource_id: dict[str, tuple[str, str, str]] = {}
         self._selected_resource_id: str | None = None
 
         root = QVBoxLayout(self)
@@ -345,26 +346,16 @@ class LibraryPage(QWidget):
         columns = self._calculate_grid_columns()
         self._last_grid_columns = columns
 
-        self._card_by_resource_id.clear()
         while self.grid_layout.count():
             child = self.grid_layout.takeAt(0)
             if child and child.widget():
-                child.widget().deleteLater()
+                child.widget().setParent(None)
 
         for idx, item in enumerate(items):
             row = idx // columns
             col = idx % columns
-            card = BookCardWidget(item, cover_only=True)
-            self._card_by_resource_id[item.resource_id] = card
+            card = self._get_or_create_grid_card(item)
             card.set_selected(item.resource_id == self._selected_resource_id)
-            card.setContextMenuPolicy(Qt.CustomContextMenu)
-            card.customContextMenuRequested.connect(
-                lambda pos, resource=item, widget=card: self._show_card_menu(resource, widget.mapToGlobal(pos))
-            )
-            card.clicked.connect(lambda resource_id=item.resource_id: self._select_resource(resource_id))
-            card.open_requested.connect(
-                lambda global_pos, resource=item: self._handle_card_double_click(resource, global_pos)
-            )
             self.grid_layout.addWidget(card, row, col, alignment=Qt.AlignLeft | Qt.AlignTop)
 
         add_card = QLabel(tr("library.add_new_book", "+\nADD NEW BOOK"))
@@ -381,6 +372,8 @@ class LibraryPage(QWidget):
         max_columns_to_reset = max(previous_columns, columns) + 1
         for col in range(max_columns_to_reset + 1):
             self.grid_layout.setColumnStretch(col, 0)
+
+        self._prune_grid_card_cache({item.resource_id for item in items})
 
     def _render_list(self, items: list[ResourceItem]) -> None:
         self.list_table.setRowCount(len(items))
@@ -739,6 +732,66 @@ class LibraryPage(QWidget):
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
         )
+
+    @staticmethod
+    def _card_signature(item: ResourceItem) -> tuple[str, str, str]:
+        return (
+            str(item.title or ""),
+            str(item.path or ""),
+            str(item.thumbnail_path or ""),
+        )
+
+    def _get_or_create_grid_card(self, item: ResourceItem) -> BookCardWidget:
+        resource_id = item.resource_id
+        signature = self._card_signature(item)
+        card = self._card_by_resource_id.get(resource_id)
+        cached_signature = self._card_signature_by_resource_id.get(resource_id)
+        if card is not None and cached_signature == signature:
+            return card
+        if card is not None:
+            card.deleteLater()
+        card = BookCardWidget(item, cover_only=True)
+        self._card_by_resource_id[resource_id] = card
+        self._card_signature_by_resource_id[resource_id] = signature
+        card.setContextMenuPolicy(Qt.CustomContextMenu)
+        card.customContextMenuRequested.connect(
+            lambda pos, res_id=resource_id, widget=card: self._show_card_menu_by_resource_id(
+                res_id,
+                widget.mapToGlobal(pos),
+            )
+        )
+        card.clicked.connect(lambda res_id=resource_id: self._select_resource(res_id))
+        card.open_requested.connect(lambda global_pos, res_id=resource_id: self._handle_card_double_click_by_id(res_id, global_pos))
+        return card
+
+    def _prune_grid_card_cache(self, valid_resource_ids: set[str]) -> None:
+        for resource_id in list(self._card_by_resource_id.keys()):
+            if resource_id in valid_resource_ids:
+                continue
+            card = self._card_by_resource_id.pop(resource_id, None)
+            self._card_signature_by_resource_id.pop(resource_id, None)
+            if card is not None:
+                card.deleteLater()
+
+    def _show_card_menu_by_resource_id(self, resource_id: str, global_pos) -> None:
+        resource = self._resource_by_id.get(resource_id)
+        if resource is None:
+            return
+        self._show_card_menu(resource, global_pos)
+
+    def _handle_card_double_click_by_id(self, resource_id: str, global_pos: QPoint) -> None:
+        resource = self._resource_by_id.get(resource_id)
+        if resource is None:
+            self._show_open_error_toast(
+                tr("library.toast.open_failed", "Unable to open with default app."),
+                global_pos,
+            )
+            return
+        self._handle_card_double_click(resource, global_pos)
+
+    def invalidate_cache(self) -> None:
+        # Library page keeps source data in view model; we only cache card widgets.
+        self._prune_grid_card_cache(set())
 
     def _calculate_grid_columns(self) -> int:
         available_width = max(1, self.grid_scroll.viewport().width())

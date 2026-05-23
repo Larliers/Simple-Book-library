@@ -13,6 +13,7 @@ src/
 ├─ main.py
 ├─ tests/
 │  ├─ test_comic_preview_pipeline.py
+│  ├─ test_comic_page_cache.py
 │  ├─ test_rule_engine.py
 │  └─ test_scan_pdf_degrade.py
 ├─ sql/
@@ -99,6 +100,7 @@ src/
 - `src/tests/test_rule_engine.py`：Text 规则引擎回归测试（步骤提取、回退链、非法正则容错）。
 - `src/tests/test_scan_pdf_degrade.py`：PDF 后端降级容错回归测试（PyMuPDF 不可用时的聚合 warning 与入库行为）。
 - `src/tests/test_comic_preview_pipeline.py`：漫画快扫占位与后台并行补图回归测试（占位复制、压缩替换、原图删除、超大图降采样、排序顺序）。
+- `src/tests/test_comic_page_cache.py`：漫画页缓存回归测试（数据缓存命中、卡片复用与收藏联动失效）。
 - `src/sql/.gitkeep`：运行数据目录占位，实际运行时生成 `library.db`、`scan_report.json`。
 
 ### 3.2 bookhub 包根
@@ -194,6 +196,7 @@ src/
 - 字体重载：`Reload Fonts` 现在执行完整链路（重扫 `src/fonts` -> 注册字体 -> 解析回退 -> `QApplication.setFont` + 动态 QSS 立即生效 -> 持久化设置）；目录不存在时自动创建并通过右下角 Toast 提示。
 - 漫画性能：扫描阶段改为“快扫入库+可选首图占位复制”，压缩缩略图改为后台并行补全；预览图目录升级为 `img_preview/<resource_type>/<original|compressed>`。
 - 漫画性能（本轮）：Comic/Comic Fav 页显示模式改为 Settings 全局二选一（瀑布流/分页），分页容量可配（24/48/72/96）；扫描侧排序字段改为 `folder_modified_at`（目录 mtime）并保留 `folder_size_mtime` 仅作增量判定；超大封面占位自动降采样以规避 Qt 256MB 解码限制。
+- 页面渲染性能（本轮）：Comic/Comic Fav 增加“事件驱动失效 + 双层缓存（数据索引缓存 + 卡片复用缓存）”；Library/Favorites/Collections 网格改为“布局重排优先复用卡片、按需重建单卡”，减少切页和重排时的全量 widget 销毁与封面重复解码。
 
 ## 5. 边界与约束
 - 当前导入粒度：目录导入（不支持单文件导入）。
