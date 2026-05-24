@@ -358,17 +358,6 @@ class LibraryPage(QWidget):
             card.set_selected(item.resource_id == self._selected_resource_id)
             self.grid_layout.addWidget(card, row, col, alignment=Qt.AlignLeft | Qt.AlignTop)
 
-        add_card = QLabel(tr("library.add_new_book", "+\nADD NEW BOOK"))
-        add_card.setObjectName("AddCard")
-        add_card.setAlignment(Qt.AlignCenter)
-        add_card.setFixedSize(UI_LAYOUT.card_width, UI_LAYOUT.add_card_height)
-        self.grid_layout.addWidget(
-            add_card,
-            len(items) // columns,
-            len(items) % columns,
-            alignment=Qt.AlignLeft | Qt.AlignTop,
-        )
-
         max_columns_to_reset = max(previous_columns, columns) + 1
         for col in range(max_columns_to_reset + 1):
             self.grid_layout.setColumnStretch(col, 0)

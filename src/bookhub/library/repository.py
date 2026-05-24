@@ -25,6 +25,10 @@ CARD_SPACING_MAX = 40
 DEFAULT_TOPBAR_SEARCH_FONT_SIZE = 15
 TOPBAR_SEARCH_FONT_SIZE_MIN = 12
 TOPBAR_SEARCH_FONT_SIZE_MAX = 20
+DEFAULT_COVER_SELECTED_BORDER_WIDTH = 2
+COVER_SELECTED_BORDER_WIDTH_MIN = 1
+COVER_SELECTED_BORDER_WIDTH_MAX = 6
+DEFAULT_COVER_SELECTED_BORDER_COLOR = "#8EA7C6"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -51,6 +55,26 @@ def _normalize_topbar_search_font_size(value: int | str | None) -> int:
     except (TypeError, ValueError):
         size = DEFAULT_TOPBAR_SEARCH_FONT_SIZE
     return min(TOPBAR_SEARCH_FONT_SIZE_MAX, max(TOPBAR_SEARCH_FONT_SIZE_MIN, size))
+
+
+def _normalize_cover_selected_border_width(value: int | str | None) -> int:
+    try:
+        width = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        width = DEFAULT_COVER_SELECTED_BORDER_WIDTH
+    return min(COVER_SELECTED_BORDER_WIDTH_MAX, max(COVER_SELECTED_BORDER_WIDTH_MIN, width))
+
+
+def _normalize_cover_selected_border_color(value: str | None) -> str:
+    text = str(value or "").strip().upper()
+    if text.startswith("#"):
+        text = text[1:]
+    if len(text) != 6:
+        return DEFAULT_COVER_SELECTED_BORDER_COLOR
+    valid = "0123456789ABCDEF"
+    if any(ch not in valid for ch in text):
+        return DEFAULT_COVER_SELECTED_BORDER_COLOR
+    return f"#{text}"
 
 
 class LibraryRepository:
@@ -194,6 +218,10 @@ class LibraryRepository:
             self.set_setting("card_spacing", DEFAULT_CARD_SPACING)
         if self.get_setting("topbar_search_font_size", None) is None:
             self.set_setting("topbar_search_font_size", DEFAULT_TOPBAR_SEARCH_FONT_SIZE)
+        if self.get_setting("cover_selected_border_width_px", None) is None:
+            self.set_setting("cover_selected_border_width_px", DEFAULT_COVER_SELECTED_BORDER_WIDTH)
+        if self.get_setting("cover_selected_border_color_hex", None) is None:
+            self.set_setting("cover_selected_border_color_hex", DEFAULT_COVER_SELECTED_BORDER_COLOR)
         if self.get_setting("text_preview_chars", None) is None:
             self.set_setting("text_preview_chars", DEFAULT_TEXT_PREVIEW_CHARS)
         if self.get_setting("scan_on_startup", None) is None:
@@ -285,6 +313,20 @@ class LibraryRepository:
 
     def set_topbar_search_font_size(self, size: int) -> None:
         self.set_setting("topbar_search_font_size", _normalize_topbar_search_font_size(size))
+
+    def get_cover_selected_border_width(self) -> int:
+        raw = self.get_setting("cover_selected_border_width_px", DEFAULT_COVER_SELECTED_BORDER_WIDTH)
+        return _normalize_cover_selected_border_width(raw)
+
+    def set_cover_selected_border_width(self, width: int) -> None:
+        self.set_setting("cover_selected_border_width_px", _normalize_cover_selected_border_width(width))
+
+    def get_cover_selected_border_color(self) -> str:
+        raw = self.get_setting("cover_selected_border_color_hex", DEFAULT_COVER_SELECTED_BORDER_COLOR)
+        return _normalize_cover_selected_border_color(raw)
+
+    def set_cover_selected_border_color(self, color: str) -> None:
+        self.set_setting("cover_selected_border_color_hex", _normalize_cover_selected_border_color(color))
 
     def get_text_preview_chars(self) -> int:
         raw = self.get_setting("text_preview_chars", DEFAULT_TEXT_PREVIEW_CHARS)

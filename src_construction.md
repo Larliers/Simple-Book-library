@@ -147,19 +147,19 @@ src/
 
 ### 3.8 页面组件（bookhub/ui/pages）
 - `src/bookhub/ui/pages/__init__.py`：页面包入口。
-- `src/bookhub/ui/pages/comic_page.py`：Comic/Comic Fav 页面；支持文件夹日期/名称排序与显示模式二选一（瀑布流/分页）；封面双击外部打开；右键添加/移除收藏。
-- `src/bookhub/ui/pages/library_page.py`：Library 页面；grid/list；右侧详情栏；单/双击交互。
+- `src/bookhub/ui/pages/comic_page.py`：Comic/Comic Fav 页面；支持文件夹日期/名称排序与显示模式二选一（瀑布流/分页）；封面双击外部打开；右键添加/移除收藏；网格封面采用无壳层 cover-only 卡片并共享全局选中边框设置。
+- `src/bookhub/ui/pages/library_page.py`：Library 页面；grid/list；右侧详情栏；单/双击交互；网格区域移除 `+ ADD NEW BOOK` 末尾方块入口，仅保留封面直陈列。
 - `src/bookhub/ui/pages/collections_page.py`：书单页与书单详情页；详情支持 grid/list 视图与侧键返回上一级。
-- `src/bookhub/ui/pages/favorites_page.py`：收藏页；支持 grid/list 视图与排序持久化。
-- `src/bookhub/ui/pages/settings_page.py`：设置页（扫描、匹配策略、卡片间距、缩略图任务、错误日志、Text Novel）；导航仅保留 General 与 Error logs；Text Novel 路径行支持“Delete + Rules + Path”布局；支持 Text 预览长度与漫画显示模式（瀑布流/分页）及分页容量配置；扫描/缩略图任务按 Library/Comic/Text 分类型入口。
+- `src/bookhub/ui/pages/favorites_page.py`：收藏页；支持 grid/list 视图与排序持久化；封面网格与 Library/Comic 共享无壳层 cover-only 卡片表现。
+- `src/bookhub/ui/pages/settings_page.py`：设置页（扫描、匹配策略、卡片间距、封面选中边框粗细/颜色、缩略图任务、错误日志、Text Novel）；导航仅保留 General 与 Error logs；Text Novel 路径行支持“Delete + Rules + Path”布局；支持 Text 预览长度与漫画显示模式（瀑布流/分页）及分页容量配置；扫描/缩略图任务按 Library/Comic/Text 分类型入口。
 - `src/bookhub/ui/pages/text_novel_page.py`：Text Novel 页面；固定列表视图；右侧详情栏展示 TXT 预览文本；双击外部打开。
 
 ### 3.9 UI 资源组件（bookhub/ui/resources）
 - `src/bookhub/ui/resources/__init__.py`：资源包入口。
 - `src/bookhub/ui/resources/assets.py`：图标/资源加载。
 - `src/bookhub/ui/resources/font_runtime.py`：运行时字体服务；扫描并注册 `src/fonts` 字体文件、解析有效字体与回退策略。
-- `src/bookhub/ui/resources/layout_config.py`：布局尺寸与间距配置。
-- `src/bookhub/ui/resources/styles.py`：全局 QSS 样式；支持基于选中字体动态构建 `font-family` 栈。
+- `src/bookhub/ui/resources/layout_config.py`：布局尺寸与间距配置；包含 cover-only 选中边框宽度/颜色的归一化与运行时状态。
+- `src/bookhub/ui/resources/styles.py`：全局 QSS 样式；支持基于选中字体动态构建 `font-family` 栈，并支持注入 cover-only 选中边框动态样式参数。
 
 ### 3.10 视图模型组件（bookhub/ui/viewmodels）
 - `src/bookhub/ui/viewmodels/__init__.py`：视图模型包入口。
@@ -169,7 +169,7 @@ src/
 - `src/bookhub/ui/widgets/__init__.py`：小部件包入口。
 - `src/bookhub/ui/widgets/sidebar.py`：左侧导航栏组件。
 - `src/bookhub/ui/widgets/topbar.py`：顶部搜索栏与建议浮层。
-- `src/bookhub/ui/widgets/book_card.py`：书籍卡片组件（常规卡片、cover-only 卡片）。
+- `src/bookhub/ui/widgets/book_card.py`：书籍卡片组件（常规卡片、cover-only 卡片）；cover-only 分支使用零内边距封面直陈列（无常驻外壳）。
 - `src/bookhub/ui/widgets/slide_toast.py`：右下角滑入提示组件。
 
 ## 4. 当前关键实现（简要）
@@ -178,6 +178,7 @@ src/
 - 数据能力：Collections、Favorites、Tags 已接入。
 - Library 展示：主区双栏，右侧详情栏常驻且可拖拽宽度。
 - Favorites/CollectionDetail 展示：支持与 Library 一致的 grid/list 切换；主区接入右侧详情栏；详情页主区布局采用与 Library 相同的伸展策略，避免分栏贴底；grid 卡片采用 cover-only 样式并支持选中态；模式持久化到 `app_settings`。
+- 封面网格视觉：Library、Comic、Comic Fav、Favorites、CollectionDetail 统一使用“背景 + 封面直陈列”无壳层样式；仅在选中时显示可配置边框（全局设置）。
 - Settings 导航：仅保留 General 与 Error logs 两项；移除顶部搜索框、Shortcuts、Manage Metadata 占位区域。
 - Text Novel：新增独立侧栏入口与独立列表页；TXT 不进入 Library 主列表；右侧详情栏可展示 `info_text` 预览。
 - 详情面板语义统一：`info_text` 仅作为“文本预览”渲染一次；“所属书单”仅在 `book` 资源类型显示，Comic/Text Novel 不再复用该字段。

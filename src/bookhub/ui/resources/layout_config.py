@@ -8,6 +8,10 @@ DEFAULT_CARD_SPACING = 14
 TOPBAR_SEARCH_FONT_SIZE_MIN = 12
 TOPBAR_SEARCH_FONT_SIZE_MAX = 20
 DEFAULT_TOPBAR_SEARCH_FONT_SIZE = 15
+COVER_SELECTED_BORDER_WIDTH_MIN = 1
+COVER_SELECTED_BORDER_WIDTH_MAX = 6
+DEFAULT_COVER_SELECTED_BORDER_WIDTH = 2
+DEFAULT_COVER_SELECTED_BORDER_COLOR = "#8EA7C6"
 
 
 def normalize_card_spacing(value: int | str | None) -> int:
@@ -26,6 +30,26 @@ def normalize_topbar_search_font_size(value: int | str | None) -> int:
     return min(TOPBAR_SEARCH_FONT_SIZE_MAX, max(TOPBAR_SEARCH_FONT_SIZE_MIN, size))
 
 
+def normalize_cover_selected_border_width(value: int | str | None) -> int:
+    try:
+        width = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        width = DEFAULT_COVER_SELECTED_BORDER_WIDTH
+    return min(COVER_SELECTED_BORDER_WIDTH_MAX, max(COVER_SELECTED_BORDER_WIDTH_MIN, width))
+
+
+def normalize_cover_selected_border_color(value: str | None) -> str:
+    text = str(value or "").strip().upper()
+    if text.startswith("#"):
+        text = text[1:]
+    if len(text) != 6:
+        return DEFAULT_COVER_SELECTED_BORDER_COLOR
+    valid = "0123456789ABCDEF"
+    if any(ch not in valid for ch in text):
+        return DEFAULT_COVER_SELECTED_BORDER_COLOR
+    return f"#{text}"
+
+
 @dataclass
 class UiLayoutConfig:
     sidebar_width: int = 240
@@ -38,6 +62,8 @@ class UiLayoutConfig:
     add_card_height: int = 264
     grid_left_inset: int = 12
     topbar_search_font_size: int = DEFAULT_TOPBAR_SEARCH_FONT_SIZE
+    cover_selected_border_width_px: int = DEFAULT_COVER_SELECTED_BORDER_WIDTH
+    cover_selected_border_color_hex: str = DEFAULT_COVER_SELECTED_BORDER_COLOR
 
     def cover_size(self) -> tuple[int, int]:
         cover_width = self.card_width - self.card_inner_padding * 2
@@ -49,6 +75,12 @@ class UiLayoutConfig:
 
     def set_topbar_search_font_size(self, size: int | str | None) -> None:
         self.topbar_search_font_size = normalize_topbar_search_font_size(size)
+
+    def set_cover_selected_border_width(self, width: int | str | None) -> None:
+        self.cover_selected_border_width_px = normalize_cover_selected_border_width(width)
+
+    def set_cover_selected_border_color(self, color: str | None) -> None:
+        self.cover_selected_border_color_hex = normalize_cover_selected_border_color(color)
 
 
 UI_LAYOUT = UiLayoutConfig()

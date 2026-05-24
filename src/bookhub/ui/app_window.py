@@ -31,6 +31,8 @@ from bookhub.ui.pages.comic_page import (
 from bookhub.ui.pages.text_novel_page import TextNovelPage
 from bookhub.ui.resources.layout_config import (
     UI_LAYOUT,
+    normalize_cover_selected_border_color,
+    normalize_cover_selected_border_width,
     normalize_card_spacing,
     normalize_topbar_search_font_size,
 )
@@ -65,6 +67,8 @@ class AppWindow(QMainWindow):
         self.resize(1400, 860)
         UI_LAYOUT.set_card_spacing(self._repository.get_card_spacing())
         UI_LAYOUT.set_topbar_search_font_size(self._repository.get_topbar_search_font_size())
+        UI_LAYOUT.set_cover_selected_border_width(self._repository.get_cover_selected_border_width())
+        UI_LAYOUT.set_cover_selected_border_color(self._repository.get_cover_selected_border_color())
         self._library_vm = LibraryViewModel()
         self._text_vm = LibraryViewModel()
         self._pages: dict[str, int] = {}
@@ -159,6 +163,8 @@ class AppWindow(QMainWindow):
         )
         self.settings_page.card_spacing_changed.connect(self._on_card_spacing_changed)
         self.settings_page.topbar_search_font_size_changed.connect(self._on_topbar_search_font_size_changed)
+        self.settings_page.cover_selected_border_width_changed.connect(self._on_cover_selected_border_width_changed)
+        self.settings_page.cover_selected_border_color_changed.connect(self._on_cover_selected_border_color_changed)
         self.settings_page.font_changed.connect(self._on_font_changed)
         self.settings_page.reload_fonts_requested.connect(self._on_reload_fonts_requested)
         self.settings_page.cleanup_library_thumbnails_requested.connect(
@@ -175,7 +181,7 @@ class AppWindow(QMainWindow):
         )
         self._register_page("settings", self.settings_page)
 
-        self.setStyleSheet(build_app_style(DEFAULT_FONT_STACK))
+        self._apply_runtime_style(DEFAULT_FONT_STACK)
         self.retranslate_ui()
         self._reload_resources_from_repository()
         self._refresh_settings_state()
@@ -335,8 +341,15 @@ class AppWindow(QMainWindow):
         self.comic_fav_page.set_view_mode(comic_view_mode, comic_page_size)
         self.settings_page.set_card_spacing(self._repository.get_card_spacing())
         self.settings_page.set_topbar_search_font_size(self._repository.get_topbar_search_font_size())
+        cover_border_width = self._repository.get_cover_selected_border_width()
+        cover_border_color = self._repository.get_cover_selected_border_color()
+        UI_LAYOUT.set_cover_selected_border_width(cover_border_width)
+        UI_LAYOUT.set_cover_selected_border_color(cover_border_color)
+        self.settings_page.set_cover_selected_border_width(cover_border_width)
+        self.settings_page.set_cover_selected_border_color(cover_border_color)
         self.settings_page.set_scan_summary(self._repository.read_scan_report())
         self.settings_page.set_error_logs_text(read_latest_log_text())
+        self._apply_runtime_style(self._build_font_stack(self._repository.get_font_family()))
 
     def _import_directory(self) -> None:
         directory = QFileDialog.getExistingDirectory(self, tr("import.pick_dir", "Select library folder to import"))
@@ -458,8 +471,17 @@ class AppWindow(QMainWindow):
         selected = str(family or "").strip()
         if app is not None and selected:
             app.setFont(QFont(selected))
-        self.setStyleSheet(build_app_style(self._build_font_stack(selected)))
+        self._apply_runtime_style(self._build_font_stack(selected))
         self._stabilize_dropdown_layer()
+
+    def _apply_runtime_style(self, font_stack: list[str] | tuple[str, ...]) -> None:
+        self.setStyleSheet(
+            build_app_style(
+                font_stack,
+                cover_selected_border_width_px=UI_LAYOUT.cover_selected_border_width_px,
+                cover_selected_border_color_hex=UI_LAYOUT.cover_selected_border_color_hex,
+            )
+        )
 
     def _build_font_stack(self, selected_family: str) -> list[str]:
         stack: list[str] = []
@@ -559,6 +581,18 @@ class AppWindow(QMainWindow):
         self._repository.set_topbar_search_font_size(normalized)
         UI_LAYOUT.set_topbar_search_font_size(normalized)
         self.topbar.set_search_font_size(normalized)
+
+    def _on_cover_selected_border_width_changed(self, width: int) -> None:
+        normalized = normalize_cover_selected_border_width(width)
+        self._repository.set_cover_selected_border_width(normalized)
+        UI_LAYOUT.set_cover_selected_border_width(normalized)
+        self._apply_runtime_style(self._build_font_stack(self._repository.get_font_family()))
+
+    def _on_cover_selected_border_color_changed(self, color: str) -> None:
+        normalized = normalize_cover_selected_border_color(color)
+        self._repository.set_cover_selected_border_color(normalized)
+        UI_LAYOUT.set_cover_selected_border_color(normalized)
+        self._apply_runtime_style(self._build_font_stack(self._repository.get_font_family()))
 
     def _start_scan(self, trigger: str, *, scope: str = "all") -> None:
         if self._thumbnail_worker is not None and self._thumbnail_worker.isRunning():

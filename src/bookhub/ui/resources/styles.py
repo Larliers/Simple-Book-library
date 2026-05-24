@@ -1,6 +1,8 @@
 ﻿from __future__ import annotations
 
 DEFAULT_FONT_STACK = ["Inter", "Segoe UI", "Microsoft YaHei"]
+DEFAULT_COVER_SELECTED_BORDER_WIDTH = 2
+DEFAULT_COVER_SELECTED_BORDER_COLOR = "#8EA7C6"
 
 
 def _quote_font_family(name: str) -> str:
@@ -10,12 +12,22 @@ def _quote_font_family(name: str) -> str:
     return f'"{value}"'
 
 
-def build_app_style(font_stack: list[str] | tuple[str, ...] | None = None) -> str:
+def build_app_style(
+    font_stack: list[str] | tuple[str, ...] | None = None,
+    *,
+    cover_selected_border_width_px: int = DEFAULT_COVER_SELECTED_BORDER_WIDTH,
+    cover_selected_border_color_hex: str = DEFAULT_COVER_SELECTED_BORDER_COLOR,
+) -> str:
     families = [_quote_font_family(item) for item in (font_stack or DEFAULT_FONT_STACK)]
     normalized = [item for item in families if item]
     if not normalized:
         normalized = [_quote_font_family(item) for item in DEFAULT_FONT_STACK]
-    return _APP_STYLE_TEMPLATE.replace("__FONT_STACK__", ", ".join(normalized))
+    width = max(1, int(cover_selected_border_width_px))
+    color = str(cover_selected_border_color_hex or DEFAULT_COVER_SELECTED_BORDER_COLOR).strip() or DEFAULT_COVER_SELECTED_BORDER_COLOR
+    style = _APP_STYLE_TEMPLATE.replace("__FONT_STACK__", ", ".join(normalized))
+    style = style.replace("__COVER_SELECTED_BORDER_WIDTH__", str(width))
+    style = style.replace("__COVER_SELECTED_BORDER_COLOR__", color)
+    return style
 
 _APP_STYLE_TEMPLATE = """
 QWidget {
@@ -328,17 +340,20 @@ QPushButton#ViewToggleButton:checked {
     border: 1px solid #d6dde9;
 }
 #BookCard[variant="cover_only"] {
-    background: #f7f7f7;
-    border: 1px solid #cfd4dc;
+    background: transparent;
+    border: none;
 }
 #BookCard[variant="cover_only"][selected="true"] {
-    background: #e6e9ee;
-    border: 1px solid #8ea7c6;
+    background: transparent;
+    border: __COVER_SELECTED_BORDER_WIDTH__px solid __COVER_SELECTED_BORDER_COLOR__;
 }
 #BookCover {
     background: #ffffff;
     color: #6b7280;
     border: none;
+}
+#BookCard[variant="cover_only"] #BookCover {
+    background: transparent;
 }
 #BookTitle {
     font-size: 15px;
@@ -525,5 +540,9 @@ QScrollBar::sub-page:horizontal {
 }
 """
 
-APP_STYLE = build_app_style(DEFAULT_FONT_STACK)
+APP_STYLE = build_app_style(
+    DEFAULT_FONT_STACK,
+    cover_selected_border_width_px=DEFAULT_COVER_SELECTED_BORDER_WIDTH,
+    cover_selected_border_color_hex=DEFAULT_COVER_SELECTED_BORDER_COLOR,
+)
 

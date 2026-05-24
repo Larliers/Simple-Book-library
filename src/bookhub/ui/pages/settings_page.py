@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFontDatabase, QFontMetrics
+from PySide6.QtGui import QColor, QFontDatabase, QFontMetrics
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QColorDialog,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QProgressBar,
     QPushButton,
+    QSpinBox,
     QStackedWidget,
     QTextEdit,
     QVBoxLayout,
@@ -28,10 +30,16 @@ from bookhub.ui.dialogs.text_rule_dialog import TextRuleDialog
 from bookhub.ui.resources.layout_config import (
     CARD_SPACING_MAX,
     CARD_SPACING_MIN,
+    COVER_SELECTED_BORDER_WIDTH_MAX,
+    COVER_SELECTED_BORDER_WIDTH_MIN,
     DEFAULT_CARD_SPACING,
+    DEFAULT_COVER_SELECTED_BORDER_COLOR,
+    DEFAULT_COVER_SELECTED_BORDER_WIDTH,
     DEFAULT_TOPBAR_SEARCH_FONT_SIZE,
     TOPBAR_SEARCH_FONT_SIZE_MAX,
     TOPBAR_SEARCH_FONT_SIZE_MIN,
+    normalize_cover_selected_border_color,
+    normalize_cover_selected_border_width,
     normalize_card_spacing,
     normalize_topbar_search_font_size,
 )
@@ -60,6 +68,8 @@ class SettingsPage(QWidget):
     auto_generate_comic_thumbnails_after_scan_changed = Signal(bool)
     card_spacing_changed = Signal(int)
     topbar_search_font_size_changed = Signal(int)
+    cover_selected_border_width_changed = Signal(int)
+    cover_selected_border_color_changed = Signal(str)
     text_preview_chars_changed = Signal(int)
     cleanup_library_thumbnails_requested = Signal()
     regenerate_library_thumbnails_requested = Signal()
@@ -78,6 +88,7 @@ class SettingsPage(QWidget):
         self._thumbnail_task_kind: str | None = None
         self._project_font_families: list[str] = []
         self._font_source: str = "system"
+        self._cover_selected_border_color = DEFAULT_COVER_SELECTED_BORDER_COLOR
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 16, 16, 16)
@@ -301,6 +312,34 @@ class SettingsPage(QWidget):
         self.text_preview_chars_combo.currentIndexChanged.connect(self._emit_text_preview_chars_changed)
         options_row.addWidget(self.text_preview_chars_combo, 1)
         library_layout.addLayout(options_row)
+
+        cover_border_row = QHBoxLayout()
+        cover_border_row.setSpacing(10)
+        self.cover_selected_border_title = QLabel("Cover selected border")
+        cover_border_row.addWidget(self.cover_selected_border_title)
+        self.cover_selected_border_width_label = QLabel("Width (px)")
+        cover_border_row.addWidget(self.cover_selected_border_width_label)
+        self.cover_selected_border_width_spin = QSpinBox()
+        self.cover_selected_border_width_spin.setRange(
+            COVER_SELECTED_BORDER_WIDTH_MIN,
+            COVER_SELECTED_BORDER_WIDTH_MAX,
+        )
+        self.cover_selected_border_width_spin.setValue(DEFAULT_COVER_SELECTED_BORDER_WIDTH)
+        self.cover_selected_border_width_spin.valueChanged.connect(self._emit_cover_selected_border_width_changed)
+        cover_border_row.addWidget(self.cover_selected_border_width_spin)
+        self.cover_selected_border_color_label = QLabel("Color")
+        cover_border_row.addWidget(self.cover_selected_border_color_label)
+        self.cover_selected_border_color_btn = QPushButton("Pick Color")
+        self.cover_selected_border_color_btn.setObjectName("GhostButton")
+        self.cover_selected_border_color_btn.clicked.connect(self._pick_cover_selected_border_color)
+        cover_border_row.addWidget(self.cover_selected_border_color_btn)
+        self.cover_selected_border_color_preview = QLabel("")
+        self.cover_selected_border_color_preview.setObjectName("PathValueLabel")
+        self.cover_selected_border_color_preview.setAlignment(Qt.AlignCenter)
+        self.cover_selected_border_color_preview.setFixedWidth(100)
+        cover_border_row.addWidget(self.cover_selected_border_color_preview)
+        cover_border_row.addStretch(1)
+        library_layout.addLayout(cover_border_row)
 
         comic_perf_row = QHBoxLayout()
         comic_perf_row.setSpacing(10)
@@ -582,6 +621,17 @@ class SettingsPage(QWidget):
         self.topbar_search_font_size_combo.setCurrentIndex(index)
         self.topbar_search_font_size_combo.blockSignals(False)
 
+    def set_cover_selected_border_width(self, width: int) -> None:
+        value = normalize_cover_selected_border_width(width)
+        self.cover_selected_border_width_spin.blockSignals(True)
+        self.cover_selected_border_width_spin.setValue(value)
+        self.cover_selected_border_width_spin.blockSignals(False)
+
+    def set_cover_selected_border_color(self, color: str) -> None:
+        normalized = normalize_cover_selected_border_color(color)
+        self._cover_selected_border_color = normalized
+        self._refresh_cover_selected_border_color_preview()
+
     def set_text_preview_chars(self, size: int) -> None:
         index = self.text_preview_chars_combo.findData(int(size))
         if index < 0:
@@ -745,6 +795,10 @@ class SettingsPage(QWidget):
         self.hash_strategy_label.setText(tr("settings.hash_strategy", "Missed hash matching"))
         self.card_spacing_label.setText(tr("settings.card_spacing", "Card spacing"))
         self.topbar_search_font_size_label.setText(tr("settings.topbar_search_font_size", "Search font size"))
+        self.cover_selected_border_title.setText(tr("settings.cover_selected_border", "Cover selected border"))
+        self.cover_selected_border_width_label.setText(tr("settings.cover_selected_border.width", "Width (px)"))
+        self.cover_selected_border_color_label.setText(tr("settings.cover_selected_border.color", "Color"))
+        self.cover_selected_border_color_btn.setText(tr("settings.cover_selected_border.pick", "Pick Color"))
         self.text_preview_chars_label.setText(tr("settings.text_preview_chars", "Text preview chars"))
         self.comic_placeholder_copy_check.setText(
             tr("settings.comic.placeholder_copy", "Comic scan: copy first image as placeholder")
@@ -792,6 +846,7 @@ class SettingsPage(QWidget):
         self._set_font_source_options()
         self._set_comic_thumbnail_worker_options()
         self._update_comic_page_size_enabled()
+        self._refresh_cover_selected_border_color_preview()
         self.set_scan_summary(self._last_summary)
 
     def _set_language_options(self) -> None:
@@ -1028,6 +1083,32 @@ class SettingsPage(QWidget):
     def _emit_text_preview_chars_changed(self) -> None:
         value = int(self.text_preview_chars_combo.currentData() or DEFAULT_TEXT_PREVIEW_CHARS)
         self.text_preview_chars_changed.emit(value)
+
+    def _emit_cover_selected_border_width_changed(self, value: int) -> None:
+        normalized = normalize_cover_selected_border_width(value)
+        self.cover_selected_border_width_changed.emit(normalized)
+
+    def _pick_cover_selected_border_color(self) -> None:
+        current = QColor(self._cover_selected_border_color)
+        selected = QColorDialog.getColor(current, self, tr("settings.cover_selected_border.pick", "Pick Color"))
+        if not selected.isValid():
+            return
+        self._cover_selected_border_color = normalize_cover_selected_border_color(selected.name())
+        self._refresh_cover_selected_border_color_preview()
+        self.cover_selected_border_color_changed.emit(self._cover_selected_border_color)
+
+    def _refresh_cover_selected_border_color_preview(self) -> None:
+        normalized = normalize_cover_selected_border_color(self._cover_selected_border_color)
+        self._cover_selected_border_color = normalized
+        self.cover_selected_border_color_preview.setText(normalized)
+        self.cover_selected_border_color_preview.setStyleSheet(
+            "QLabel {"
+            f"background: {normalized};"
+            "color: #ffffff;"
+            "border: 1px solid #c8d0dc;"
+            "padding: 4px 6px;"
+            "}"
+        )
 
     def _on_reload_fonts_clicked(self) -> None:
         self.reload_fonts_requested.emit()

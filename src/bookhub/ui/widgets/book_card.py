@@ -45,17 +45,24 @@ class BookCardWidget(QFrame):
 
         if self.cover_only:
             self.setProperty("variant", "cover_only")
+            self.setFrameShape(QFrame.NoFrame)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(
-            UI_LAYOUT.card_inner_padding,
-            UI_LAYOUT.card_inner_padding,
-            UI_LAYOUT.card_inner_padding,
-            UI_LAYOUT.card_inner_padding,
-        )
-        layout.setSpacing(6)
+        if self.cover_only:
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(0)
+            cover_width = UI_LAYOUT.card_width
+            cover_height = int(cover_width * UI_LAYOUT.cover_aspect_height / UI_LAYOUT.cover_aspect_width)
+        else:
+            layout.setContentsMargins(
+                UI_LAYOUT.card_inner_padding,
+                UI_LAYOUT.card_inner_padding,
+                UI_LAYOUT.card_inner_padding,
+                UI_LAYOUT.card_inner_padding,
+            )
+            layout.setSpacing(6)
+            cover_width, cover_height = UI_LAYOUT.cover_size()
 
-        cover_width, cover_height = UI_LAYOUT.cover_size()
         self.cover = QLabel("COVER")
         self.cover.setFixedSize(cover_width, cover_height)
         self.cover.setAlignment(Qt.AlignCenter)
