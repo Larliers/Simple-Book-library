@@ -429,7 +429,10 @@ class ComicPage(QWidget):
             comic_id = self._repo.get_comic_int_id(resource.resource_id)
         if comic_id is None:
             return
-        if self._favorite_only:
+        is_favorite = False
+        if hasattr(self._repo, "is_favorite_comic"):
+            is_favorite = bool(self._repo.is_favorite_comic(comic_id))
+        if self._favorite_only or is_favorite:
             self._repo.remove_comic_from_favorites(comic_id)
         else:
             self._repo.add_comic_to_favorites(comic_id)

@@ -9,8 +9,19 @@ ASSETS_DIR = Path(__file__).resolve().parents[3] / "assets"
 ICONS_DIR = ASSETS_DIR / "icons"
 
 
+def asset_path(name: str) -> Path:
+    return ASSETS_DIR / name
+
+
 def icon_path(name: str) -> Path:
     return ICONS_DIR / name
+
+
+def load_asset_icon(name: str) -> QIcon:
+    path = asset_path(name)
+    if path.exists():
+        return QIcon(str(path))
+    return QIcon()
 
 
 def load_icon(name: str) -> QIcon:

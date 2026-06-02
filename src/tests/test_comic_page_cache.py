@@ -95,6 +95,9 @@ class FakeComicRepository:
     def remove_comic_from_favorites(self, comic_id: int) -> None:
         self._favorite_ids.discard(int(comic_id))
 
+    def is_favorite_comic(self, comic_id: int) -> bool:
+        return int(comic_id) in self._favorite_ids
+
     def update_first_thumbnail(self, thumbnail_path: str) -> None:
         if not self._comic_rows:
             return

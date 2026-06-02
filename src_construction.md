@@ -1,6 +1,6 @@
 ﻿# src 结构说明书（精简且完整）
 
-更新时间：2026-05-20
+更新时间：2026-06-02
 
 ## 1. 文档目标
 - 保留字符串式文件路径结构。
@@ -19,6 +19,8 @@ src/
 ├─ sql/
 │  └─ .gitkeep
 ├─ assets/
+│  ├─ app_icon_bookcase.ico
+│  ├─ app_icon_bookcase.svg
 │  └─ icons/
 │     ├─ collections.svg
 │     ├─ favorites.svg
@@ -96,7 +98,7 @@ src/
 ## 3. 每个代码组件的用处介绍
 
 ### 3.1 入口与运行目录
-- `src/main.py`：应用入口；创建 Qt 应用并启动主窗口。
+- `src/main.py`：应用入口；设置应用图标，创建 Qt 应用并启动主窗口。
 - `src/tests/test_rule_engine.py`：Text 规则引擎回归测试（步骤提取、回退链、非法正则容错）。
 - `src/tests/test_scan_pdf_degrade.py`：PDF 后端降级容错回归测试（PyMuPDF 不可用时的聚合 warning 与入库行为）。
 - `src/tests/test_comic_preview_pipeline.py`：漫画快扫占位与后台并行补图回归测试（占位复制、压缩替换、原图删除、超大图降采样、排序顺序）。
@@ -156,7 +158,9 @@ src/
 
 ### 3.9 UI 资源组件（bookhub/ui/resources）
 - `src/bookhub/ui/resources/__init__.py`：资源包入口。
-- `src/bookhub/ui/resources/assets.py`：图标/资源加载。
+- `src/assets/app_icon_bookcase.svg`：书柜主题应用图标源文件。
+- `src/assets/app_icon_bookcase.ico`：Nuitka/Windows exe 使用的应用图标。
+- `src/bookhub/ui/resources/assets.py`：图标/资源加载，支持 icons 子目录与顶层资产图标。
 - `src/bookhub/ui/resources/font_runtime.py`：运行时字体服务；扫描并注册 `src/fonts` 字体文件、解析有效字体与回退策略。
 - `src/bookhub/ui/resources/layout_config.py`：布局尺寸与间距配置；包含 cover-only 选中边框宽度/颜色的归一化与运行时状态。
 - `src/bookhub/ui/resources/styles.py`：全局 QSS 样式；支持基于选中字体动态构建 `font-family` 栈，并支持注入 cover-only 选中边框动态样式参数。
@@ -174,6 +178,7 @@ src/
 
 ## 4. 当前关键实现（简要）
 - 运行依赖：`requirements.txt` 采用固定版本策略；在 Python 3.10.6 环境锁定 `PySide6==6.6.1` 以规避 `libshiboken/signature` 初始化崩溃。
+- 打包准备：新增书柜主题应用图标，`scripts/build_nuitka.ps1` 使用 `Nuitka==4.1.2` 构建 exe，并显式打包 `src/assets`、i18n locales、`fitz` 与 `pymupdf` 原始包目录；PyMuPDF 采用预编译 `.pyd/.dll` 随包携带并关闭 Nuitka excluded-module 运行时阻断；`scripts/`、`src/tests/`、运行数据库、扫描日志、缩略图缓存不进入发行包。
 - 2026-05-29 外部工具链注释：本次仅完成 Hue 离线落地与本地 MCP 集成（`F:\Coding_Dev\UI\hue*`、全局 `mcp.json`），`src/` 代码与目录结构未发生变更。
 - 2026-05-30 外部工具链注释：Hue MCP 相关目录已统一迁移到 `F:\MCP\hue-mcp-server` 与 `F:\MCP\hue`；本次仍不涉及 `src/` 代码变更。
 - 缩略图：WebP 落盘，DB 保存 `file://` URL。

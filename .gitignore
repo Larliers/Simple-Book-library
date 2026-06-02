@@ -6,6 +6,7 @@ env/
 # Python 缓存
 __pycache__/
 *.pyc
+*.pyo
 
 # IDE
 .vscode/
@@ -29,5 +30,14 @@ src/sql/*.sqlite3
 src/sql/*.sqlite3-*
 src/sql/scan_report.json
 img_preview/*
-.img_preview/.gitkeep
+!img_preview/.gitkeep
+
+# Nuitka / 打包产物
+build/
+dist/
+*.build/
+*.dist/
+*.onefile-build/
+*.exe
+nuitka-crash-report.xml
 
