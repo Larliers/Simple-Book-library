@@ -1,0 +1,1 @@
+[2026-06-01 14:42:35] missing_removed | type=comic_folder | title=FREE Procreate Brushes -HAIR BASE & HAIR STRANDS | path=F:\Censored\Censored\BZ\BZ\FREE Procreate Brushes -HAIR BASE & HAIR STRANDS | reason=source folder missing during scan
