@@ -19,6 +19,8 @@ Thumbs.db
 #测试文件夹
 .book_test_using/
 book_test_using/
+Agent-rule/
+.Agent-rule/
 
 Simple-Book-library-Dev_Document/
 .Simple-Book-library-Dev_Document/
