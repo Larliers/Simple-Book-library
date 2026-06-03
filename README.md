@@ -1,4 +1,2 @@
 # Simple-Book-library
-简化的pdf等格式的书籍**管理**软件
-
-特别鸣谢各大AI提供的轮椅帮助
+简化的pdf书籍管理软件；目前支持pdf、eupb，漫画文件夹，和txt书本导入
