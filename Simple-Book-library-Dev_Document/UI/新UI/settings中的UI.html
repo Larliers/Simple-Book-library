@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>System Architect - Settings</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary-fixed-variant": "#004884",
+                        "on-primary-fixed": "#001c39",
+                        "secondary-fixed": "#e3e2e2",
+                        "primary-fixed": "#d4e3ff",
+                        "on-secondary-fixed-variant": "#464747",
+                        "surface-container-low": "#f3f3f3",
+                        "on-primary": "#ffffff",
+                        "on-error-container": "#93000a",
+                        "tertiary": "#2a5e93",
+                        "on-surface": "#1a1c1c",
+                        "inverse-primary": "#a4c9ff",
+                        "on-tertiary": "#ffffff",
+                        "surface-bright": "#f9f9f9",
+                        "on-tertiary-fixed-variant": "#08497c",
+                        "surface-tint": "#005fad",
+                        "on-secondary-container": "#646464",
+                        "inverse-surface": "#2f3131",
+                        "tertiary-fixed": "#d2e4ff",
+                        "error-container": "#ffdad6",
+                        "error": "#ba1a1a",
+                        "on-secondary": "#ffffff",
+                        "inverse-on-surface": "#f1f1f1",
+                        "primary": "#005fac",
+                        "outline-variant": "#c0c7d4",
+                        "surface-container-lowest": "#ffffff",
+                        "primary-container": "#0078d7",
+                        "on-surface-variant": "#414752",
+                        "tertiary-fixed-dim": "#9fcaff",
+                        "secondary-fixed-dim": "#c7c6c6",
+                        "outline": "#717784",
+                        "on-error": "#ffffff",
+                        "on-tertiary-container": "#fdfcff",
+                        "on-tertiary-fixed": "#001d37",
+                        "on-background": "#1a1c1c",
+                        "surface": "#f9f9f9",
+                        "background": "#f9f9f9",
+                        "secondary-container": "#e3e2e2",
+                        "primary-fixed-dim": "#a4c9ff",
+                        "surface-variant": "#e2e2e2",
+                        "on-primary-container": "#000510",
+                        "tertiary-container": "#4677ad",
+                        "surface-container": "#eeeeee",
+                        "surface-container-high": "#e8e8e8",
+                        "surface-container-highest": "#e2e2e2",
+                        "surface-dim": "#dadada",
+                        "secondary": "#5e5e5e",
+                        "on-secondary-fixed": "#1b1c1c"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0px",
+                        "lg": "0px",
+                        "xl": "0px",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Inter"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .acrylic-sidebar {
+            backdrop-filter: blur(20px);
+        }
+        input[type="checkbox"]:checked {
+            background-color: #005fac;
+            border-color: #005fac;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #c0c7d4;
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface overflow-hidden">
+<!-- Top Navigation Bar -->
+<header class="docked full-width top-0 flex justify-between items-center px-6 py-2 w-full bg-slate-50 dark:bg-slate-950 border-b border-slate-200/20 dark:border-slate-800/20">
+<div class="flex items-center gap-4">
+<span class="text-xl font-bold tracking-tighter text-slate-900 dark:text-slate-100">System Architect</span>
+</div>
+<div class="flex items-center gap-6">
+<div class="relative flex items-center">
+<input class="bg-surface-container-highest px-3 py-1 text-sm border-b-2 border-outline focus:border-primary outline-none w-64 transition-colors duration-200" placeholder="Search settings" type="text"/>
+<span class="material-symbols-outlined absolute right-2 text-slate-500 text-lg">search</span>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors">
+<span class="material-symbols-outlined">help_outline</span>
+</button>
+</div>
+</div>
+</header>
+<div class="flex h-[calc(100vh-48px)] overflow-hidden">
+<!-- Sidebar Navigation -->
+<aside class="h-screen w-64 border-r-0 bg-slate-100/80 dark:bg-slate-900/80 backdrop-blur-xl acrylic-sidebar flex flex-col h-full overflow-y-auto">
+<div class="px-6 py-8">
+<div class="flex items-center gap-3 mb-2">
+<div class="w-10 h-10 bg-surface-container-highest flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-2xl">settings</span>
+</div>
+<div>
+<h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Settings</h2>
+<p class="text-xs text-slate-500">Application Preferences</p>
+</div>
+</div>
+</div>
+<nav class="flex-1">
+<!-- Active Tab: General -->
+<a class="relative flex items-center px-4 py-3 text-blue-700 dark:text-blue-400 font-semibold before:absolute before:left-0 before:w-1 before:h-6 before:bg-blue-700 dark:before:bg-blue-400 transition-colors duration-150 ease-in-out scale-100 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined mr-3">settings</span>
+<span class="font-sans text-[0.875rem] tracking-tight">General</span>
+</a>
+<a class="flex items-center px-4 py-3 text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-colors duration-150 ease-in-out scale-100 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined mr-3">library_books</span>
+<span class="font-sans text-[0.875rem] tracking-tight">Library</span>
+</a>
+<a class="flex items-center px-4 py-3 text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-colors duration-150 ease-in-out scale-100 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined mr-3">palette</span>
+<span class="font-sans text-[0.875rem] tracking-tight">Appearance</span>
+</a>
+<a class="flex items-center px-4 py-3 text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-colors duration-150 ease-in-out scale-100 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined mr-3">info</span>
+<span class="font-sans text-[0.875rem] tracking-tight">About</span>
+</a>
+</nav>
+<div class="mt-auto p-4 border-t border-slate-200/20">
+<div class="flex items-center gap-3">
+<img class="w-8 h-8 rounded-full object-cover" data-alt="professional headshot of a software architect in a clean studio setting with soft lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDwyjogPsDN761dhRMId5vfIVzg_OK9lfRSlWWrH1DSHvM-dNh1LyHZZ3AkKQQ_lP8VrhLHCMm7OlynbHimlq-3ssusWllil4H7hHz_kWpgeD1_g_8Pew3U6SeZEJACHPJ_x-pDh1ikarkWb7_9FLNhLP_9MZBiPJ668QGPcO_brMk-o14suF5LIslMV4hB0xEqqRmG6c9-mWlevFDcoEAACPJWWUBzJZ9k8xHs769oDigM6rANWDmSqQ1gFi4wCnDTMYoUwwG4-1w"/>
+<div class="text-xs">
+<p class="font-bold text-slate-900 dark:text-slate-100">Administrator</p>
+<p class="text-slate-500">Connected</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 bg-surface-container-low custom-scrollbar overflow-y-auto">
+<div class="max-w-4xl mx-auto p-12">
+<header class="mb-12">
+<h1 class="text-4xl font-light tracking-tight text-on-surface mb-2">General Settings</h1>
+<div class="h-1 w-12 bg-primary"></div>
+</header>
+<!-- Section: Startup Options -->
+<section class="mb-12">
+<h3 class="text-sm font-bold uppercase tracking-widest text-outline mb-6">Startup Options</h3>
+<div class="space-y-6">
+<div class="flex items-center justify-between p-4 bg-surface-container-lowest border-l-4 border-primary">
+<div>
+<h4 class="font-medium text-on-surface">Launch at system startup</h4>
+<p class="text-sm text-on-surface-variant">Automatically open the book manager when you log in.</p>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-secondary peer-focus:outline-none ring-0 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+</label>
+</div>
+<div class="flex items-center justify-between p-4 bg-surface-container-lowest">
+<div>
+<h4 class="font-medium text-on-surface">Minimize to tray on close</h4>
+<p class="text-sm text-on-surface-variant">Keep the application running in the background when closing the main window.</p>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-secondary peer-focus:outline-none ring-0 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+</label>
+</div>
+</div>
+</section>
+<!-- Section: Language & Region -->
+<section class="mb-12">
+<h3 class="text-sm font-bold uppercase tracking-widest text-outline mb-6">Language &amp; Region</h3>
+<div class="bg-surface-container-lowest p-6">
+<div class="max-w-xs">
+<label class="block text-sm font-medium text-on-surface-variant mb-2">Display language</label>
+<div class="relative">
+<select class="w-full bg-surface-container-highest appearance-none border-b-2 border-outline focus:border-primary px-3 py-2 outline-none text-sm transition-all">
+<option>English (United States)</option>
+<option selected="">Chinese (Simplified)</option>
+<option>Japanese</option>
+<option>German</option>
+<option>French</option>
+</select>
+<span class="material-symbols-outlined absolute right-2 top-2 pointer-events-none text-outline">expand_more</span>
+</div>
+<p class="mt-2 text-xs text-on-surface-variant italic">Restart application to apply language changes.</p>
+</div>
+</div>
+</section>
+<!-- Section: Library Folders -->
+<section class="mb-12">
+<div class="flex items-center justify-between mb-6">
+<h3 class="text-sm font-bold uppercase tracking-widest text-outline">Library Folders</h3>
+<button class="bg-primary text-on-primary px-4 py-1 text-sm font-medium hover:opacity-90 active:scale-95 transition-all flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">add</span>
+                            Add Path
+                        </button>
+</div>
+<div class="space-y-1">
+<div class="flex items-center justify-between bg-surface-container-lowest p-4 group">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-outline">folder_open</span>
+<div>
+<p class="text-sm font-mono text-on-surface">C:\Users\Admin\Documents\My Books</p>
+<p class="text-[10px] uppercase text-outline">Primary Storage</p>
+</div>
+</div>
+<button class="text-error opacity-0 group-hover:opacity-100 p-2 hover:bg-error-container/20 transition-all">
+<span class="material-symbols-outlined">delete_outline</span>
+</button>
+</div>
+<div class="flex items-center justify-between bg-surface-container-lowest p-4 group">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-outline">folder_open</span>
+<div>
+<p class="text-sm font-mono text-on-surface">D:\External\E-Library\Archive</p>
+<p class="text-[10px] uppercase text-outline">External Drive</p>
+</div>
+</div>
+<button class="text-error opacity-0 group-hover:opacity-100 p-2 hover:bg-error-container/20 transition-all">
+<span class="material-symbols-outlined">delete_outline</span>
+</button>
+</div>
+</div>
+<div class="mt-8 flex gap-4">
+<button class="flex items-center gap-2 bg-primary-container text-on-primary-container px-6 py-2 text-sm font-semibold border-b-2 border-primary hover:bg-surface-bright transition-colors">
+<span class="material-symbols-outlined text-lg">sync</span>
+                            Scan folders for new books now
+                        </button>
+<button class="flex items-center gap-2 border border-outline-variant px-6 py-2 text-sm font-semibold text-primary hover:bg-surface-variant/30 transition-colors">
+                            Manage Metadata
+                        </button>
+</div>
+</section>
+<!-- Status Banner (Footer style) -->
+<div class="mt-16 p-6 bg-primary/5 border border-primary/10 flex items-start gap-4">
+<span class="material-symbols-outlined text-primary">help_outline</span>
+<div>
+<p class="text-sm font-semibold text-primary">Cloud Sync Active</p>
+<p class="text-xs text-on-surface-variant">Your library folders are being monitored and synced with the System Architect Cloud. Last sync: 2 minutes ago.</p>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

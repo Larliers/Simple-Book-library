@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "primary-fixed-dim": "#a4c9ff",
+                    "surface-tint": "#005fad",
+                    "surface-bright": "#f9f9f9",
+                    "on-surface-variant": "#414752",
+                    "inverse-primary": "#a4c9ff",
+                    "error": "#ba1a1a",
+                    "tertiary-container": "#4677ad",
+                    "on-tertiary-container": "#fdfcff",
+                    "on-secondary-container": "#646464",
+                    "primary-fixed": "#d4e3ff",
+                    "on-primary-container": "#000510",
+                    "surface-container-highest": "#e2e2e2",
+                    "background": "#f9f9f9",
+                    "surface-container-lowest": "#ffffff",
+                    "secondary-container": "#e3e2e2",
+                    "surface-dim": "#dadada",
+                    "on-primary": "#ffffff",
+                    "on-secondary-fixed": "#1b1c1c",
+                    "on-primary-fixed": "#001c39",
+                    "on-secondary-fixed-variant": "#464747",
+                    "on-error-container": "#93000a",
+                    "on-error": "#ffffff",
+                    "inverse-surface": "#2f3131",
+                    "on-background": "#1a1c1c",
+                    "surface-container-low": "#f3f3f3",
+                    "surface-variant": "#e2e2e2",
+                    "on-surface": "#1a1c1c",
+                    "secondary-fixed": "#e3e2e2",
+                    "tertiary": "#2a5e93",
+                    "secondary": "#5e5e5e",
+                    "primary-container": "#0078d7",
+                    "primary": "#005fac",
+                    "outline-variant": "#c0c7d4",
+                    "tertiary-fixed": "#d2e4ff",
+                    "on-primary-fixed-variant": "#004884",
+                    "surface": "#f9f9f9",
+                    "surface-container-high": "#e8e8e8",
+                    "on-tertiary-fixed": "#001d37",
+                    "inverse-on-surface": "#f1f1f1",
+                    "error-container": "#ffdad6",
+                    "secondary-fixed-dim": "#c7c6c6",
+                    "surface-container": "#eeeeee",
+                    "on-secondary": "#ffffff",
+                    "tertiary-fixed-dim": "#9fcaff",
+                    "outline": "#717784",
+                    "on-tertiary-fixed-variant": "#08497c",
+                    "on-tertiary": "#ffffff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0px",
+                    "lg": "0px",
+                    "xl": "0px",
+                    "full": "9999px"
+            },
+            "fontFamily": {
+                    "headline": ["Inter", "sans-serif"],
+                    "body": ["Inter", "sans-serif"],
+                    "label": ["Inter", "sans-serif"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .acrylic-sidebar {
+            background-color: rgba(238, 238, 238, 0.8);
+            backdrop-filter: blur(20px);
+        }
+        .search-dropdown-acrylic {
+            background-color: rgba(243, 243, 243, 0.95);
+            backdrop-filter: blur(15px);
+        }
+    </style>
+</head>
+<body class="bg-surface font-body text-on-surface antialiased overflow-hidden">
+<div class="flex h-screen w-full">
+<!-- Predicted SideNavBar -->
+<aside class="w-64 h-screen border-r border-outline-variant/20 flex flex-col pt-4 acrylic-sidebar z-20">
+<div class="px-6 mb-8">
+<h1 class="text-primary font-bold text-lg tracking-tight">Collections</h1>
+<p class="text-on-surface-variant text-xs">Local Database</p>
+</div>
+<nav class="flex flex-col">
+<div class="text-slate-600 dark:text-slate-400 py-3 px-6 hover:bg-slate-200/50 transition-all duration-150 flex items-center gap-3">
+<span class="material-symbols-outlined text-[20px]" data-icon="home">home</span>
+<span>Home</span>
+</div>
+<div class="bg-white/50 border-l-4 border-primary text-primary font-semibold py-3 px-6 transition-all duration-150 flex items-center gap-3">
+<span class="material-symbols-outlined text-[20px]" data-icon="menu_book">menu_book</span>
+<span>Bookshelf</span>
+</div>
+<div class="text-slate-600 dark:text-slate-400 py-3 px-6 hover:bg-slate-200/50 transition-all duration-150 flex items-center gap-3">
+<span class="material-symbols-outlined text-[20px]" data-icon="person">person</span>
+<span>Authors</span>
+</div>
+<div class="text-slate-600 dark:text-slate-400 py-3 px-6 hover:bg-slate-200/50 transition-all duration-150 flex items-center gap-3">
+<span class="material-symbols-outlined text-[20px]" data-icon="category">category</span>
+<span>Categories</span>
+</div>
+<div class="text-slate-600 dark:text-slate-400 py-3 px-6 hover:bg-slate-200/50 transition-all duration-150 flex items-center gap-3">
+<span class="material-symbols-outlined text-[20px]" data-icon="archive">archive</span>
+<span>Archive</span>
+</div>
+</nav>
+</aside>
+<!-- Main Workspace -->
+<main class="flex-1 flex flex-col relative">
+<!-- Predicted TopNavBar -->
+<header class="w-full h-12 bg-[#f9f9f9] flex items-center px-6 space-x-4 z-30 font-['Inter'] antialiased tracking-tight">
+<div class="text-lg font-bold text-slate-900 mr-8">Library Architect</div>
+<div class="flex-1 flex items-center relative">
+<!-- Search Input Structure -->
+<div class="relative w-full max-w-md">
+<div class="flex items-center bg-surface-container-highest px-3 h-8 group focus-within:ring-1 ring-primary">
+<span class="material-symbols-outlined text-outline text-[18px] mr-2">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-sm w-full p-0 placeholder-outline" placeholder="搜索库..." type="text" value="Arch"/>
+</div>
+<!-- Search Dropdown - The Focus of the Task -->
+<div class="absolute top-8 left-0 w-full bg-surface-container-low border border-outline-variant/30 shadow-2xl z-50 search-dropdown-acrylic">
+<!-- Section: History -->
+<div class="py-2 border-b border-outline-variant/10">
+<div class="px-4 py-1 text-[10px] font-bold text-outline uppercase tracking-wider">搜索历史</div>
+<div class="flex items-center px-4 py-2 hover:bg-primary/10 cursor-pointer group">
+<span class="material-symbols-outlined text-[16px] text-outline mr-3">history</span>
+<span class="text-sm">包豪斯设计理念</span>
+</div>
+</div>
+<!-- Section: Books -->
+<div class="py-2 border-b border-outline-variant/10">
+<div class="px-4 py-1 text-[10px] font-bold text-outline uppercase tracking-wider">图书</div>
+<div class="flex items-center px-4 py-2 hover:bg-primary/10 cursor-pointer">
+<span class="material-symbols-outlined text-[18px] text-primary mr-3" data-icon="architecture">architecture</span>
+<div class="flex flex-col">
+<span class="text-sm font-medium">Architectural Patterns</span>
+<span class="text-[11px] text-on-surface-variant">建筑模式语言</span>
+</div>
+</div>
+<div class="flex items-center px-4 py-2 hover:bg-primary/10 cursor-pointer">
+<span class="material-symbols-outlined text-[18px] text-primary mr-3" data-icon="grid_view">grid_view</span>
+<div class="flex flex-col">
+<span class="text-sm font-medium">The Grid System</span>
+<span class="text-[11px] text-on-surface-variant">平面设计中的网格系统</span>
+</div>
+</div>
+</div>
+<!-- Section: Authors -->
+<div class="py-2">
+<div class="px-4 py-1 text-[10px] font-bold text-outline uppercase tracking-wider">作者</div>
+<div class="flex items-center px-4 py-2 hover:bg-primary/10 cursor-pointer">
+<span class="material-symbols-outlined text-[18px] text-tertiary mr-3" data-icon="person">person</span>
+<div class="flex flex-col">
+<span class="text-sm font-medium">Elena Rostova</span>
+<span class="text-[11px] text-on-surface-variant">12 本著作 · 现代主义专家</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="flex items-center space-x-2">
+<button class="w-8 h-8 flex items-center justify-center hover:bg-slate-200/50 transition-colors">
+<span class="material-symbols-outlined text-[20px]">notifications</span>
+</button>
+<button class="w-8 h-8 flex items-center justify-center hover:bg-slate-200/50 transition-colors">
+<span class="material-symbols-outlined text-[20px]">account_circle</span>
+</button>
+</div>
+</header>
+<!-- Background Content (Blurred/Dimmed) -->
+<div class="flex-1 p-8 overflow-y-auto filter blur-[2px] opacity-40 bg-surface">
+<div class="flex justify-between items-end mb-12">
+<div>
+<h2 class="text-3xl font-extrabold tracking-tight mb-2">我的书架</h2>
+<p class="text-on-surface-variant">共 128 本图书</p>
+</div>
+<button class="bg-primary text-white px-6 py-2 font-medium flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                        添加新书
+                    </button>
+</div>
+<!-- Library Grid (Bento Style) -->
+<div class="grid grid-cols-12 gap-6">
+<div class="col-span-8 bg-surface-container-lowest p-6 border border-outline-variant/10">
+<div class="flex justify-between items-center mb-6">
+<h3 class="font-bold text-lg">最近阅读</h3>
+<span class="text-primary text-sm cursor-pointer hover:underline">查看全部</span>
+</div>
+<div class="grid grid-cols-4 gap-4">
+<div class="aspect-[3/4] bg-surface-container relative group overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="minimalist book cover with architectural lines and elegant typography on a clean background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDpXVsIaBL071t2no_Q8CyybyprtSYWoqJA-d9EDHROnorGGi5-jeGPKFtL65FGgw4XLCLC1XjkDnoZ688EXJTjdphVY-nhvB2Y0jePhctQsZj9NPUB6eJI_j9Onh4gWKRC0TkDhGgYIuFYZhPqXyViH8zl7CjqHN6vhBNbceODdp_k9BWpk4xTIXP4fZdCEKym0OEYxxF4JfaeWB5RptgY6S2V-shho7SUMvZ_Zm5XqzR0AAwhzLNtQIh-wwex5jUiL60TMmaJs8A"/>
+<div class="absolute inset-0 bg-black/40 flex items-end p-3">
+<span class="text-white text-[10px] font-bold">85% 已读</span>
+</div>
+</div>
+<div class="aspect-[3/4] bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="vintage book cover with classical design elements and aged paper texture" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD7GeDIXAJWX6e8oNEmYcbcqKROs5DeQK_REi204Rft-GnWJQkvi1PJEDwjnrNQEIVOytxfuq_rFEEDYe_vzI18M2M6fw9_xE5crVKKCFsSdHgca2VyD24SM6Xk-0fCrRGnmdSP3kBW14PboDQw26JOD9v4hW_0S3aSHuoWcM-Yz2ccKhebrDvex5IrlC3mD_WimrfWgKakSVH-K0hJjksw3dMR6YpTcuYPFjgsI1fdoRDzPqd-2HToXv7opUPJNSXQjh5n7PPyDNE"/>
+</div>
+<div class="aspect-[3/4] bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="modern art book cover with bold abstract shapes and vibrant colors" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCnBiEvcdF9C48PyOVrAZXhoVA7QTcEY5Dc3AQ8rhYz6xLVV1RTrZg6F1IYYC5n_YwtIJvyzcV3G3C4fp4alSPk9ODtQoynq5h5px13Q_fskoheI_GqZGkqq568G-8YGrPmTiJAwBjsMEX1Q0_p90fr6GWkLyi8h3Jz9TVghYRTL83zVU2sgoUV85WMZlDkcf6ke8xtuGcoEdEBW5w4kd3tqkhEZ7rNyzmfLt0ghifLZZqDtvXzpPAUBfb27dBsGSphU7X2LpTQvr8"/>
+</div>
+<div class="aspect-[3/4] bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="scientific journal cover with technical diagrams and clean white background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC2Dc1aI2C6WhYaMUPB0kToSycOT-YlSqYQbjR6CdPexCd70MxjijD7PZSbXwZ-yxJecfwggpSzo3lLVBHrccsm2ofLJ-H0Jq4N-BzWlrbFLviC2QKBwthOArvzL1oLpXitIdXn5Vwg4C7l9Pv7-EkIZQpTuno8oAypM_tU4FU18J5UHz7FtXaMgotnoMk-JqAazYhHjp21LlEiA9Uyin-0fGs7A9SJga2DuaF_kv6fJZmno4MwHQ56fmpiljRRAx5Fo-VaTwJsjRQ"/>
+</div>
+</div>
+</div>
+<div class="col-span-4 space-y-6">
+<div class="bg-primary text-white p-6">
+<h3 class="font-bold mb-2">阅读挑战</h3>
+<p class="text-xs opacity-80 mb-4">本月目标：阅读 4 本书</p>
+<div class="w-full bg-white/20 h-1 mb-2">
+<div class="bg-white h-full w-[75%]"></div>
+</div>
+<div class="text-right text-[10px] font-bold tracking-widest uppercase">已完成 3/4</div>
+</div>
+<div class="bg-surface-container-low p-6">
+<h3 class="font-bold mb-4">收藏夹</h3>
+<div class="space-y-4">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 bg-tertiary-container flex items-center justify-center text-white">
+<span class="material-symbols-outlined">palette</span>
+</div>
+<div>
+<div class="text-sm font-bold">设计美学</div>
+<div class="text-[10px] text-on-surface-variant">24 本图书</div>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 bg-primary-container flex items-center justify-center text-white">
+<span class="material-symbols-outlined">terminal</span>
+</div>
+<div>
+<div class="text-sm font-bold">计算机科学</div>
+<div class="text-[10px] text-on-surface-variant">42 本图书</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="col-span-12">
+<div class="bg-surface-container-lowest p-6 border border-outline-variant/10">
+<h3 class="font-bold text-lg mb-6">按类别浏览</h3>
+<div class="flex gap-4">
+<span class="px-4 py-2 bg-surface-container text-sm font-medium hover:bg-primary hover:text-white transition-colors cursor-pointer">小说</span>
+<span class="px-4 py-2 bg-primary text-white text-sm font-medium cursor-pointer">非虚构</span>
+<span class="px-4 py-2 bg-surface-container text-sm font-medium hover:bg-primary hover:text-white transition-colors cursor-pointer">传记</span>
+<span class="px-4 py-2 bg-surface-container text-sm font-medium hover:bg-primary hover:text-white transition-colors cursor-pointer">技术</span>
+<span class="px-4 py-2 bg-surface-container text-sm font-medium hover:bg-primary hover:text-white transition-colors cursor-pointer">艺术</span>
+<span class="px-4 py-2 bg-surface-container text-sm font-medium hover:bg-primary hover:text-white transition-colors cursor-pointer">历史</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Overlay logic: Dimming active -->
+<div class="absolute inset-0 bg-on-surface/5 pointer-events-none z-40"></div>
+</main>
+</div>
+</body></html>

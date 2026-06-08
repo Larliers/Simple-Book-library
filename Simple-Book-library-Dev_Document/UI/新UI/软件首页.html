@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Book Manager - Windows Desktop Edition</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-container-low": "#f3f3f3",
+                    "on-tertiary": "#ffffff",
+                    "secondary-fixed-dim": "#c7c6c6",
+                    "background": "#f9f9f9",
+                    "tertiary-fixed-dim": "#9fcaff",
+                    "on-primary-fixed-variant": "#004884",
+                    "surface-container-lowest": "#ffffff",
+                    "on-background": "#1a1c1c",
+                    "on-tertiary-container": "#fdfcff",
+                    "secondary-fixed": "#e3e2e2",
+                    "on-error": "#ffffff",
+                    "on-primary-container": "#000510",
+                    "on-secondary-container": "#646464",
+                    "inverse-primary": "#a4c9ff",
+                    "surface-container-high": "#e8e8e8",
+                    "secondary": "#5e5e5e",
+                    "outline-variant": "#c0c7d4",
+                    "error": "#ba1a1a",
+                    "tertiary-fixed": "#d2e4ff",
+                    "on-surface": "#1a1c1c",
+                    "inverse-on-surface": "#f1f1f1",
+                    "primary": "#005fac",
+                    "on-secondary": "#ffffff",
+                    "tertiary-container": "#4677ad",
+                    "error-container": "#ffdad6",
+                    "on-primary-fixed": "#001c39",
+                    "surface-dim": "#dadada",
+                    "on-surface-variant": "#414752",
+                    "on-error-container": "#93000a",
+                    "primary-fixed-dim": "#a4c9ff",
+                    "surface": "#f9f9f9",
+                    "surface-tint": "#005fad",
+                    "surface-container-highest": "#e2e2e2",
+                    "on-secondary-fixed": "#1b1c1c",
+                    "on-secondary-fixed-variant": "#464747",
+                    "on-tertiary-fixed-variant": "#08497c",
+                    "primary-container": "#0078d7",
+                    "outline": "#717784",
+                    "primary-fixed": "#d4e3ff",
+                    "surface-bright": "#f9f9f9",
+                    "surface-container": "#eeeeee",
+                    "surface-variant": "#e2e2e2",
+                    "inverse-surface": "#2f3131",
+                    "secondary-container": "#e3e2e2",
+                    "on-tertiary-fixed": "#001d37",
+                    "on-primary": "#ffffff",
+                    "tertiary": "#2a5e93"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0px",
+                    "lg": "0px",
+                    "xl": "0px",
+                    "full": "9999px"
+            },
+            "fontFamily": {
+                    "headline": ["Inter", "sans-serif"],
+                    "body": ["Inter", "sans-serif"],
+                    "label": ["Inter", "sans-serif"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+            font-size: 20px;
+        }
+        .acrylic {
+            backdrop-filter: blur(20px);
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f9f9f9;
+        }
+        /* Custom scrollbar for Win10 feel */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+    </style>
+</head>
+<body class="text-on-surface antialiased overflow-hidden">
+<div class="flex h-screen w-full">
+<!-- SideNavBar Shared Component Implementation -->
+<aside class="flex flex-col h-full h-screen w-64 border-r-0 bg-slate-100/80 dark:bg-slate-900/80 backdrop-blur-xl font-sans antialiased text-sm font-medium">
+<div class="text-lg font-bold text-slate-900 dark:text-white px-4 py-6" style="">
+                Bookshelf
+            </div>
+<nav class="flex-1 overflow-y-auto px-0">
+<!-- Navigation Tabs -->
+<div class="space-y-0">
+<a class="flex items-center px-4 py-3 border-l-4 border-blue-600 bg-white/50 dark:bg-white/10 text-blue-700 dark:text-blue-400 transition-all" href="#" style="">
+<span class="material-symbols-outlined mr-3" data-icon="library_books" style="">library_books</span>
+<span class="" style="">Library</span>
+</a>
+<a class="flex items-center px-4 py-3 text-slate-600 dark:text-slate-400 border-l-4 border-transparent hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-colors" href="#" style="">
+<span class="material-symbols-outlined mr-3" data-icon="bookmarks" style="">bookmarks</span>
+<span class="" style="">Collections</span>
+</a>
+<a class="flex items-center px-4 py-3 text-slate-600 dark:text-slate-400 border-l-4 border-transparent hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-colors" href="#" style="">
+<span class="material-symbols-outlined mr-3" data-icon="auto_stories" style="">auto_stories</span>
+<span class="" style="">Reading Now</span>
+</a>
+<a class="flex items-center px-4 py-3 text-slate-600 dark:text-slate-400 border-l-4 border-transparent hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-colors" href="#" style="">
+<span class="material-symbols-outlined mr-3" data-icon="star" style="">star</span>
+<span class="" style="">Favorites</span>
+</a>
+<a class="flex items-center px-4 py-3 text-slate-600 dark:text-slate-400 border-l-4 border-transparent hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-colors" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="build">build</span>
+<span>工具</span>
+</a><a class="flex items-center px-4 py-3 text-slate-600 dark:text-slate-400 border-l-4 border-transparent hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-colors" href="#" style="">
+<span class="material-symbols-outlined mr-3" data-icon="delete" style="">delete</span>
+<span class="" style="">Trash</span>
+</a>
+</div>
+<div class="mt-8 px-4">
+<button class="w-full bg-primary-container text-on-primary py-2 px-4 text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90" style="">
+                        Import Books
+                    </button>
+</div>
+</nav>
+<div class="p-4 border-t border-slate-200/50 dark:border-slate-800/50">
+<a class="flex items-center text-slate-600 dark:text-slate-400 hover:text-blue-600 transition-colors" href="#" style="">
+<span class="material-symbols-outlined mr-3" data-icon="settings" style="">settings</span>
+<span class="" style="">Settings</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col min-w-0 bg-surface">
+<!-- TopNavBar Shared Component Implementation -->
+<header class="flex items-center justify-between px-6 w-full h-14 bg-white/30 dark:bg-black/30 backdrop-blur-md border-b border-slate-200/50 dark:border-slate-800/50">
+<div class="flex items-center flex-1 max-w-xl">
+<div class="relative w-full">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm" style="">search</span>
+<input class="w-full bg-surface-container-highest/50 border-b-2 border-transparent focus:border-primary px-10 py-1 text-sm focus:outline-none transition-all" placeholder="Search library..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-xs font-semibold uppercase tracking-wider text-blue-700 hover:text-blue-500 transition-colors" style="">Import</button>
+<button class="bg-primary px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-on-primary hover:opacity-90 transition-all" style="">New List</button>
+<div class="flex items-center gap-2 ml-4">
+<button class="p-1 text-on-surface-variant hover:text-on-surface transition-colors" style="">
+<span class="material-symbols-outlined" data-icon="refresh" style="">refresh</span>
+</button>
+<button class="p-1 text-on-surface-variant hover:text-on-surface transition-colors" style="">
+<span class="material-symbols-outlined" data-icon="more_vert" style="">more_vert</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Library Content Well -->
+<section class="flex-1 overflow-y-auto p-8 relative">
+<div class="flex justify-between items-end mb-10">
+<div>
+<h1 class="text-3xl font-extrabold tracking-tight text-on-surface" style="">Library</h1>
+<p class="text-on-surface-variant text-sm mt-1" style="">128 books in your local collection</p>
+</div>
+<div class="flex gap-2">
+<button class="p-2 bg-surface-container-lowest border border-outline-variant/10 text-on-surface hover:bg-surface-bright transition-colors" style="">
+<span class="material-symbols-outlined" style="">grid_view</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:text-on-surface transition-colors" style="">
+<span class="material-symbols-outlined" style="">list</span>
+</button>
+</div>
+</div>
+<!-- Book Grid -->
+<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-8">
+<!-- Book Card 1 -->
+<div class="group cursor-pointer">
+<div class="relative aspect-[2/3] bg-surface-container shadow-sm group-hover:shadow-md transition-all duration-300 overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="front cover of a minimalist book design with abstract geometric shapes in deep navy and gold metallic accents" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA2QOV0-1I1z2D3JLNbOP_f0OKTYu52GeJTlQkWKeGNjRHNcOwQDK9XHD01f060-_4y-2sJKaaEWmTQnrvd2u6FdtmbkEmayz0Tee6LzHu_Vvr38DUeAdCTsXOZZlRDl9Ouwj9Ifi0ABCrYb1CeAhj1F6FZDDaa95cyGIQle5DfYjpq5QRgQ81amBGl1lkmLrZ6rLc5uxg-_tEmr7XBsjMTODAngDruZheJ_J_30zDeMc8qsGYc5-lklZHeUKfDB1v1UQG3H9DIOaw" style=""/>
+<div class="absolute top-2 right-2 flex flex-col gap-1">
+<span class="bg-primary/90 text-on-primary text-[10px] px-2 py-0.5 font-bold uppercase tracking-tighter" style="">Reading</span>
+</div>
+</div>
+<div class="mt-4">
+<h3 class="text-sm font-bold leading-tight group-hover:text-primary transition-colors truncate" style="">Architectural Patterns</h3>
+<p class="text-xs text-on-surface-variant mt-1" style="">Elena Rostova</p>
+<div class="flex mt-2 gap-1 overflow-hidden">
+<span class="text-[9px] border border-outline-variant/20 px-1.5 py-0.5 text-on-surface-variant" style="">Design</span>
+<span class="text-[9px] border border-outline-variant/20 px-1.5 py-0.5 text-on-surface-variant" style="">2024</span>
+</div>
+</div>
+</div>
+<!-- Book Card 2 -->
+<div class="group cursor-pointer">
+<div class="relative aspect-[2/3] bg-surface-container shadow-sm group-hover:shadow-md transition-all duration-300 overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="thick classic novel hardcover with vintage texture and embossed typography on an oak library table" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCAQLVe898u-ykZQRn1N4Ot_1LaUv8g7YtK82LVfMzSsk1xQ9sYsmpRvkDDFfrPCj9wDyaLig0V0rvIeqO96QY47Zu0Iq9Edhc-yPodcfc-n1PV9pgdFSn2Md1vB-ZJHJAhWexwzTfSRAXtkE81YvgvQzUfJJxceRuFOuOCVVBVav-4E211J7nwCvZNxspbTGrjWWDm97iJ-9hh4vzDAvyIjD1UldTGghP4D1KA2LsJsqm77rpTR_SoWc0Xntn8mwuWBJAH3SjMqM0" style=""/>
+<div class="absolute top-2 right-2 flex flex-col gap-1">
+<span class="bg-secondary/80 text-on-secondary text-[10px] px-2 py-0.5 font-bold uppercase tracking-tighter" style="">Finished</span>
+</div>
+</div>
+<div class="mt-4">
+<h3 class="text-sm font-bold leading-tight group-hover:text-primary transition-colors truncate" style="">The Grid System</h3>
+<p class="text-xs text-on-surface-variant mt-1" style="">Josef Müller-Brockmann</p>
+<div class="flex mt-2 gap-1 overflow-hidden">
+<span class="text-[9px] border border-outline-variant/20 px-1.5 py-0.5 text-on-surface-variant" style="">Classic</span>
+<span class="text-[9px] border border-outline-variant/20 px-1.5 py-0.5 text-on-surface-variant" style="">Theory</span>
+</div>
+</div>
+</div>
+<!-- Book Card 3 (Active State for Add Tag Popup) -->
+<div class="group cursor-pointer relative">
+<div class="relative aspect-[2/3] bg-surface-container shadow-sm group-hover:shadow-md transition-all duration-300 overflow-hidden ring-2 ring-primary">
+<img class="w-full h-full object-cover" data-alt="modern sci-fi book cover featuring a glowing neon portal in a dark cyberpunk city alleyway at night" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD6RyO6O_QdUcvBO1zHrFEH45bSgn1C2JPtJGS2keR44lt4q3ii7V1l7YJnBRJYN2D-DkZ_xi57uiCXP6VGHGvv1QCR8R6UEKrgbBH6LT135-hg_W278WxeXZrdzHP74_UQy9Zydyqytm4_QwZEvwylqvJ6RfOQEo1e2-G74QFaCMmErHPsHCBOjUqpwlfen-vBBUrJrc53CZAEumNjvQJs01kbwhu6OPvUMT8YzcI8xRR52RJzT3MTVPglakjSCGhFCWaZdqbr5uA" style=""/>
+<div class="absolute top-2 right-2 flex flex-col gap-1">
+<span class="bg-primary/90 text-on-primary text-[10px] px-2 py-0.5 font-bold uppercase tracking-tighter" style="">Reading</span>
+</div>
+</div>
+<div class="mt-4">
+<h3 class="text-sm font-bold leading-tight truncate group-hover:text-primary" style="">Neural Networks</h3>
+<p class="text-xs text-on-surface-variant mt-1" style="">Dr. Aris Thorne</p>
+</div>
+<!-- Add Tag Popup (Win10 Styled Context Menu) -->
+</div>
+<!-- Book Card 4 -->
+<div class="group cursor-pointer">
+<div class="relative aspect-[2/3] bg-surface-container shadow-sm group-hover:shadow-md transition-all duration-300 overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="minimalist white book cover with a single delicate wildflower pressed between pages, soft natural morning light" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCvE46eKCjtZs_4S5Hxmol9_6agZmAdAXTbZWT6YAzY-inpzY--eF0V3UgYx8Mys1C7aJM4pLfMzBQyWPdC2QmM6ivheV1-1YtNNwtH9trnH3E6KPQd59ls7uhQbXONB5ISzZy4H0AboEB7y6iz1JuGB44NU3Y86wgALCN6rZZ9jRbKebRyyNcrEUkkg-Cq9qn2885ZDouPi-zOGPom-yGT83PPiIYVsHqg9cV9CFy9FmEp9RUTnPHaSbUrDPUyaI9h8sj7HnHJL7A" style=""/>
+</div>
+<div class="mt-4">
+<h3 class="text-sm font-bold leading-tight group-hover:text-primary transition-colors truncate" style="">Minimalism in Life</h3>
+<p class="text-xs text-on-surface-variant mt-1" style="">Sato Kenji</p>
+<div class="flex mt-2 gap-1 overflow-hidden">
+<span class="text-[9px] border border-outline-variant/20 px-1.5 py-0.5 text-on-surface-variant" style="">Unread</span>
+</div>
+</div>
+</div>
+<!-- Book Card 5 -->
+<div class="group cursor-pointer">
+<div class="relative aspect-[2/3] bg-surface-container shadow-sm group-hover:shadow-md transition-all duration-300 overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="old leather bound book with gold gilded edges resting on a velvet cushion in a dimly lit library" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD-QWLnG0wjM6hNza5HriNgSHenG9ExrRloToBx6C7-1hEA6GRZp-vVpS8WT4WtSUHNHRdmTgD-x4REkFzm9DFUmLBmpLMx0WKpKgDG8kkhmvFPsQNSE3VPD1WJRkCJVXQJyCpcDbLKAkx6V8bfzRFJJiFnKk-9FUG_fE3seIwcnD9xqrk9yDez4aSkzRxcv_w3neqWTMGue_s6PFPJkD5zx2iyTW_JSVqbWfxBgaH6GA6E9h2df6DhzObvksBkcl2gBIS42BXdDb4" style=""/>
+<div class="absolute top-2 right-2 flex flex-col gap-1">
+<span class="bg-primary/90 text-on-primary text-[10px] px-2 py-0.5 font-bold uppercase tracking-tighter" style="">Reading</span>
+</div>
+</div>
+<div class="mt-4">
+<h3 class="text-sm font-bold leading-tight group-hover:text-primary transition-colors truncate" style="">Legacy Systems</h3>
+<p class="text-xs text-on-surface-variant mt-1" style="">Markus Hoffman</p>
+</div>
+</div>
+<!-- Book Card 6 -->
+<div class="group cursor-pointer">
+<div class="relative aspect-[2/3] bg-surface-container shadow-sm group-hover:shadow-md transition-all duration-300 overflow-hidden">
+<div class="w-full h-full flex items-center justify-center bg-surface-container-high border-2 border-dashed border-outline-variant/50">
+<div class="text-center">
+<span class="material-symbols-outlined text-outline text-4xl" data-icon="add_circle" style="">add_circle</span>
+<p class="text-[10px] font-bold uppercase tracking-widest mt-2 text-on-surface-variant" style="">Add New Book</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+</div>
+</body></html>
