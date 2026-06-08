@@ -17,9 +17,6 @@ __pycache__/
 Thumbs.db
 
 #测试文件夹
-.book_test_using/
-book_test_using/
-Agent-rule/
 .Agent-rule/
 .script/
 
