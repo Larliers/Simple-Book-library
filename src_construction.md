@@ -1,6 +1,6 @@
 ﻿# src 结构说明书（精简且完整）
 
-更新时间：2026-06-02
+更新时间：2026-06-10
 
 ## 1. 文档目标
 - 保留字符串式文件路径结构。
@@ -51,6 +51,7 @@ src/
    │  │  ├─ rule_engine.py
    │  │  ├─ rule_examples.py
    │  │  ├─ rule_models.py
+   │  │  ├─ rule_preview.py
    │  │  ├─ source_resolver.py
    │  │  └─ step_handlers.py
    │  ├─ thumbnail_tasks.py
@@ -124,6 +125,7 @@ src/
 - `src/bookhub/library/text_rules/rule_engine.py`：规则执行器与规则链回退（`apply_rule`、`apply_rule_chain`）。
 - `src/bookhub/library/text_rules/source_resolver.py`：规则 source 解析（`filename`/`stem`/`txt_first_line`/`txt_head_text` 等）。
 - `src/bookhub/library/text_rules/step_handlers.py`：规则步骤处理（trim、split、括号提取、regex_extract 等）。
+- `src/bookhub/library/text_rules/rule_preview.py`：Text 规则预览辅助；查找首个 TXT 样本、读取首行/开头文本并复用规则链执行预览。
 - `src/bookhub/library/text_rules/rule_examples.py`：默认规则链示例。
 - `src/bookhub/library/worker.py`：扫描任务线程包装；汇总多 scope 统计与 warning。
 - `src/bookhub/library/thumbnail_tasks.py`：缩略图清理与重建任务实现。
@@ -140,7 +142,7 @@ src/
 - `src/bookhub/ui/dialogs/add_tag_dialog.py`：添加标签对话框。
 - `src/bookhub/ui/dialogs/add_to_collection_dialog.py`：旧版加入书单对话框（兼容保留）。
 - `src/bookhub/ui/dialogs/quick_add_dialog.py`：快速添加标签/加入书单弹窗。
-- `src/bookhub/ui/dialogs/text_rule_dialog.py`：Text Novel 规则步骤编辑对话框。
+- `src/bookhub/ui/dialogs/text_rule_dialog.py`：Text Novel 规则步骤编辑对话框；右侧列支持当前字段规则链对 TXT 样本的实时预览，读取长度跟随 Settings 文本预览长度。
 - `src/bookhub/ui/dialogs/text_rule_help_dialog.py`：Text Rules 内置使用文档窗口。
 
 ### 3.7 UI 数据模型（bookhub/ui/models）
@@ -189,7 +191,7 @@ src/
 - Settings 导航：仅保留 General 与 Error logs 两项；移除顶部搜索框、Shortcuts、Manage Metadata 占位区域。
 - Text Novel：新增独立侧栏入口与独立列表页；TXT 不进入 Library 主列表；右侧详情栏可展示 `info_text` 预览。
 - 详情面板语义统一：`info_text` 仅作为“文本预览”渲染一次；“所属书单”仅在 `book` 资源类型显示，Comic/Text Novel 不再复用该字段。
-- Text 规则：规则弹窗新增“使用文档”入口、三步引导区与一键模板（标题/作者/兜底）；source 与 step type 显示文案与内部 code 分离（`userData` 持久化 code），在不改 JSON 协议前提下增强可读性。
+- Text 规则：规则弹窗新增“使用文档”入口、三步引导区、一键模板（标题/作者/兜底）与当前字段规则链预览；source 与 step type 显示文案与内部 code 分离（`userData` 持久化 code），在不改 JSON 协议前提下增强可读性。
 - Text 规则 i18n：补齐规则弹窗内参数字段名、source/step 文案、规则/步骤列表格式与帮助文档文案键，减少硬编码英文暴露。
 - i18n 治理基线：新增 `scripts/i18n_hardcoded_scan.py`，用于扫描 UI 常见硬编码文案候选并输出清单（仅报告，不阻断）。
 - 扫描容错：当 PyMuPDF（`fitz`）不可用时，PDF 扫描自动降级为“仅入库+标题兜底”，跳过元数据/缩略图并输出单条聚合 warning，避免错误风暴弹窗。

@@ -1022,7 +1022,8 @@ class SettingsPage(QWidget):
 
     def _open_text_rule_dialog(self, target: str) -> None:
         existing_rules = self._text_rules_by_path.get(target, "{}")
-        dialog = TextRuleDialog(target, existing_rules, self)
+        preview_chars = int(self.text_preview_chars_combo.currentData() or DEFAULT_TEXT_PREVIEW_CHARS)
+        dialog = TextRuleDialog(target, existing_rules, self, preview_chars=preview_chars)
         if dialog.exec() != QDialog.Accepted:
             return
         updated_json = dialog.rules_json()

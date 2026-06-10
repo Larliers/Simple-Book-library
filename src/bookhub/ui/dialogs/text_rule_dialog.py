@@ -11,17 +11,26 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
     QPushButton,
     QSpinBox,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from bookhub.i18n import tr
+from bookhub.library.models import DEFAULT_TEXT_PREVIEW_CHARS
 from bookhub.library.text_rules import ImportRule, RuleStep, dump_rules_to_json, load_rules_from_json
+from bookhub.library.text_rules.rule_preview import (
+    build_preview_context,
+    find_first_txt_file,
+    preview_rule_chain,
+    read_txt_preview_sample,
+)
 from bookhub.ui.dialogs.text_rule_help_dialog import TextRuleHelpDialog
 
 
@@ -42,14 +51,21 @@ class TextRuleDialog(QDialog):
         "regex_extract",
     )
 
-    def __init__(self, root_path: str, rules_json: str, parent=None) -> None:
+    def __init__(
+        self,
+        root_path: str,
+        rules_json: str,
+        parent=None,
+        preview_chars: int = DEFAULT_TEXT_PREVIEW_CHARS,
+    ) -> None:
         super().__init__(parent)
         self._root_path = root_path
+        self._preview_chars = max(100, int(preview_chars or DEFAULT_TEXT_PREVIEW_CHARS))
         self._rules_by_field: dict[str, list[ImportRule]] = {field: [] for field in self.FIELDS}
         self._load_rules(rules_json)
 
         self.setWindowTitle(tr("text.rules.title", "Text Rules"))
-        self.resize(1100, 700)
+        self.resize(1320, 820)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
@@ -133,6 +149,9 @@ class TextRuleDialog(QDialog):
 
         editor_col = QVBoxLayout()
         content.addLayout(editor_col, 2)
+
+        preview_col = QVBoxLayout()
+        content.addLayout(preview_col, 1)
 
         rule_form = QFormLayout()
         self.source_combo = QComboBox()
@@ -230,6 +249,57 @@ class TextRuleDialog(QDialog):
         step_actions.addWidget(self.move_step_down_btn)
         editor_col.addLayout(step_actions)
 
+        preview_box = QFrame()
+        preview_box.setObjectName("PageSection")
+        preview_layout = QVBoxLayout(preview_box)
+        preview_layout.setContentsMargins(10, 10, 10, 10)
+        preview_layout.setSpacing(6)
+
+        preview_header = QHBoxLayout()
+        preview_title = QLabel(tr("text.rules.preview.title", "Preview"))
+        preview_title.setObjectName("PageSubtitle")
+        preview_header.addWidget(preview_title)
+        preview_header.addStretch(1)
+        self.preview_auto_btn = QPushButton(tr("text.rules.preview.auto_sample", "Auto sample"))
+        self.preview_auto_btn.setObjectName("GhostButton")
+        self.preview_auto_btn.clicked.connect(self._load_auto_preview_sample)
+        preview_header.addWidget(self.preview_auto_btn)
+        self.preview_refresh_btn = QPushButton(tr("text.rules.preview.refresh", "Refresh preview"))
+        self.preview_refresh_btn.setObjectName("GhostButton")
+        self.preview_refresh_btn.clicked.connect(self._refresh_preview)
+        preview_header.addWidget(self.preview_refresh_btn)
+        preview_layout.addLayout(preview_header)
+
+        preview_form = QFormLayout()
+        self.preview_path_edit = QLineEdit()
+        self.preview_path_edit.setPlaceholderText(tr("text.rules.preview.path_placeholder", "TXT file path"))
+        self.preview_path_edit.textChanged.connect(self._refresh_preview)
+        preview_form.addRow(tr("text.rules.preview.path", "Sample file"), self.preview_path_edit)
+
+        self.preview_first_line_edit = QLineEdit()
+        self.preview_first_line_edit.setPlaceholderText(
+            tr("text.rules.preview.first_line_placeholder", "TXT first line")
+        )
+        self.preview_first_line_edit.textChanged.connect(self._refresh_preview)
+        preview_form.addRow(tr("text.rules.preview.first_line", "First line"), self.preview_first_line_edit)
+
+        self.preview_head_text_edit = QTextEdit()
+        self.preview_head_text_edit.setAcceptRichText(False)
+        self.preview_head_text_edit.setFixedHeight(86)
+        self.preview_head_text_edit.setPlaceholderText(
+            tr("text.rules.preview.head_text_placeholder", "TXT head text")
+        )
+        self.preview_head_text_edit.textChanged.connect(self._refresh_preview)
+        preview_form.addRow(tr("text.rules.preview.head_text", "Head text"), self.preview_head_text_edit)
+        preview_layout.addLayout(preview_form)
+
+        self.preview_result_label = QLabel(tr("text.rules.preview.no_sample", "No TXT sample found."))
+        self.preview_result_label.setObjectName("PageSubtitle")
+        self.preview_result_label.setWordWrap(True)
+        self.preview_result_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        preview_layout.addWidget(self.preview_result_label)
+        preview_col.addWidget(preview_box, 1)
+
         bottom = QHBoxLayout()
         bottom.addStretch(1)
         save_btn = QPushButton(tr("text.rules.save", "Save"))
@@ -242,6 +312,7 @@ class TextRuleDialog(QDialog):
         bottom.addWidget(cancel_btn)
         root.addLayout(bottom)
 
+        self._load_auto_preview_sample()
         self._refresh_rule_list()
 
     def _load_rules(self, rules_json: str) -> None:
@@ -276,6 +347,7 @@ class TextRuleDialog(QDialog):
             self.rule_list.setCurrentRow(0)
         else:
             self.step_list.clear()
+        self._refresh_preview()
 
     def _load_selected_rule(self) -> None:
         idx = self.rule_list.currentRow()
@@ -287,6 +359,7 @@ class TextRuleDialog(QDialog):
         if source_idx >= 0:
             self.source_combo.setCurrentIndex(source_idx)
         self._render_steps(rule.steps)
+        self._refresh_preview()
 
     def _render_steps(self, steps: list[RuleStep]) -> None:
         self.step_list.clear()
@@ -488,6 +561,63 @@ class TextRuleDialog(QDialog):
         )
         self._refresh_rule_list()
         self.rule_list.setCurrentRow(self.rule_list.count() - 1)
+
+    def _load_auto_preview_sample(self) -> None:
+        sample_path = find_first_txt_file(self._root_path)
+        if not sample_path:
+            self._refresh_preview()
+            return
+        sample = read_txt_preview_sample(sample_path, self._preview_chars)
+        if sample is None:
+            self._refresh_preview()
+            return
+
+        self.preview_path_edit.blockSignals(True)
+        self.preview_first_line_edit.blockSignals(True)
+        self.preview_head_text_edit.blockSignals(True)
+        self.preview_path_edit.setText(sample.file_path)
+        self.preview_first_line_edit.setText(sample.txt_first_line)
+        self.preview_head_text_edit.setPlainText(sample.txt_head_text)
+        self.preview_path_edit.blockSignals(False)
+        self.preview_first_line_edit.blockSignals(False)
+        self.preview_head_text_edit.blockSignals(False)
+        self._refresh_preview()
+
+    def _refresh_preview(self) -> None:
+        if not hasattr(self, "preview_result_label"):
+            return
+
+        file_path = self.preview_path_edit.text().strip()
+        first_line = self.preview_first_line_edit.text()
+        head_text = self.preview_head_text_edit.toPlainText()
+        if not file_path and not first_line and not head_text:
+            self.preview_result_label.setText(tr("text.rules.preview.no_sample", "No TXT sample found."))
+            return
+
+        rules = self._current_rules()
+        if not rules:
+            self.preview_result_label.setText(tr("text.rules.preview.no_rules", "No rules for current field."))
+            return
+
+        context = build_preview_context(file_path, first_line, head_text)
+        result = preview_rule_chain(rules, context)
+        if result.success:
+            self.preview_result_label.setText(
+                tr("text.rules.preview.success", "{field}: {value}").format(
+                    field=self._field_label(self._current_field()),
+                    value=result.value,
+                )
+            )
+            return
+
+        failed_step = result.failed_step or tr("text.rules.preview.unknown_step", "unknown")
+        error_message = result.error_message or tr("text.rules.preview.unknown_error", "Unknown error")
+        self.preview_result_label.setText(
+            tr("text.rules.preview.failed", "Failed at {step}: {error}").format(
+                step=failed_step,
+                error=error_message,
+            )
+        )
 
     @staticmethod
     def _field_label(code: str) -> str:
