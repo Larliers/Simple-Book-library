@@ -308,6 +308,52 @@ QProgressBar::chunk {
     background: transparent;
     border: none;
 }
+QPushButton#TextRuleFieldTab {
+    border: 1px solid transparent;
+    border-left: 3px solid transparent;
+    background: transparent;
+    padding: 8px 10px;
+    text-align: left;
+}
+QPushButton#TextRuleFieldTab:hover {
+    background: #eef3fa;
+    border-left: 3px solid #9ebfe6;
+}
+QPushButton#TextRuleFieldTab:checked {
+    background: #f4f9ff;
+    border-left: 3px solid #0078d7;
+    color: #0f5fa8;
+    font-weight: 700;
+}
+QScrollArea#TextRuleStepsScroll,
+QWidget#TextRuleStepsContainer {
+    background: transparent;
+    border: none;
+}
+QFrame#TextRuleStepCard {
+    background: #f8fafd;
+    border: 1px solid #d7dfeb;
+}
+QFrame#TextRuleStepCard QLabel {
+    background: transparent;
+    border: none;
+}
+QFrame#TextRulePreviewResult {
+    background: #f8fafd;
+    border: 1px solid #d7dfeb;
+}
+QFrame#TextRulePreviewResult[state="success"] {
+    background: #f4fbf6;
+    border: 1px solid #9fd0ac;
+}
+QFrame#TextRulePreviewResult[state="failed"] {
+    background: #fff3f2;
+    border: 1px solid #efb1ad;
+}
+QFrame#TextRulePreviewResult QLabel {
+    background: transparent;
+    border: none;
+}
 #ViewTogglePanel {
     border: none;
     background: transparent;

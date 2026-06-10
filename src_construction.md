@@ -15,6 +15,8 @@ src/
 │  ├─ test_comic_preview_pipeline.py
 │  ├─ test_comic_page_cache.py
 │  ├─ test_rule_engine.py
+│  ├─ test_rule_preview.py
+│  ├─ test_text_rule_dialog.py
 │  └─ test_scan_pdf_degrade.py
 ├─ sql/
 │  └─ .gitkeep
@@ -101,6 +103,8 @@ src/
 ### 3.1 入口与运行目录
 - `src/main.py`：应用入口；设置应用图标，创建 Qt 应用并启动主窗口。
 - `src/tests/test_rule_engine.py`：Text 规则引擎回归测试（步骤提取、回退链、非法正则容错）。
+- `src/tests/test_rule_preview.py`：Text 规则预览回归测试（自动样本、规则链回退、非法正则失败、空目录无样本）。
+- `src/tests/test_text_rule_dialog.py`：Text 规则弹窗 smoke 测试（旧 JSON 加载、字段切换、上下文参数、失败预览状态）。
 - `src/tests/test_scan_pdf_degrade.py`：PDF 后端降级容错回归测试（PyMuPDF 不可用时的聚合 warning 与入库行为）。
 - `src/tests/test_comic_preview_pipeline.py`：漫画快扫占位与后台并行补图回归测试（占位复制、压缩替换、原图删除、超大图降采样、排序顺序）。
 - `src/tests/test_comic_page_cache.py`：漫画页缓存回归测试（数据缓存命中、卡片复用与收藏联动失效）。
@@ -142,7 +146,7 @@ src/
 - `src/bookhub/ui/dialogs/add_tag_dialog.py`：添加标签对话框。
 - `src/bookhub/ui/dialogs/add_to_collection_dialog.py`：旧版加入书单对话框（兼容保留）。
 - `src/bookhub/ui/dialogs/quick_add_dialog.py`：快速添加标签/加入书单弹窗。
-- `src/bookhub/ui/dialogs/text_rule_dialog.py`：Text Novel 规则步骤编辑对话框；右侧列支持当前字段规则链对 TXT 样本的实时预览，读取长度跟随 Settings 文本预览长度。
+- `src/bookhub/ui/dialogs/text_rule_dialog.py`：Text Novel 规则步骤编辑对话框；左侧字段 Tab/规则链，中列卡片式步骤编辑，右侧常驻 TXT 样本预览。
 - `src/bookhub/ui/dialogs/text_rule_help_dialog.py`：Text Rules 内置使用文档窗口。
 
 ### 3.7 UI 数据模型（bookhub/ui/models）
