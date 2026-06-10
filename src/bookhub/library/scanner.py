@@ -380,6 +380,10 @@ def _extract_text_fields(
     return values
 
 
+def _split_text_rule_tags(value: str) -> list[str]:
+    return [item.strip() for item in str(value or "").splitlines() if item.strip()]
+
+
 def scan_comic_roots(repository: LibraryRepository, request: ComicScanRequest) -> ScanResult:
     result = ScanResult()
     max_depth = min(5, max(1, int(request.max_depth or 5)))
@@ -558,7 +562,7 @@ def scan_text_roots(repository: LibraryRepository, request: TextScanRequest) -> 
                 if extracted.get("series"):
                     tags.append(f"series:{extracted['series']}")
                 if extracted.get("tag"):
-                    tags.append(extracted["tag"])
+                    tags.extend(_split_text_rule_tags(extracted["tag"]))
 
                 try:
                     fingerprints = compute_fingerprints(file_path)

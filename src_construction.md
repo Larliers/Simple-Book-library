@@ -102,9 +102,9 @@ src/
 
 ### 3.1 入口与运行目录
 - `src/main.py`：应用入口；设置应用图标，创建 Qt 应用并启动主窗口。
-- `src/tests/test_rule_engine.py`：Text 规则引擎回归测试（步骤提取、回退链、非法正则容错）。
+- `src/tests/test_rule_engine.py`：Text 规则引擎回归测试（步骤提取、行范围 warning、回退链、非法正则容错）。
 - `src/tests/test_rule_preview.py`：Text 规则预览回归测试（自动样本、规则链回退、非法正则失败、空目录无样本）。
-- `src/tests/test_text_rule_dialog.py`：Text 规则弹窗 smoke 测试（旧 JSON 加载、字段切换、上下文参数、失败预览状态）。
+- `src/tests/test_text_rule_dialog.py`：Text 规则弹窗 smoke 测试（旧 JSON 加载、字段切换、上下文参数、预览状态、帮助文档布局）。
 - `src/tests/test_scan_pdf_degrade.py`：PDF 后端降级容错回归测试（PyMuPDF 不可用时的聚合 warning 与入库行为）。
 - `src/tests/test_comic_preview_pipeline.py`：漫画快扫占位与后台并行补图回归测试（占位复制、压缩替换、原图删除、超大图降采样、排序顺序）。
 - `src/tests/test_comic_page_cache.py`：漫画页缓存回归测试（数据缓存命中、卡片复用与收藏联动失效）。
@@ -121,14 +121,14 @@ src/
 ### 3.4 书库后端组件（bookhub/library）
 - `src/bookhub/library/__init__.py`：后端模块导出入口。
 - `src/bookhub/library/repository.py`：SQLite 读写中心；设置、书籍、书单、收藏、标签操作；漫画排序与显示模式设置持久化（含 `folder_modified_at` 排序字段）。
-- `src/bookhub/library/scanner.py`：目录扫描与文件过滤；构建入库候选（PDF/EPUB、Comic、Text Novel）；漫画目录快照判定、`folder_modified_at` 写入与超大封面降采样占位。
+- `src/bookhub/library/scanner.py`：目录扫描与文件过滤；构建入库候选（PDF/EPUB、Comic、Text Novel）；Text 规则 tag 结果按换行拆分为多标签；漫画目录快照判定、`folder_modified_at` 写入与超大封面降采样占位。
 - `src/bookhub/library/preview_paths.py`：预览图目录结构与路径构建服务（`resource_type + variant`）。
 - `src/bookhub/library/metadata.py`：元数据提取与缩略图生成（WebP，`file://` 路径）。
 - `src/bookhub/library/models.py`：扫描/任务的数据结构定义。
-- `src/bookhub/library/text_rules/rule_models.py`：Text Novel 规则模型（`ImportRule`/`RuleStep`/`RuleContext`/`RuleResult`）。
-- `src/bookhub/library/text_rules/rule_engine.py`：规则执行器与规则链回退（`apply_rule`、`apply_rule_chain`）。
+- `src/bookhub/library/text_rules/rule_models.py`：Text Novel 规则模型（`ImportRule`/`RuleStep`/`RuleContext`/`RuleResult`，含预览 warning 字段）。
+- `src/bookhub/library/text_rules/rule_engine.py`：规则执行器与规则链回退（`apply_rule`、`apply_rule_chain`），透传步骤 warning。
 - `src/bookhub/library/text_rules/source_resolver.py`：规则 source 解析（`filename`/`stem`/`txt_first_line`/`txt_head_text` 等）。
-- `src/bookhub/library/text_rules/step_handlers.py`：规则步骤处理（trim、split、括号提取、regex_extract 等）。
+- `src/bookhub/library/text_rules/step_handlers.py`：规则步骤处理（trim、split、单行/范围行提取、分界线截取、按行循环提取、括号提取、regex_extract 等）。
 - `src/bookhub/library/text_rules/rule_preview.py`：Text 规则预览辅助；查找首个 TXT 样本、读取首行/开头文本并复用规则链执行预览。
 - `src/bookhub/library/text_rules/rule_examples.py`：默认规则链示例。
 - `src/bookhub/library/worker.py`：扫描任务线程包装；汇总多 scope 统计与 warning。
@@ -146,8 +146,8 @@ src/
 - `src/bookhub/ui/dialogs/add_tag_dialog.py`：添加标签对话框。
 - `src/bookhub/ui/dialogs/add_to_collection_dialog.py`：旧版加入书单对话框（兼容保留）。
 - `src/bookhub/ui/dialogs/quick_add_dialog.py`：快速添加标签/加入书单弹窗。
-- `src/bookhub/ui/dialogs/text_rule_dialog.py`：Text Novel 规则步骤编辑对话框；左侧字段 Tab/规则链，中列卡片式步骤编辑，右侧常驻 TXT 样本预览。
-- `src/bookhub/ui/dialogs/text_rule_help_dialog.py`：Text Rules 内置使用文档窗口。
+- `src/bookhub/ui/dialogs/text_rule_dialog.py`：Text Novel 规则步骤编辑对话框；左侧字段 Tab/规则链，中列卡片式步骤编辑，右侧常驻 TXT 样本预览（长结果固定滚动）。
+- `src/bookhub/ui/dialogs/text_rule_help_dialog.py`：Text Rules 内置使用文档窗口，含左侧常用正则参考栏。
 
 ### 3.7 UI 数据模型（bookhub/ui/models）
 - `src/bookhub/ui/models/__init__.py`：模型包入口。

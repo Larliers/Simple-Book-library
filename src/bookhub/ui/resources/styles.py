@@ -346,11 +346,16 @@ QFrame#TextRulePreviewResult[state="success"] {
     background: #f4fbf6;
     border: 1px solid #9fd0ac;
 }
+QFrame#TextRulePreviewResult[state="warning"] {
+    background: #fff9ed;
+    border: 1px solid #e4bd6d;
+}
 QFrame#TextRulePreviewResult[state="failed"] {
     background: #fff3f2;
     border: 1px solid #efb1ad;
 }
-QFrame#TextRulePreviewResult QLabel {
+QFrame#TextRulePreviewResult QLabel,
+QFrame#TextRulePreviewResult QTextEdit#TextRulePreviewText {
     background: transparent;
     border: none;
 }

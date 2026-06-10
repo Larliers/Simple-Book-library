@@ -46,11 +46,17 @@ class TextRuleDialog(QDialog):
         "take_after_text",
         "take_before_text",
         "take_between_texts",
+        "take_line",
+        "take_first_lines",
+        "take_line_range",
+        "take_before_marker",
+        "take_after_marker",
         "split_and_take",
         "remove_prefix",
         "remove_suffix",
         "replace_text",
         "regex_extract",
+        "loop_lines",
     )
     NO_PARAM_STEP_TYPES = {"trim", "remove_extension"}
 
@@ -272,9 +278,12 @@ class TextRuleDialog(QDialog):
         result_layout.setSpacing(4)
         self.preview_result_title = QLabel()
         self.preview_result_title.setObjectName("PageSubtitle")
-        self.preview_result_label = QLabel()
-        self.preview_result_label.setWordWrap(True)
-        self.preview_result_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.preview_result_label = QTextEdit()
+        self.preview_result_label.setObjectName("TextRulePreviewText")
+        self.preview_result_label.setAcceptRichText(False)
+        self.preview_result_label.setReadOnly(True)
+        self.preview_result_label.setLineWrapMode(QTextEdit.WidgetWidth)
+        self.preview_result_label.setFixedHeight(150)
         result_layout.addWidget(self.preview_result_title)
         result_layout.addWidget(self.preview_result_label)
         preview_layout.addWidget(self.preview_result_box)
@@ -446,7 +455,15 @@ class TextRuleDialog(QDialog):
         return card
 
     def _add_param_widget(self, form: QFormLayout, step_index: int, step: RuleStep, key: str) -> None:
-        label = self._param_label(key)
+        label = self._param_label_for_step(step.type, key)
+        if step.type == "take_line_range" and key in {"start", "end"}:
+            widget = QSpinBox()
+            widget.setRange(1, 999)
+            widget.setValue(self._safe_int(step.params.get(key), 1))
+            widget.valueChanged.connect(lambda value, idx=step_index, param=key: self._set_step_param(idx, param, value))
+            form.addRow(label, widget)
+            return
+
         if key == "bracket":
             widget = QComboBox()
             widget.addItems(["[]", "【】", "()", "（）", "<>", "《》"])
@@ -457,16 +474,68 @@ class TextRuleDialog(QDialog):
             form.addRow(label, widget)
             return
 
-        if key in {"index", "group"}:
+        if key == "scope":
+            widget = QComboBox()
+            for code, text in self._scope_options():
+                widget.addItem(text, code)
+            value_idx = widget.findData(str(step.params.get("scope") or "all"))
+            widget.setCurrentIndex(value_idx if value_idx >= 0 else 0)
+            widget.currentIndexChanged.connect(
+                lambda _=0, idx=step_index, combo=widget: self._set_combo_step_param(idx, "scope", combo, rerender=True)
+            )
+            form.addRow(label, widget)
+            return
+
+        if key == "unit":
+            widget = QComboBox()
+            for code, text in self._unit_options():
+                widget.addItem(text, code)
+            value_idx = widget.findData(str(step.params.get("unit") or "line"))
+            widget.setCurrentIndex(value_idx if value_idx >= 0 else 0)
+            widget.currentIndexChanged.connect(
+                lambda _=0, idx=step_index, combo=widget: self._set_combo_step_param(idx, "unit", combo)
+            )
+            form.addRow(label, widget)
+            return
+
+        if key == "join":
+            widget = QComboBox()
+            for code, text in self._join_options():
+                widget.addItem(text, code)
+            value_idx = widget.findData(str(step.params.get("join") or "newline"))
+            widget.setCurrentIndex(value_idx if value_idx >= 0 else 0)
+            widget.currentIndexChanged.connect(
+                lambda _=0, idx=step_index, combo=widget: self._set_combo_step_param(idx, "join", combo, rerender=True)
+            )
+            form.addRow(label, widget)
+            return
+
+        if key == "skip_failed":
+            widget = QComboBox()
+            for value, text in self._skip_failed_options():
+                widget.addItem(text, value)
+            value_idx = widget.findData(self._safe_bool(step.params.get("skip_failed"), True))
+            widget.setCurrentIndex(value_idx if value_idx >= 0 else 0)
+            widget.currentIndexChanged.connect(
+                lambda _=0, idx=step_index, combo=widget: self._set_combo_step_param(idx, "skip_failed", combo)
+            )
+            form.addRow(label, widget)
+            return
+
+        if key in {"index", "group", "count"}:
             widget = QSpinBox()
             widget.setRange(0 if key == "group" else 1, 999)
             widget.setValue(self._safe_int(step.params.get(key), 1))
+            if key == "count" and str(step.params.get("scope") or "all") == "all":
+                widget.setEnabled(False)
             widget.valueChanged.connect(lambda value, idx=step_index, param=key: self._set_step_param(idx, param, value))
             form.addRow(label, widget)
             return
 
         widget = QLineEdit()
         widget.setText(str(step.params.get(key) or ""))
+        if key == "custom_separator" and str(step.params.get("join") or "newline") != "custom":
+            widget.setEnabled(False)
         widget.textChanged.connect(lambda text, idx=step_index, param=key: self._set_step_param(idx, param, text))
         form.addRow(label, widget)
 
@@ -496,6 +565,18 @@ class TextRuleDialog(QDialog):
         if step_index < 0 or step_index >= len(steps):
             return
         steps[step_index].params[key] = value
+        self._refresh_preview()
+
+    def _set_combo_step_param(self, step_index: int, key: str, combo: QComboBox, *, rerender: bool = False) -> None:
+        if self._rendering_steps:
+            return
+        steps = self._selected_steps()
+        if step_index < 0 or step_index >= len(steps):
+            return
+        data = combo.currentData()
+        steps[step_index].params[key] = data if data is not None else ""
+        if rerender:
+            self._render_steps(steps)
         self._refresh_preview()
 
     def _add_step(self) -> None:
@@ -645,13 +726,22 @@ class TextRuleDialog(QDialog):
         context = build_preview_context(file_path, first_line, head_text)
         result = preview_rule_chain(rules, context)
         if result.success:
+            warning = str(result.warning_message or "").strip()
+            message = tr("text.rules.preview.success", "{field}: {value}").format(
+                field=self._field_label(self._current_field()),
+                value=result.value,
+            )
+            if warning:
+                message = tr("text.rules.preview.warning", "{value}\n\nReminder: {warning}").format(
+                    value=message,
+                    warning=warning,
+                )
             self._set_preview_result(
-                "success",
-                tr("text.rules.preview.status.success", "Matched"),
-                tr("text.rules.preview.success", "{field}: {value}").format(
-                    field=self._field_label(self._current_field()),
-                    value=result.value,
-                ),
+                "warning" if warning else "success",
+                tr("text.rules.preview.status.warning", "Matched with warning")
+                if warning
+                else tr("text.rules.preview.status.success", "Matched"),
+                message,
             )
             return
 
@@ -669,7 +759,7 @@ class TextRuleDialog(QDialog):
     def _set_preview_result(self, state: str, title: str, message: str) -> None:
         self.preview_result_box.setProperty("state", state)
         self.preview_result_title.setText(title)
-        self.preview_result_label.setText(message)
+        self.preview_result_label.setPlainText(message)
         self.preview_result_box.style().unpolish(self.preview_result_box)
         self.preview_result_box.style().polish(self.preview_result_box)
 
@@ -680,6 +770,14 @@ class TextRuleDialog(QDialog):
             return ("value",)
         if step_type == "take_between_texts":
             return ("start", "end")
+        if step_type == "take_line":
+            return ("index",)
+        if step_type == "take_first_lines":
+            return ("count",)
+        if step_type == "take_line_range":
+            return ("start", "end")
+        if step_type in {"take_before_marker", "take_after_marker"}:
+            return ("value", "scope", "unit", "count")
         if step_type == "split_and_take":
             return ("separator", "index")
         if step_type == "take_bracket_content":
@@ -688,6 +786,8 @@ class TextRuleDialog(QDialog):
             return ("old", "new")
         if step_type == "regex_extract":
             return ("pattern", "group")
+        if step_type == "loop_lines":
+            return ("pattern", "group", "join", "custom_separator", "skip_failed")
         return ()
 
     def _default_params_for_step_type(self, step_type: str, old_params: dict[str, Any] | None = None) -> dict[str, object]:
@@ -700,6 +800,22 @@ class TextRuleDialog(QDialog):
             return {
                 "start": str(old_params.get("start") or ""),
                 "end": str(old_params.get("end") or ""),
+            }
+        if step_type == "take_line":
+            return {"index": self._safe_int(old_params.get("index"), 1)}
+        if step_type == "take_first_lines":
+            return {"count": self._safe_int(old_params.get("count"), 1)}
+        if step_type == "take_line_range":
+            return {
+                "start": self._safe_int(old_params.get("start"), 1),
+                "end": self._safe_int(old_params.get("end"), 1),
+            }
+        if step_type in {"take_before_marker", "take_after_marker"}:
+            return {
+                "value": str(old_params.get("value") or ""),
+                "scope": str(old_params.get("scope") or "all"),
+                "unit": str(old_params.get("unit") or "line"),
+                "count": self._safe_int(old_params.get("count"), 1),
             }
         if step_type == "split_and_take":
             return {
@@ -721,6 +837,14 @@ class TextRuleDialog(QDialog):
                 "pattern": str(old_params.get("pattern") or ""),
                 "group": self._safe_int(old_params.get("group"), 1),
             }
+        if step_type == "loop_lines":
+            return {
+                "pattern": str(old_params.get("pattern") or r"#\[(.+?)\]"),
+                "group": self._safe_int(old_params.get("group"), 1),
+                "join": str(old_params.get("join") or "newline"),
+                "custom_separator": str(old_params.get("custom_separator") or ""),
+                "skip_failed": self._safe_bool(old_params.get("skip_failed"), True),
+            }
         return {}
 
     @staticmethod
@@ -729,6 +853,20 @@ class TextRuleDialog(QDialog):
             return int(value)
         except (TypeError, ValueError):
             return default
+
+    @staticmethod
+    def _safe_bool(value: object, default: bool) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "y", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "n", "off"}:
+                return False
+        if value is None:
+            return default
+        return bool(value)
 
     @staticmethod
     def _field_label(code: str) -> str:
@@ -761,11 +899,17 @@ class TextRuleDialog(QDialog):
             "take_after_text": tr("text.rules.step.take_after_text", "Take after text"),
             "take_before_text": tr("text.rules.step.take_before_text", "Take before text"),
             "take_between_texts": tr("text.rules.step.take_between_texts", "Take between texts"),
+            "take_line": tr("text.rules.step.take_line", "Take line N"),
+            "take_first_lines": tr("text.rules.step.take_first_lines", "Take first N lines"),
+            "take_line_range": tr("text.rules.step.take_line_range", "Take line N-M"),
+            "take_before_marker": tr("text.rules.step.take_before_marker", "Take before marker"),
+            "take_after_marker": tr("text.rules.step.take_after_marker", "Take after marker"),
             "split_and_take": tr("text.rules.step.split_and_take", "Split and take"),
             "remove_prefix": tr("text.rules.step.remove_prefix", "Remove prefix"),
             "remove_suffix": tr("text.rules.step.remove_suffix", "Remove suffix"),
             "replace_text": tr("text.rules.step.replace_text", "Replace text"),
             "regex_extract": tr("text.rules.step.regex_extract", "Regex extract"),
+            "loop_lines": tr("text.rules.step.loop_lines", "Loop lines extract"),
         }
         return mapping.get(code, code)
 
@@ -778,9 +922,53 @@ class TextRuleDialog(QDialog):
             "separator": tr("text.rules.param.separator", "Separator"),
             "bracket": tr("text.rules.param.bracket", "Bracket"),
             "index": tr("text.rules.param.index", "Index"),
+            "count": tr("text.rules.param.count", "Count"),
+            "scope": tr("text.rules.param.scope", "Range"),
+            "unit": tr("text.rules.param.unit", "Unit"),
             "group": tr("text.rules.param.group", "Group"),
             "old": tr("text.rules.param.old", "Old"),
             "new": tr("text.rules.param.new", "New"),
             "pattern": tr("text.rules.param.pattern", "Pattern"),
+            "join": tr("text.rules.param.join", "Join"),
+            "custom_separator": tr("text.rules.param.custom_separator", "Custom separator"),
+            "skip_failed": tr("text.rules.param.skip_failed", "Skip unmatched lines"),
         }
         return mapping.get(code, code)
+
+    @staticmethod
+    def _param_label_for_step(step_type: str, code: str) -> str:
+        if step_type == "take_line_range" and code == "start":
+            return tr("text.rules.param.start_line", "Start line")
+        if step_type == "take_line_range" and code == "end":
+            return tr("text.rules.param.end_line", "End line")
+        return TextRuleDialog._param_label(code)
+
+    @staticmethod
+    def _scope_options() -> tuple[tuple[str, str], ...]:
+        return (
+            ("all", tr("text.rules.option.scope.all", "All")),
+            ("count", tr("text.rules.option.scope.count", "Count")),
+        )
+
+    @staticmethod
+    def _unit_options() -> tuple[tuple[str, str], ...]:
+        return (
+            ("line", tr("text.rules.option.unit.line", "Lines")),
+            ("char", tr("text.rules.option.unit.char", "Characters")),
+        )
+
+    @staticmethod
+    def _join_options() -> tuple[tuple[str, str], ...]:
+        return (
+            ("newline", tr("text.rules.option.join.newline", "New line")),
+            ("comma", tr("text.rules.option.join.comma", "Comma")),
+            ("semicolon", tr("text.rules.option.join.semicolon", "Semicolon")),
+            ("custom", tr("text.rules.option.join.custom", "Custom")),
+        )
+
+    @staticmethod
+    def _skip_failed_options() -> tuple[tuple[bool, str], ...]:
+        return (
+            (True, tr("text.rules.option.skip_failed.true", "Skip unmatched lines")),
+            (False, tr("text.rules.option.skip_failed.false", "Fail on unmatched line")),
+        )

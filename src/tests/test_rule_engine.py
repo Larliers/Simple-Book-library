@@ -72,6 +72,165 @@ class RuleEngineTests(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertEqual(result.value, "雪中悍刀行")
 
+    def test_take_line_from_head_text(self) -> None:
+        rule = ImportRule(
+            field="title",
+            source="txt_head_text",
+            steps=[RuleStep(type="take_line", params={"index": 3})],
+        )
+        context = RuleContext(
+            file_path=r"F:\books\x.txt",
+            txt_head_text="第一行\n第二行\n第三行\n第四行",
+        )
+        result = apply_rule(rule, context)
+        self.assertTrue(result.success)
+        self.assertEqual(result.value, "第三行")
+
+    def test_take_first_lines_from_head_text(self) -> None:
+        rule = ImportRule(
+            field="title",
+            source="txt_head_text",
+            steps=[RuleStep(type="take_first_lines", params={"count": 2})],
+        )
+        context = RuleContext(
+            file_path=r"F:\books\x.txt",
+            txt_head_text="第一行\n第二行\n第三行",
+        )
+        result = apply_rule(rule, context)
+        self.assertTrue(result.success)
+        self.assertEqual(result.value, "第一行\n第二行")
+
+    def test_take_line_range_from_head_text(self) -> None:
+        rule = ImportRule(
+            field="title",
+            source="txt_head_text",
+            steps=[RuleStep(type="take_line_range", params={"start": 2, "end": 4})],
+        )
+        context = RuleContext(
+            file_path=r"F:\books\x.txt",
+            txt_head_text="第一行\n第二行\n第三行\n第四行\n第五行",
+        )
+
+        result = apply_rule(rule, context)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.value, "第二行\n第三行\n第四行")
+        self.assertIsNone(result.warning_message)
+
+    def test_take_line_range_truncates_end_with_warning(self) -> None:
+        rule = ImportRule(
+            field="title",
+            source="txt_head_text",
+            steps=[RuleStep(type="take_line_range", params={"start": 2, "end": 5})],
+        )
+        context = RuleContext(file_path=r"F:\books\x.txt", txt_head_text="第一行\n第二行\n第三行")
+
+        result = apply_rule(rule, context)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.value, "第二行\n第三行")
+        self.assertIn("truncated to line 3", str(result.warning_message))
+
+    def test_take_line_range_invalid_params_return_failure(self) -> None:
+        context = RuleContext(file_path=r"F:\books\x.txt", txt_head_text="一\n二")
+        cases = [
+            ({"start": 3, "end": 4}, "out of range"),
+            ({"start": 2, "end": 1}, "start must be <= end"),
+            ({"start": "x", "end": 2}, "start must be an integer"),
+        ]
+
+        for params, expected in cases:
+            with self.subTest(expected=expected):
+                rule = ImportRule(
+                    field="title",
+                    source="txt_head_text",
+                    steps=[RuleStep(type="take_line_range", params=params)],
+                )
+                result = apply_rule(rule, context)
+                self.assertFalse(result.success)
+                self.assertEqual(result.failed_step, "take_line_range")
+                self.assertIn(expected, str(result.error_message))
+
+    def test_take_before_and_after_marker_all_lines(self) -> None:
+        context = RuleContext(
+            file_path=r"F:\books\x.txt",
+            txt_head_text="标题\n作者\n---简介---\n第一段\n第二段",
+        )
+
+        before_rule = ImportRule(
+            field="title",
+            source="txt_head_text",
+            steps=[RuleStep(type="take_before_marker", params={"value": "---简介---", "scope": "all", "unit": "line"})],
+        )
+        after_rule = ImportRule(
+            field="title",
+            source="txt_head_text",
+            steps=[RuleStep(type="take_after_marker", params={"value": "---简介---", "scope": "all", "unit": "line"})],
+        )
+
+        before = apply_rule(before_rule, context)
+        after = apply_rule(after_rule, context)
+
+        self.assertTrue(before.success)
+        self.assertEqual(before.value, "标题\n作者")
+        self.assertTrue(after.success)
+        self.assertEqual(after.value, "第一段\n第二段")
+
+    def test_take_before_and_after_marker_count_lines(self) -> None:
+        context = RuleContext(
+            file_path=r"F:\books\x.txt",
+            txt_head_text="一\n二\n三\n分界\n四\n五\n六",
+        )
+        before_rule = ImportRule(
+            field="title",
+            source="txt_head_text",
+            steps=[
+                RuleStep(
+                    type="take_before_marker",
+                    params={"value": "分界", "scope": "count", "unit": "line", "count": 2},
+                )
+            ],
+        )
+        after_rule = ImportRule(
+            field="title",
+            source="txt_head_text",
+            steps=[
+                RuleStep(
+                    type="take_after_marker",
+                    params={"value": "分界", "scope": "count", "unit": "line", "count": 2},
+                )
+            ],
+        )
+
+        before = apply_rule(before_rule, context)
+        after = apply_rule(after_rule, context)
+
+        self.assertTrue(before.success)
+        self.assertEqual(before.value, "二\n三")
+        self.assertTrue(after.success)
+        self.assertEqual(after.value, "四\n五")
+
+    def test_take_before_and_after_marker_count_chars(self) -> None:
+        context = RuleContext(file_path=r"F:\books\x.txt", txt_head_text="abcMARKdefghi")
+        before_rule = ImportRule(
+            field="title",
+            source="txt_head_text",
+            steps=[RuleStep(type="take_before_marker", params={"value": "MARK", "scope": "count", "unit": "char", "count": 2})],
+        )
+        after_rule = ImportRule(
+            field="title",
+            source="txt_head_text",
+            steps=[RuleStep(type="take_after_marker", params={"value": "MARK", "scope": "count", "unit": "char", "count": 3})],
+        )
+
+        before = apply_rule(before_rule, context)
+        after = apply_rule(after_rule, context)
+
+        self.assertTrue(before.success)
+        self.assertEqual(before.value, "bc")
+        self.assertTrue(after.success)
+        self.assertEqual(after.value, "def")
+
     def test_take_chinese_bracket_content(self) -> None:
         rule = ImportRule(
             field="author",
@@ -95,6 +254,133 @@ class RuleEngineTests(unittest.TestCase):
         self.assertEqual(result.failed_step, "regex_extract")
         self.assertIsInstance(result.error_message, str)
         self.assertTrue(result.error_message)
+
+    def test_line_index_out_of_range_returns_failure(self) -> None:
+        rule = ImportRule(
+            field="title",
+            source="txt_head_text",
+            steps=[RuleStep(type="take_line", params={"index": 4})],
+        )
+        result = apply_rule(rule, RuleContext(file_path=r"F:\books\x.txt", txt_head_text="一\n二"))
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.failed_step, "take_line")
+        self.assertIn("out of range", str(result.error_message))
+
+    def test_marker_not_found_returns_failure(self) -> None:
+        rule = ImportRule(
+            field="title",
+            source="txt_head_text",
+            steps=[RuleStep(type="take_after_marker", params={"value": "不存在", "scope": "all", "unit": "line"})],
+        )
+        result = apply_rule(rule, RuleContext(file_path=r"F:\books\x.txt", txt_head_text="一\n二"))
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.failed_step, "take_after_marker")
+        self.assertIn("Text not found", str(result.error_message))
+
+    def test_invalid_line_count_returns_failure(self) -> None:
+        rule = ImportRule(
+            field="title",
+            source="txt_head_text",
+            steps=[RuleStep(type="take_first_lines", params={"count": 0})],
+        )
+        result = apply_rule(rule, RuleContext(file_path=r"F:\books\x.txt", txt_head_text="一\n二"))
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.failed_step, "take_first_lines")
+        self.assertIn("count must be >= 1", str(result.error_message))
+
+    def test_loop_lines_extracts_tags_with_newline_join(self) -> None:
+        rule = ImportRule(
+            field="tag",
+            source="txt_head_text",
+            steps=[RuleStep(type="loop_lines", params={"pattern": r"#\[(.+?)\]", "group": 1})],
+        )
+        context = RuleContext(file_path=r"F:\books\x.txt", txt_head_text="#[fantasy]\n#[completed]")
+
+        result = apply_rule(rule, context)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.value, "fantasy\ncompleted")
+
+    def test_loop_lines_skips_unmatched_lines_by_default(self) -> None:
+        rule = ImportRule(
+            field="tag",
+            source="txt_head_text",
+            steps=[RuleStep(type="loop_lines", params={"pattern": r"#\[(.+?)\]", "group": 1})],
+        )
+        context = RuleContext(file_path=r"F:\books\x.txt", txt_head_text="#[fantasy]\n普通文本\n#[completed]")
+
+        result = apply_rule(rule, context)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.value, "fantasy\ncompleted")
+
+    def test_loop_lines_can_fail_on_unmatched_line(self) -> None:
+        rule = ImportRule(
+            field="tag",
+            source="txt_head_text",
+            steps=[
+                RuleStep(
+                    type="loop_lines",
+                    params={"pattern": r"#\[(.+?)\]", "group": 1, "skip_failed": False},
+                )
+            ],
+        )
+        context = RuleContext(file_path=r"F:\books\x.txt", txt_head_text="#[fantasy]\n普通文本")
+
+        result = apply_rule(rule, context)
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.failed_step, "loop_lines")
+        self.assertIn("Line 2 did not match", str(result.error_message))
+
+    def test_loop_lines_validates_regex_group_and_empty_result(self) -> None:
+        context = RuleContext(file_path=r"F:\books\x.txt", txt_head_text="#[fantasy]")
+        cases = [
+            ({"pattern": "(", "group": 1}, "Invalid regex pattern"),
+            ({"pattern": r"#\[(.+?)\]", "group": 2}, "out of range"),
+            ({"pattern": r"@(.+)", "group": 1}, "No lines matched"),
+        ]
+
+        for params, expected in cases:
+            with self.subTest(expected=expected):
+                rule = ImportRule(field="tag", source="txt_head_text", steps=[RuleStep(type="loop_lines", params=params)])
+                result = apply_rule(rule, context)
+                self.assertFalse(result.success)
+                self.assertEqual(result.failed_step, "loop_lines")
+                self.assertIn(expected, str(result.error_message))
+
+    def test_loop_lines_join_options(self) -> None:
+        context = RuleContext(file_path=r"F:\books\x.txt", txt_head_text="#[a]\n#[b]")
+        cases = [
+            ("newline", "", "a\nb"),
+            ("comma", "", "a,b"),
+            ("semicolon", "", "a;b"),
+            ("custom", " / ", "a / b"),
+        ]
+
+        for join, custom_separator, expected in cases:
+            with self.subTest(join=join):
+                rule = ImportRule(
+                    field="tag",
+                    source="txt_head_text",
+                    steps=[
+                        RuleStep(
+                            type="loop_lines",
+                            params={
+                                "pattern": r"#\[(.+?)\]",
+                                "group": 1,
+                                "join": join,
+                                "custom_separator": custom_separator,
+                            },
+                        )
+                    ],
+                )
+                result = apply_rule(rule, context)
+                self.assertTrue(result.success)
+                self.assertEqual(result.value, expected)
 
     def test_rule_chain_fallback(self) -> None:
         chain = [

@@ -16,12 +16,19 @@ if str(SRC_ROOT) not in sys.path:
 
 try:
     from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QLineEdit
+    from PySide6.QtWidgets import QTextBrowser, QTextEdit
 
+    from bookhub.ui.dialogs.text_rule_help_dialog import TextRuleHelpDialog
     from bookhub.ui.dialogs.text_rule_dialog import TextRuleDialog
 
     QT_AVAILABLE = True
 except Exception:  # pragma: no cover - optional UI dependency
     QApplication = None  # type: ignore[assignment]
+    QLineEdit = None  # type: ignore[assignment]
+    QTextBrowser = None  # type: ignore[assignment]
+    QTextEdit = None  # type: ignore[assignment]
+    TextRuleHelpDialog = None  # type: ignore[assignment]
     TextRuleDialog = None  # type: ignore[assignment]
     QT_AVAILABLE = False
 
@@ -68,12 +75,143 @@ class TextRuleDialogTests(unittest.TestCase):
             dialog._refresh_preview()
 
             self.assertEqual(dialog.preview_result_box.property("state"), "failed")
-            self.assertIn("regex_extract", dialog.preview_result_label.text())
+            self.assertIn("regex_extract", dialog.preview_result_label.toPlainText())
 
             payload = json.loads(dialog.rules_json())
             self.assertEqual(payload["title"][0]["source"], "filename")
             self.assertEqual(payload["title"][0]["steps"][0]["type"], "regex_extract")
             self.assertIn("pattern", payload["title"][0]["steps"][0])
+
+    def test_dialog_exposes_new_line_and_marker_step_params(self) -> None:
+        rules = {
+            "title": [
+                {
+                    "field": "title",
+                    "source": "txt_head_text",
+                    "steps": [
+                        {"type": "take_line", "index": 2},
+                        {
+                            "type": "take_after_marker",
+                            "value": "简介",
+                            "scope": "count",
+                            "unit": "line",
+                            "count": 2,
+                        },
+                    ],
+                }
+            ]
+        }
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dialog = TextRuleDialog(tmp_dir, json.dumps(rules), preview_chars=120)
+            self.addCleanup(dialog.close)
+
+            self.assertEqual(dialog._visible_step_param_keys[0], ("index",))
+            self.assertEqual(dialog._visible_step_param_keys[1], ("value", "scope", "unit", "count"))
+
+            dialog._set_step_param(1, "scope", "all")
+            dialog._set_step_param(1, "unit", "char")
+            dialog._set_step_param(1, "count", 5)
+
+            payload = json.loads(dialog.rules_json())
+            marker_step = payload["title"][0]["steps"][1]
+            self.assertEqual(marker_step["type"], "take_after_marker")
+            self.assertEqual(marker_step["scope"], "all")
+            self.assertEqual(marker_step["unit"], "char")
+            self.assertEqual(marker_step["count"], 5)
+
+    def test_dialog_exposes_line_range_params_and_warning_preview(self) -> None:
+        rules = {
+            "title": [
+                {
+                    "field": "title",
+                    "source": "txt_head_text",
+                    "steps": [{"type": "take_line_range", "start": 2, "end": 5}],
+                }
+            ]
+        }
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dialog = TextRuleDialog(tmp_dir, json.dumps(rules), preview_chars=120)
+            self.addCleanup(dialog.close)
+
+            self.assertEqual(dialog._visible_step_param_keys[0], ("start", "end"))
+            self.assertIsInstance(dialog.preview_result_label, QTextEdit)
+            self.assertEqual(dialog.preview_result_label.maximumHeight(), 150)
+
+            dialog.preview_path_edit.setText(str(Path(tmp_dir) / "demo.txt"))
+            dialog.preview_head_text_edit.setPlainText("一\n二\n三")
+            dialog._refresh_preview()
+
+            self.assertEqual(dialog.preview_result_box.property("state"), "warning")
+            self.assertIn("二\n三", dialog.preview_result_label.toPlainText())
+            self.assertIn("truncated", dialog.preview_result_label.toPlainText())
+
+    def test_dialog_exposes_loop_lines_params_and_json(self) -> None:
+        rules = {
+            "tag": [
+                {
+                    "field": "tag",
+                    "source": "txt_head_text",
+                    "steps": [
+                        {
+                            "type": "loop_lines",
+                            "pattern": r"#\[(.+?)\]",
+                            "group": 1,
+                            "join": "newline",
+                            "custom_separator": " / ",
+                            "skip_failed": True,
+                        }
+                    ],
+                }
+            ]
+        }
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dialog = TextRuleDialog(tmp_dir, json.dumps(rules), preview_chars=120)
+            self.addCleanup(dialog.close)
+            dialog._set_current_field("tag")
+
+            self.assertEqual(
+                dialog._visible_step_param_keys[0],
+                ("pattern", "group", "join", "custom_separator", "skip_failed"),
+            )
+            separator_edits = [
+                item
+                for item in dialog.steps_container.findChildren(QLineEdit)
+                if item.text() == " / "
+            ]
+            self.assertEqual(len(separator_edits), 1)
+            self.assertFalse(separator_edits[0].isEnabled())
+
+            dialog._set_step_param(0, "join", "custom")
+            dialog._set_step_param(0, "skip_failed", False)
+            dialog._render_steps(dialog._selected_steps())
+
+            separator_edits = [
+                item
+                for item in dialog.steps_container.findChildren(QLineEdit)
+                if item.text() == " / " and item.isEnabled()
+            ]
+            self.assertEqual(len(separator_edits), 1)
+
+            payload = json.loads(dialog.rules_json())
+            loop_step = payload["tag"][0]["steps"][0]
+            self.assertEqual(loop_step["type"], "loop_lines")
+            self.assertEqual(loop_step["pattern"], r"#\[(.+?)\]")
+            self.assertEqual(loop_step["join"], "custom")
+            self.assertEqual(loop_step["custom_separator"], " / ")
+            self.assertIs(loop_step["skip_failed"], False)
+
+    def test_help_dialog_has_regex_library_and_guide_columns(self) -> None:
+        dialog = TextRuleHelpDialog()
+        self.addCleanup(dialog.close)
+
+        browsers = dialog.findChildren(QTextBrowser)
+
+        self.assertEqual(len(browsers), 2)
+        self.assertIn(r"#\[(.+?)\]", browsers[0].toPlainText())
+        self.assertIn("Quick Start", browsers[1].toPlainText())
 
 
 if __name__ == "__main__":

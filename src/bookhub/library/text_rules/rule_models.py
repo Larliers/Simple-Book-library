@@ -62,6 +62,7 @@ class RuleResult:
     value: str
     failed_step: str | None = None
     error_message: str | None = None
+    warning_message: str | None = None
 
 
 def load_rules_from_json(value: Any) -> dict[str, list[ImportRule]]:
