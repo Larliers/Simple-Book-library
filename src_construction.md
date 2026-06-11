@@ -129,7 +129,7 @@ src/
 - `src/bookhub/library/text_rules/rule_models.py`：Text Novel 规则模型（`ImportRule`/`RuleStep`/`RuleContext`/`RuleResult`，含预览 warning 字段）。
 - `src/bookhub/library/text_rules/rule_engine.py`：规则执行器与规则链回退（`apply_rule`、`apply_rule_chain`），透传步骤 warning。
 - `src/bookhub/library/text_rules/source_resolver.py`：规则 source 解析（`filename`/`stem`/`txt_first_line`/`txt_head_text` 等）。
-- `src/bookhub/library/text_rules/step_handlers.py`：规则步骤处理（trim、split、单行/范围行提取、分界线截取、按行循环提取、括号提取、regex_extract 等）。
+- `src/bookhub/library/text_rules/step_handlers.py`：规则步骤处理（trim、split、单行/范围行提取、去除后 N 行、分界线截取、按行循环提取、括号提取、regex_extract 等）。
 - `src/bookhub/library/text_rules/rule_preview.py`：Text 规则预览辅助；查找首个 TXT 样本、读取首行/开头文本并复用规则链执行预览。
 - `src/bookhub/library/text_rules/rule_examples.py`：默认规则链示例。
 - `src/bookhub/library/worker.py`：扫描任务线程包装；汇总多 scope 统计与 warning。

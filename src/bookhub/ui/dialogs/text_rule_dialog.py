@@ -49,6 +49,7 @@ class TextRuleDialog(QDialog):
         "take_between_texts",
         "take_line",
         "take_first_lines",
+        "remove_last_lines",
         "take_line_range",
         "take_before_marker",
         "take_after_marker",
@@ -783,6 +784,8 @@ class TextRuleDialog(QDialog):
             return ("index",)
         if step_type == "take_first_lines":
             return ("count",)
+        if step_type == "remove_last_lines":
+            return ("count",)
         if step_type == "take_line_range":
             return ("start", "end")
         if step_type in {"take_before_marker", "take_after_marker"}:
@@ -813,6 +816,8 @@ class TextRuleDialog(QDialog):
         if step_type == "take_line":
             return {"index": self._safe_int(old_params.get("index"), 1)}
         if step_type == "take_first_lines":
+            return {"count": self._safe_int(old_params.get("count"), 1)}
+        if step_type == "remove_last_lines":
             return {"count": self._safe_int(old_params.get("count"), 1)}
         if step_type == "take_line_range":
             return {
@@ -910,6 +915,7 @@ class TextRuleDialog(QDialog):
             "take_between_texts": tr("text.rules.step.take_between_texts", "Take between texts"),
             "take_line": tr("text.rules.step.take_line", "Take line N"),
             "take_first_lines": tr("text.rules.step.take_first_lines", "Take first N lines"),
+            "remove_last_lines": tr("text.rules.step.remove_last_lines", "Remove last N lines"),
             "take_line_range": tr("text.rules.step.take_line_range", "Take line N-M"),
             "take_before_marker": tr("text.rules.step.take_before_marker", "Take before marker"),
             "take_after_marker": tr("text.rules.step.take_after_marker", "Take after marker"),

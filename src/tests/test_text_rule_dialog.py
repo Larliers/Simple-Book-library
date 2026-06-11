@@ -151,6 +151,29 @@ class TextRuleDialogTests(unittest.TestCase):
             self.assertIn("二\n三", dialog.preview_result_label.toPlainText())
             self.assertIn("truncated", dialog.preview_result_label.toPlainText())
 
+    def test_dialog_exposes_remove_last_lines_param_and_json(self) -> None:
+        rules = {
+            "title": [
+                {
+                    "field": "title",
+                    "source": "txt_head_text",
+                    "steps": [{"type": "remove_last_lines", "count": 2}],
+                }
+            ]
+        }
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dialog = TextRuleDialog(tmp_dir, json.dumps(rules), preview_chars=120)
+            self.addCleanup(dialog.close)
+
+            self.assertEqual(dialog._visible_step_param_keys[0], ("count",))
+            dialog._set_step_param(0, "count", 3)
+
+            payload = json.loads(dialog.rules_json())
+            step = payload["title"][0]["steps"][0]
+            self.assertEqual(step["type"], "remove_last_lines")
+            self.assertEqual(step["count"], 3)
+
     def test_dialog_exposes_loop_lines_params_and_json(self) -> None:
         rules = {
             "tag": [

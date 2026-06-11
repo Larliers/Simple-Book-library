@@ -100,6 +100,35 @@ class RuleEngineTests(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertEqual(result.value, "第一行\n第二行")
 
+    def test_remove_last_lines_from_head_text(self) -> None:
+        rule = ImportRule(
+            field="title",
+            source="txt_head_text",
+            steps=[RuleStep(type="remove_last_lines", params={"count": 2})],
+        )
+        context = RuleContext(
+            file_path=r"F:\books\x.txt",
+            txt_head_text="第一行\n第二行\n第三行\n第四行",
+        )
+
+        result = apply_rule(rule, context)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.value, "第一行\n第二行")
+
+    def test_remove_last_lines_can_remove_all_lines(self) -> None:
+        rule = ImportRule(
+            field="title",
+            source="txt_head_text",
+            steps=[RuleStep(type="remove_last_lines", params={"count": 9})],
+        )
+        context = RuleContext(file_path=r"F:\books\x.txt", txt_head_text="第一行\n第二行")
+
+        result = apply_rule(rule, context)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.value, "")
+
     def test_take_line_range_from_head_text(self) -> None:
         rule = ImportRule(
             field="title",
@@ -280,16 +309,19 @@ class RuleEngineTests(unittest.TestCase):
         self.assertIn("Text not found", str(result.error_message))
 
     def test_invalid_line_count_returns_failure(self) -> None:
-        rule = ImportRule(
-            field="title",
-            source="txt_head_text",
-            steps=[RuleStep(type="take_first_lines", params={"count": 0})],
-        )
-        result = apply_rule(rule, RuleContext(file_path=r"F:\books\x.txt", txt_head_text="一\n二"))
+        context = RuleContext(file_path=r"F:\books\x.txt", txt_head_text="一\n二")
+        for step_type in ("take_first_lines", "remove_last_lines"):
+            with self.subTest(step_type=step_type):
+                rule = ImportRule(
+                    field="title",
+                    source="txt_head_text",
+                    steps=[RuleStep(type=step_type, params={"count": 0})],
+                )
+                result = apply_rule(rule, context)
 
-        self.assertFalse(result.success)
-        self.assertEqual(result.failed_step, "take_first_lines")
-        self.assertIn("count must be >= 1", str(result.error_message))
+                self.assertFalse(result.success)
+                self.assertEqual(result.failed_step, step_type)
+                self.assertIn("count must be >= 1", str(result.error_message))
 
     def test_loop_lines_extracts_tags_with_newline_join(self) -> None:
         rule = ImportRule(

@@ -47,6 +47,7 @@ class TextRuleHelpDialog(QDialog):
             tr("text.rules.help.step.take_bracket_content", "- take_bracket_content: extract Nth bracket content"),
             tr("text.rules.help.step.take_line", "- take_line: extract line N from TXT head text"),
             tr("text.rules.help.step.take_first_lines", "- take_first_lines: extract first N lines from TXT head text"),
+            tr("text.rules.help.step.remove_last_lines", "- remove_last_lines: remove last N lines"),
             tr(
                 "text.rules.help.step.take_line_range",
                 "- take_line_range: extract line N to M from TXT head text; if M is too large, preview shows a warning.",

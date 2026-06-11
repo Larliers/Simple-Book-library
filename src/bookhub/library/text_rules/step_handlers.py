@@ -113,6 +113,14 @@ def _take_first_lines(value: str, step: RuleStep) -> str:
     return "\n".join(value.splitlines()[:count])
 
 
+def _remove_last_lines(value: str, step: RuleStep) -> str:
+    count = _positive_int_from_step(step.params, "count")
+    lines = value.splitlines()
+    if count >= len(lines):
+        return ""
+    return "\n".join(lines[:-count])
+
+
 def _take_line_range(value: str, step: RuleStep) -> StepOutput:
     start = _positive_int_from_step(step.params, "start")
     end = _positive_int_from_step(step.params, "end")
@@ -308,6 +316,8 @@ def apply_step(value: str, step: RuleStep) -> str | StepOutput:
         return _take_line(value, step)
     if step_type == "take_first_lines":
         return _take_first_lines(value, step)
+    if step_type == "remove_last_lines":
+        return _remove_last_lines(value, step)
     if step_type == "take_line_range":
         return _take_line_range(value, step)
     if step_type == "take_before_marker":
