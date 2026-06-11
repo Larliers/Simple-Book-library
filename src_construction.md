@@ -69,7 +69,8 @@ src/
        │  ├─ import_dialog.py
        │  ├─ quick_add_dialog.py
        │  ├─ text_rule_dialog.py
-       │  └─ text_rule_help_dialog.py
+       │  ├─ text_rule_help_dialog.py
+       │  └─ text_rule_regex_dialog.py
       ├─ models/
       │  ├─ __init__.py
       │  └─ resource.py
@@ -146,8 +147,9 @@ src/
 - `src/bookhub/ui/dialogs/add_tag_dialog.py`：添加标签对话框。
 - `src/bookhub/ui/dialogs/add_to_collection_dialog.py`：旧版加入书单对话框（兼容保留）。
 - `src/bookhub/ui/dialogs/quick_add_dialog.py`：快速添加标签/加入书单弹窗。
-- `src/bookhub/ui/dialogs/text_rule_dialog.py`：Text Novel 规则步骤编辑对话框；左侧字段 Tab/规则链，中列卡片式步骤编辑，右侧常驻 TXT 样本预览（长结果固定滚动）。
-- `src/bookhub/ui/dialogs/text_rule_help_dialog.py`：Text Rules 内置使用文档窗口，含左侧常用正则参考栏。
+- `src/bookhub/ui/dialogs/text_rule_dialog.py`：Text Novel 规则步骤编辑对话框；左侧字段 Tab/规则链，中列卡片式步骤编辑，右侧常驻 TXT 样本预览（长结果固定滚动）；右上角提供常用正则与使用文档入口。
+- `src/bookhub/ui/dialogs/text_rule_help_dialog.py`：Text Rules 内置使用文档窗口。
+- `src/bookhub/ui/dialogs/text_rule_regex_dialog.py`：Text Rules 常用正则示范窗口；按用途、示例文本、正则、提取结果展示。
 
 ### 3.7 UI 数据模型（bookhub/ui/models）
 - `src/bookhub/ui/models/__init__.py`：模型包入口。

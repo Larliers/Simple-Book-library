@@ -34,6 +34,7 @@ from bookhub.library.text_rules.rule_preview import (
     read_txt_preview_sample,
 )
 from bookhub.ui.dialogs.text_rule_help_dialog import TextRuleHelpDialog
+from bookhub.ui.dialogs.text_rule_regex_dialog import TextRuleRegexDialog
 
 
 class TextRuleDialog(QDialog):
@@ -95,6 +96,10 @@ class TextRuleDialog(QDialog):
         root_label.setWordWrap(True)
         title_block.addWidget(root_label)
         header.addLayout(title_block, 1)
+        self.regex_help_btn = QPushButton(tr("text.rules.regex.button", "Common Regex"))
+        self.regex_help_btn.setObjectName("GhostButton")
+        self.regex_help_btn.clicked.connect(self._open_regex_dialog)
+        header.addWidget(self.regex_help_btn, 0, Qt.AlignTop)
         self.help_btn = QPushButton(tr("text.rules.help.button", "Usage Guide"))
         self.help_btn.setObjectName("GhostButton")
         self.help_btn.clicked.connect(self._open_help_dialog)
@@ -640,6 +645,10 @@ class TextRuleDialog(QDialog):
 
     def _open_help_dialog(self) -> None:
         dialog = TextRuleHelpDialog(self)
+        dialog.exec()
+
+    def _open_regex_dialog(self) -> None:
+        dialog = TextRuleRegexDialog(self)
         dialog.exec()
 
     def _insert_template_title_rule(self) -> None:

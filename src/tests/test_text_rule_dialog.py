@@ -21,6 +21,7 @@ try:
 
     from bookhub.ui.dialogs.text_rule_help_dialog import TextRuleHelpDialog
     from bookhub.ui.dialogs.text_rule_dialog import TextRuleDialog
+    from bookhub.ui.dialogs.text_rule_regex_dialog import TextRuleRegexDialog
 
     QT_AVAILABLE = True
 except Exception:  # pragma: no cover - optional UI dependency
@@ -30,6 +31,7 @@ except Exception:  # pragma: no cover - optional UI dependency
     QTextEdit = None  # type: ignore[assignment]
     TextRuleHelpDialog = None  # type: ignore[assignment]
     TextRuleDialog = None  # type: ignore[assignment]
+    TextRuleRegexDialog = None  # type: ignore[assignment]
     QT_AVAILABLE = False
 
 
@@ -63,6 +65,8 @@ class TextRuleDialogTests(unittest.TestCase):
 
             self.assertEqual(dialog.rule_list.count(), 1)
             self.assertEqual(dialog._visible_step_param_keys[0], ("pattern", "group"))
+            self.assertIn(dialog.regex_help_btn.text(), {"常用正则", "Common Regex"})
+            self.assertIn(dialog.help_btn.text(), {"使用文档", "Usage Guide"})
 
             dialog._set_current_field("author")
             self.assertEqual(dialog.rule_list.count(), 1)
@@ -203,15 +207,31 @@ class TextRuleDialogTests(unittest.TestCase):
             self.assertEqual(loop_step["custom_separator"], " / ")
             self.assertIs(loop_step["skip_failed"], False)
 
-    def test_help_dialog_has_regex_library_and_guide_columns(self) -> None:
+    def test_help_dialog_is_single_guide_column(self) -> None:
         dialog = TextRuleHelpDialog()
         self.addCleanup(dialog.close)
 
         browsers = dialog.findChildren(QTextBrowser)
 
-        self.assertEqual(len(browsers), 2)
-        self.assertIn(r"#\[(.+?)\]", browsers[0].toPlainText())
-        self.assertIn("Quick Start", browsers[1].toPlainText())
+        self.assertEqual(len(browsers), 1)
+        self.assertIn("Quick Start", browsers[0].toPlainText())
+        self.assertNotIn("Common Regex", browsers[0].toPlainText())
+
+    def test_regex_dialog_uses_plain_examples(self) -> None:
+        dialog = TextRuleRegexDialog()
+        self.addCleanup(dialog.close)
+
+        browsers = dialog.findChildren(QTextBrowser)
+
+        self.assertEqual(len(browsers), 1)
+        text = browsers[0].toPlainText()
+        self.assertIn("Purpose: Extract date", text)
+        self.assertIn("Sample text: 2026年06月11日", text)
+        self.assertIn(r"Regex: (\d{4})年(\d{1,2})月(\d{1,2})日", text)
+        self.assertIn("Extract result: 分组1=2026", text)
+        self.assertIn(r"Regex: #\[(.+?)\]", text)
+        self.assertNotIn("- ", text)
+        self.assertNotIn(" | ", text)
 
 
 if __name__ == "__main__":

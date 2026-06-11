@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QTextBrowser, QVBoxLayout
+from PySide6.QtWidgets import QDialog, QLabel, QTextBrowser, QVBoxLayout
 
 from bookhub.i18n import tr
 
@@ -19,37 +19,11 @@ class TextRuleHelpDialog(QDialog):
         title.setObjectName("PageTitle")
         root.addWidget(title)
 
-        body = QHBoxLayout()
-        body.setSpacing(10)
-        regex_box = QTextBrowser()
-        regex_box.setOpenExternalLinks(False)
-        regex_box.setReadOnly(True)
-        regex_box.setPlainText(self._build_regex_text())
-        regex_box.setMinimumWidth(260)
-        regex_box.setMaximumWidth(330)
-        body.addWidget(regex_box, 0)
-
         content = QTextBrowser()
         content.setOpenExternalLinks(False)
         content.setReadOnly(True)
         content.setPlainText(self._build_help_text())
-        body.addWidget(content, 1)
-        root.addLayout(body, 1)
-
-    def _build_regex_text(self) -> str:
-        lines = [
-            tr("text.rules.help.regex.title", "Common Regex"),
-            "",
-            tr("text.rules.help.regex.date", "Date: (\\d{4})[-/.年](\\d{1,2})[-/.月](\\d{1,2})日? | groups: year/month/day"),
-            tr("text.rules.help.regex.year", "Year: (\\d{4}) | group 1"),
-            tr("text.rules.help.regex.book_title", "Book title brackets: 《(.+?)》 | group 1"),
-            tr("text.rules.help.regex.square_tag", "Square tag: \\[(.+?)\\] | group 1"),
-            tr("text.rules.help.regex.hash_tag", "#[tag]: #\\[(.+?)\\] | group 1"),
-            tr("text.rules.help.regex.author", "Author: 作者[:：]\\s*(.+) | group 1"),
-            tr("text.rules.help.regex.volume", "Volume/chapter number: [第卷章]\\s*(\\d+) | group 1"),
-            tr("text.rules.help.regex.non_empty", "Non-empty line: ^\\s*(\\S.*)$ | group 1"),
-        ]
-        return "\n\n".join(lines)
+        root.addWidget(content, 1)
 
     def _build_help_text(self) -> str:
         lines = [
