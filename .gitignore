@@ -40,3 +40,6 @@ dist/
 *.exe
 nuitka-crash-report.xml
 
+# 本地双击启动快捷方式
+启动 简易图书馆.lnk
+

@@ -1,6 +1,6 @@
 ﻿# src 结构说明书（精简且完整）
 
-更新时间：2026-06-10
+更新时间：2026-06-11
 
 ## 1. 文档目标
 - 保留字符串式文件路径结构。
@@ -207,6 +207,7 @@ src/
 - Reading Now 与 Tools 占位页已下线：主窗口不再注册对应页面，侧栏仅保留可用功能入口；底层 `status` 字段与数据结构保持不变。
 - TopBar：移除右侧 IMPORT/NEW LIST/刷新/菜单占位区，搜索栏填充顶部可用宽度。
 - TopBar：搜索框支持最小高度与字号放大；搜索输入与建议下拉字号可在 Settings 调节并持久化（默认 15px）。
+- 本地启动：根目录可放置被 `.gitignore` 忽略的 `启动 简易图书馆.lnk`，双击后通过 `.venv\Scripts\pythonw.exe` 启动 `src\main.py`。
 - 网格布局：Library/Favorites/CollectionDetail 的书籍网格统一左内边距 12px，避免左侧贴边溢出观感。
 - 交互规则：单击看详情（无门控延迟）、双击外部打开。
 - 字体重载：`Reload Fonts` 现在执行完整链路（重扫 `src/fonts` -> 注册字体 -> 解析回退 -> `QApplication.setFont` + 动态 QSS 立即生效 -> 持久化设置）；目录不存在时自动创建并通过右下角 Toast 提示。
