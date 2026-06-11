@@ -87,7 +87,7 @@ class AppWindow(QMainWindow):
         self._search_render_timer.setInterval(self.SEARCH_RENDER_DEBOUNCE_MS)
         self._search_render_timer.timeout.connect(self._commit_search_query)
         self._pending_query = ""
-        self._last_committed_query = ""
+        self._last_committed_search_context: tuple[str, str] | None = None
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -191,7 +191,6 @@ class AppWindow(QMainWindow):
         self._refresh_settings_state()
         self._refresh_fonts_runtime(ensure_project_dir=False, show_feedback=False)
         self._refresh_search_suggestions()
-        self._last_committed_query = self._library_vm.ui_state.filter
         self._show_page("library")
         if self._repository.get_scan_on_startup():
             QTimer.singleShot(100, lambda: self._start_scan("startup", scope="all"))
@@ -207,14 +206,14 @@ class AppWindow(QMainWindow):
         started_at = perf_counter()
         self.page_stack.setCurrentIndex(index)
         self.sidebar.set_active(page_name)
+        self._set_topbar_search_context(page_name)
         current = self.page_stack.currentWidget()
         refresh_fn = getattr(current, "refresh", None)
         if callable(refresh_fn):
             refresh_fn()
-        if current is self.library_page:
-            self.library_page.render()
-        elif current is self.text_page:
-            self.text_page.render()
+        if current in {self.library_page, self.text_page}:
+            self._commit_search_query(force=True)
+            self._refresh_search_suggestions(self._pending_query)
         self._stabilize_dropdown_layer()
         self._log_perf("show_page", started_at, page=page_name)
 
@@ -250,23 +249,25 @@ class AppWindow(QMainWindow):
         self._refresh_search_suggestions(query)
         self._search_render_timer.start()
 
-    def _commit_search_query(self) -> None:
+    def _commit_search_query(self, *, force: bool = False) -> None:
         normalized = self._pending_query.strip().lower()
-        if normalized == self._last_committed_query:
+        context = self._active_search_context_name()
+        committed_context = (context, normalized)
+        if not force and committed_context == self._last_committed_search_context:
             self._stabilize_dropdown_layer()
             return
 
-        self._library_vm.set_query(self._pending_query)
-        self._last_committed_query = normalized
-        current_page = self.page_stack.currentWidget()
-        if current_page in {self.library_page}:
-            current_page.render()  # type: ignore[call-arg]
+        view_model = self._search_vm_for_context(context)
+        view_model.set_query(self._pending_query)
+        self._last_committed_search_context = committed_context
+        self._render_search_context(context)
         self._stabilize_dropdown_layer()
 
     def _refresh_search_suggestions(self, query: str | None = None) -> None:
-        raw_query = self._library_vm.ui_state.filter if query is None else query
-        suggestion_items = self._library_vm.search_suggestions_for_query(raw_query)
-        self._library_vm.ui_state.search_suggestions = suggestion_items
+        raw_query = self._pending_query if query is None else query
+        view_model = self._search_vm_for_context(self._active_search_context_name())
+        suggestion_items = view_model.search_suggestions_for_query(raw_query)
+        view_model.ui_state.search_suggestions = suggestion_items
         suggestions = [
             SearchSuggestion(
                 group=item["group"],
@@ -277,6 +278,32 @@ class AppWindow(QMainWindow):
             for item in suggestion_items
         ]
         self.topbar.set_search_suggestions(suggestions)
+
+    def _active_search_context_name(self) -> str:
+        current_page = self.page_stack.currentWidget()
+        if current_page is self.text_page:
+            return "text_novel"
+        return "library"
+
+    def _search_vm_for_context(self, context: str) -> LibraryViewModel:
+        if context == "text_novel":
+            return self._text_vm
+        return self._library_vm
+
+    def _render_search_context(self, context: str) -> None:
+        if context == "text_novel":
+            self.text_page.set_resources(self._text_vm.filtered_resources(include_missing=False))
+            return
+        self.library_page.render()
+
+    def _set_topbar_search_context(self, page_name: str) -> None:
+        if page_name == "text_novel":
+            self.topbar.set_search_placeholder(
+                "topbar.search_text_placeholder",
+                "Search text novels by title, author, tag, or path...",
+            )
+            return
+        self.topbar.set_search_placeholder("topbar.search_placeholder", "Search library...")
 
     def _stabilize_dropdown_layer(self) -> None:
         QTimer.singleShot(0, self.topbar.ensure_dropdown_on_top)
@@ -312,8 +339,8 @@ class AppWindow(QMainWindow):
 
         self._library_vm.set_resources(library_resources)
         self._text_vm.set_resources(text_resources)
-        self.text_page.set_resources(text_resources)
-        self._last_committed_query = self._library_vm.ui_state.filter
+        self.text_page.set_resources(self._text_vm.filtered_resources(include_missing=False))
+        self._last_committed_search_context = None
         self.library_page.render()
         self.text_page.render()
         self.comic_page.refresh(force=True)

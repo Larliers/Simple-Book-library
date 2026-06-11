@@ -104,6 +104,8 @@ class TopBarWidget(QWidget):
         self._is_dropdown_open = False
         self._row_pool: list[_SuggestionRow] = []
         self._search_font_size = 15
+        self._search_placeholder_key = "topbar.search_placeholder"
+        self._search_placeholder_fallback = "Search library..."
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -158,7 +160,14 @@ class TopBarWidget(QWidget):
         self.set_search_font_size(self._search_font_size)
 
     def retranslate_ui(self) -> None:
-        self.search_input.setPlaceholderText(tr("topbar.search_placeholder", "Search library..."))
+        self.search_input.setPlaceholderText(
+            tr(self._search_placeholder_key, self._search_placeholder_fallback)
+        )
+
+    def set_search_placeholder(self, key: str, fallback: str) -> None:
+        self._search_placeholder_key = key
+        self._search_placeholder_fallback = fallback
+        self.retranslate_ui()
 
     def set_search_font_size(self, size: int) -> None:
         self._search_font_size = max(12, min(20, int(size)))

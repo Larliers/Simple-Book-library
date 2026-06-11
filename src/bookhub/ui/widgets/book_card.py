@@ -10,17 +10,21 @@ from bookhub.ui.models.resource import ResourceItem
 from bookhub.ui.resources.layout_config import UI_LAYOUT
 
 UNKNOWN_META_TEXT = "Unknown"
+UNKNOWN_META_VALUES = {"unknown", "unkown"}
 
 
-def _normalize_meta_value(value: str | None) -> str:
+def _normalize_meta_value(value: str | None) -> str | None:
     text = (value or "").strip()
-    return text if text else UNKNOWN_META_TEXT
+    if not text or text.lower() in UNKNOWN_META_VALUES:
+        return None
+    return text
 
 
 def format_author_publisher_meta(author: str | None, publisher: str | None) -> str:
     author_text = _normalize_meta_value(author)
     publisher_text = _normalize_meta_value(publisher)
-    return f"{author_text} / {publisher_text}"
+    parts = [part for part in (author_text, publisher_text) if part]
+    return " / ".join(parts) if parts else UNKNOWN_META_TEXT
 
 
 class BookCardWidget(QFrame):

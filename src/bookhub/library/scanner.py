@@ -384,6 +384,23 @@ def _split_text_rule_tags(value: str) -> list[str]:
     return [item.strip() for item in str(value or "").splitlines() if item.strip()]
 
 
+_TEXT_AUTHOR_PLACEHOLDERS = {"unknown", "unkown", "未知", "未知作者", "none", "null", "n/a"}
+_TEXT_AUTHOR_SEPARATOR_RE = re.compile(r"\s*(?:/|／|\||、|,|，|;|；)\s*")
+
+
+def _clean_text_rule_author(value: str | None) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    parts = [part.strip() for part in _TEXT_AUTHOR_SEPARATOR_RE.split(raw) if part.strip()]
+    if not parts:
+        return None
+    cleaned = [part for part in parts if part.strip().lower() not in _TEXT_AUTHOR_PLACEHOLDERS]
+    if not cleaned:
+        return None
+    return " / ".join(cleaned)
+
+
 def scan_comic_roots(repository: LibraryRepository, request: ComicScanRequest) -> ScanResult:
     result = ScanResult()
     max_depth = min(5, max(1, int(request.max_depth or 5)))
@@ -557,7 +574,7 @@ def scan_text_roots(repository: LibraryRepository, request: TextScanRequest) -> 
 
                 extracted = _extract_text_fields(rule_map=rule_map, context=context)
                 title = extracted.get("title") or file_path.stem
-                author = extracted.get("author")
+                author = _clean_text_rule_author(extracted.get("author"))
                 tags: list[str] = []
                 if extracted.get("series"):
                     tags.append(f"series:{extracted['series']}")

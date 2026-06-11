@@ -5,6 +5,9 @@ from dataclasses import dataclass, field
 from bookhub.ui.models.resource import ResourceItem
 
 
+SEARCH_FIELD_PREFIXES = {"title", "author", "tag"}
+
+
 @dataclass(slots=True)
 class UiState:
     sort_by: str = "title"
@@ -59,14 +62,7 @@ class LibraryViewModel:
         query = self.ui_state.filter
         if not query:
             return list(source)
-        return [
-            item
-            for item in source
-            if query in item.title.lower()
-            or query in item.author.lower()
-            or any(query in tag.lower() for tag in item.tags)
-            or query in item.path.lower()
-        ]
+        return [item for item in source if self._matches_query(item, query)]
 
     def build_envelope(self) -> UiInputEnvelope:
         return UiInputEnvelope(
@@ -89,10 +85,27 @@ class LibraryViewModel:
             }
         ]
 
+        tags = {
+            tag
+            for resource in self.resources
+            if not resource.is_missing
+            for tag in resource.tags
+            if tag and (not query or self._matches_tag_query(tag, query))
+        }
+        for tag in sorted(tags):
+            suggestions.append(
+                {
+                    "group": "Tags",
+                    "label": tag,
+                    "description": "Tag",
+                    "query_value": f"tag:{tag}",
+                }
+            )
+
         for item in self.resources:
             if item.is_missing:
                 continue
-            if query and query not in item.title.lower() and query not in item.author.lower():
+            if query and not self._matches_query(item, query):
                 continue
             suggestions.append(
                 {
@@ -106,7 +119,9 @@ class LibraryViewModel:
         authors = {
             resource.author
             for resource in self.resources
-            if resource.author and not resource.is_missing and (not query or query in resource.author.lower())
+            if resource.author
+            and not resource.is_missing
+            and (not query or self._matches_author_query(resource.author, query))
         }
         for author in sorted(authors):
             suggestions.append(
@@ -121,3 +136,42 @@ class LibraryViewModel:
 
     def set_search_suggestions_for_query(self, raw_query: str) -> None:
         self.ui_state.search_suggestions = self.search_suggestions_for_query(raw_query)
+
+    def _matches_query(self, item: ResourceItem, query: str) -> bool:
+        field, value = self._parse_query(query)
+        if not value:
+            return True
+        if field == "title":
+            return value in item.title.lower()
+        if field == "author":
+            return value in item.author.lower()
+        if field == "tag":
+            return any(value in tag.lower() for tag in item.tags)
+        return (
+            value in item.title.lower()
+            or value in item.author.lower()
+            or any(value in tag.lower() for tag in item.tags)
+            or value in item.path.lower()
+        )
+
+    def _matches_author_query(self, author: str, query: str) -> bool:
+        field, value = self._parse_query(query)
+        if field and field != "author":
+            return False
+        return not value or value in author.lower()
+
+    def _matches_tag_query(self, tag: str, query: str) -> bool:
+        field, value = self._parse_query(query)
+        if field and field != "tag":
+            return False
+        return not value or value in tag.lower()
+
+    @staticmethod
+    def _parse_query(query: str) -> tuple[str | None, str]:
+        if ":" not in query:
+            return None, query
+        prefix, value = query.split(":", 1)
+        prefix = prefix.strip().lower()
+        if prefix not in SEARCH_FIELD_PREFIXES:
+            return None, query
+        return prefix, value.strip().lower()

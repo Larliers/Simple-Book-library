@@ -27,7 +27,7 @@ try:
     from bookhub.ui.models.resource import ResourceItem
     from bookhub.ui.pages.library_page import LibraryPage
     from bookhub.ui.viewmodels.library_viewmodel import LibraryViewModel
-    from bookhub.ui.widgets.book_card import BookCardWidget
+    from bookhub.ui.widgets.book_card import BookCardWidget, format_author_publisher_meta
 
     QT_AVAILABLE = True
 except Exception:  # pragma: no cover - optional UI dependency
@@ -36,6 +36,7 @@ except Exception:  # pragma: no cover - optional UI dependency
     LibraryPage = None  # type: ignore[assignment]
     LibraryViewModel = None  # type: ignore[assignment]
     ResourceItem = None  # type: ignore[assignment]
+    format_author_publisher_meta = None  # type: ignore[assignment]
     QT_AVAILABLE = False
 
 
@@ -195,6 +196,13 @@ class CoverGridUiTests(unittest.TestCase):
             self.assertEqual(add_card_count, 0)
         finally:
             page.deleteLater()
+
+    @unittest.skipUnless(QT_AVAILABLE, "Qt not available")
+    def test_author_meta_hides_missing_publisher(self) -> None:
+        self.assertEqual(format_author_publisher_meta("烟烬先生", None), "烟烬先生")
+        self.assertEqual(format_author_publisher_meta("KrankheitRan", "Unknown"), "KrankheitRan")
+        self.assertEqual(format_author_publisher_meta("A", "B"), "A / B")
+        self.assertEqual(format_author_publisher_meta(None, None), "Unknown")
 
 
 if __name__ == "__main__":

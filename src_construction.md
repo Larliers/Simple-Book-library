@@ -122,7 +122,7 @@ src/
 ### 3.4 书库后端组件（bookhub/library）
 - `src/bookhub/library/__init__.py`：后端模块导出入口。
 - `src/bookhub/library/repository.py`：SQLite 读写中心；设置、书籍、书单、收藏、标签操作；漫画排序与显示模式、Text 规则预览结果区高度/用户预设等 UI 偏好持久化。
-- `src/bookhub/library/scanner.py`：目录扫描与文件过滤；构建入库候选（PDF/EPUB、Comic、Text Novel）；Text 规则 tag 结果按换行拆分为多标签；漫画目录快照判定、`folder_modified_at` 写入与超大封面降采样占位。
+- `src/bookhub/library/scanner.py`：目录扫描与文件过滤；构建入库候选（PDF/EPUB、Comic、Text Novel）；Text 规则 author 入库前清理 Unknown/unkown 等占位作者，tag 结果按换行拆分为多标签；漫画目录快照判定、`folder_modified_at` 写入与超大封面降采样占位。
 - `src/bookhub/library/preview_paths.py`：预览图目录结构与路径构建服务（`resource_type + variant`）。
 - `src/bookhub/library/metadata.py`：元数据提取与缩略图生成（WebP，`file://` 路径）。
 - `src/bookhub/library/models.py`：扫描/任务的数据结构定义。
@@ -139,7 +139,7 @@ src/
 
 ### 3.5 UI 主组件（bookhub/ui）
 - `src/bookhub/ui/__init__.py`：UI 包导出入口。
-- `src/bookhub/ui/app_window.py`：主窗口装配；连接 sidebar、topbar、pages 与后端任务。
+- `src/bookhub/ui/app_window.py`：主窗口装配；连接 sidebar、topbar、pages 与后端任务；按当前页面将顶部搜索路由到 Library 或 Text Novel 资源集。
 
 ### 3.6 对话框组件（bookhub/ui/dialogs）
 - `src/bookhub/ui/dialogs/__init__.py`：对话框包入口。
@@ -162,7 +162,7 @@ src/
 - `src/bookhub/ui/pages/collections_page.py`：书单页与书单详情页；详情支持 grid/list 视图与侧键返回上一级。
 - `src/bookhub/ui/pages/favorites_page.py`：收藏页；支持 grid/list 视图与排序持久化；封面网格与 Library/Comic 共享无壳层 cover-only 卡片表现。
 - `src/bookhub/ui/pages/settings_page.py`：设置页（扫描、匹配策略、卡片间距、封面选中边框粗细/颜色、缩略图任务、错误日志、Text Novel）；导航仅保留 General 与 Error logs；Text Novel 路径行支持“Delete + Rules + Path”布局；支持 Text 预览长度与漫画显示模式（瀑布流/分页）及分页容量配置；扫描/缩略图任务按 Library/Comic/Text 分类型入口。
-- `src/bookhub/ui/pages/text_novel_page.py`：Text Novel 页面；固定列表视图；右侧详情栏展示 TXT 预览文本；双击外部打开。
+- `src/bookhub/ui/pages/text_novel_page.py`：Text Novel 页面；固定列表视图；接收 AppWindow 按文本小说标题/作者/tag/路径过滤后的资源；右侧详情栏展示 TXT 预览文本；双击外部打开。
 
 ### 3.9 UI 资源组件（bookhub/ui/resources）
 - `src/bookhub/ui/resources/__init__.py`：资源包入口。
@@ -175,13 +175,13 @@ src/
 
 ### 3.10 视图模型组件（bookhub/ui/viewmodels）
 - `src/bookhub/ui/viewmodels/__init__.py`：视图模型包入口。
-- `src/bookhub/ui/viewmodels/library_viewmodel.py`：Library 查询过滤、视图模式、搜索建议状态。
+- `src/bookhub/ui/viewmodels/library_viewmodel.py`：Library/Text 资源查询过滤、字段前缀搜索（`title:`/`author:`/`tag:`）、视图模式、搜索建议状态。
 
 ### 3.11 小部件组件（bookhub/ui/widgets）
 - `src/bookhub/ui/widgets/__init__.py`：小部件包入口。
 - `src/bookhub/ui/widgets/sidebar.py`：左侧导航栏组件。
-- `src/bookhub/ui/widgets/topbar.py`：顶部搜索栏与建议浮层。
-- `src/bookhub/ui/widgets/book_card.py`：书籍卡片组件（常规卡片、cover-only 卡片）；cover-only 分支使用零内边距封面直陈列（无常驻外壳）。
+- `src/bookhub/ui/widgets/topbar.py`：顶部搜索栏与建议浮层；支持按页面切换搜索占位文案。
+- `src/bookhub/ui/widgets/book_card.py`：书籍卡片组件（常规卡片、cover-only 卡片）；统一格式化作者/出版社元信息并隐藏缺失出版社的 Unknown 占位；cover-only 分支使用零内边距封面直陈列（无常驻外壳）。
 - `src/bookhub/ui/widgets/slide_toast.py`：右下角滑入提示组件。
 
 ## 4. 当前关键实现（简要）
