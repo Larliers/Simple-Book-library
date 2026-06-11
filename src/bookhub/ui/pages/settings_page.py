@@ -72,6 +72,7 @@ class SettingsPage(QWidget):
     cover_selected_border_color_changed = Signal(str)
     text_preview_chars_changed = Signal(int)
     text_rule_preview_result_height_changed = Signal(int)
+    text_rule_presets_changed = Signal(list)
     cleanup_library_thumbnails_requested = Signal()
     regenerate_library_thumbnails_requested = Signal()
     cleanup_comic_thumbnails_requested = Signal()
@@ -90,6 +91,7 @@ class SettingsPage(QWidget):
         self._project_font_families: list[str] = []
         self._font_source: str = "system"
         self._text_rule_preview_result_height = 180
+        self._text_rule_presets: list[dict[str, object]] = []
         self._cover_selected_border_color = DEFAULT_COVER_SELECTED_BORDER_COLOR
 
         root = QVBoxLayout(self)
@@ -651,6 +653,9 @@ class SettingsPage(QWidget):
             value = 180
         self._text_rule_preview_result_height = min(420, max(96, value))
 
+    def set_text_rule_presets(self, presets: list[dict[str, object]]) -> None:
+        self._text_rule_presets = [dict(item) for item in presets if isinstance(item, dict)]
+
     def set_available_project_fonts(self, families: list[str]) -> None:
         self._project_font_families = sorted({str(item).strip() for item in families if str(item).strip()})
         current = str(self.font_family_combo.currentData() or "")
@@ -1039,12 +1044,18 @@ class SettingsPage(QWidget):
             preview_chars=preview_chars,
             preview_result_height=self._text_rule_preview_result_height,
             preview_result_height_changed=self.text_rule_preview_result_height_changed.emit,
+            rule_presets=self._text_rule_presets,
+            rule_presets_changed=self._emit_text_rule_presets_changed,
         )
         if dialog.exec() != QDialog.Accepted:
             return
         updated_json = dialog.rules_json()
         self._text_rules_by_path[target] = updated_json
         self.manage_text_rules_requested.emit(target, updated_json)
+
+    def _emit_text_rule_presets_changed(self, presets: list[dict[str, object]]) -> None:
+        self.set_text_rule_presets(presets)
+        self.text_rule_presets_changed.emit(self._text_rule_presets)
 
     def _emit_scan_on_startup_changed(self) -> None:
         self.scan_on_startup_changed.emit(self.launch_check.isChecked())

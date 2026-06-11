@@ -276,6 +276,99 @@ class TextRuleDialogTests(unittest.TestCase):
             self.assertEqual(saved[-1], expected_height)
             self.assertNotEqual(saved[-1], 260)
 
+    def test_dialog_saves_rule_and_steps_presets(self) -> None:
+        rules = {
+            "title": [
+                {
+                    "field": "title",
+                    "source": "txt_head_text",
+                    "steps": [{"type": "take_line", "index": 2}, {"type": "trim"}],
+                }
+            ]
+        }
+        saved: list[list[dict[str, object]]] = []
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dialog = TextRuleDialog(
+                tmp_dir,
+                json.dumps(rules),
+                preview_chars=120,
+                rule_presets_changed=saved.append,
+            )
+            self.addCleanup(dialog.close)
+
+            rule = dialog._selected_rule()
+            self.assertIsNotNone(rule)
+            rule_preset = dialog._add_rule_preset("Title rule", "rule", rule)  # type: ignore[arg-type]
+            steps_preset = dialog._add_rule_preset("Cleanup", "steps", rule)  # type: ignore[arg-type]
+
+            self.assertTrue(saved)
+            self.assertEqual(dialog.preset_combo.count(), 2)
+            self.assertEqual(rule_preset["kind"], "rule")
+            self.assertEqual(rule_preset["source"], "txt_head_text")
+            self.assertEqual(rule_preset["steps"][0]["type"], "take_line")
+            self.assertEqual(steps_preset["kind"], "steps")
+            self.assertNotIn("source", steps_preset)
+            self.assertEqual(saved[-1][-1]["name"], "Cleanup")
+
+    def test_dialog_imports_rule_and_steps_presets(self) -> None:
+        rules = {
+            "title": [
+                {
+                    "field": "title",
+                    "source": "filename",
+                    "steps": [{"type": "trim"}],
+                }
+            ]
+        }
+        presets = [
+            {
+                "id": "preset-rule",
+                "kind": "rule",
+                "name": "Title line",
+                "source": "txt_head_text",
+                "steps": [{"type": "take_line", "index": 2}],
+            },
+            {
+                "id": "preset-steps",
+                "kind": "steps",
+                "name": "Cleanup",
+                "steps": [{"type": "remove_first_lines", "count": 1}, {"type": "trim"}],
+            },
+        ]
+        saved: list[list[dict[str, object]]] = []
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dialog = TextRuleDialog(
+                tmp_dir,
+                json.dumps(rules),
+                preview_chars=120,
+                rule_presets=presets,
+                rule_presets_changed=saved.append,
+            )
+            self.addCleanup(dialog.close)
+
+            dialog.preset_combo.setCurrentIndex(dialog.preset_combo.findData("preset-rule"))
+            dialog._import_selected_preset()
+            self.assertEqual(dialog.rule_list.count(), 2)
+            payload = json.loads(dialog.rules_json())
+            imported_rule = payload["title"][1]
+            self.assertEqual(imported_rule["source"], "txt_head_text")
+            self.assertEqual(imported_rule["steps"][0]["type"], "take_line")
+
+            dialog.rule_list.setCurrentRow(0)
+            dialog.preset_combo.setCurrentIndex(dialog.preset_combo.findData("preset-steps"))
+            dialog._import_selected_preset()
+            payload = json.loads(dialog.rules_json())
+            original_steps = payload["title"][0]["steps"]
+            self.assertEqual([step["type"] for step in original_steps], ["trim", "remove_first_lines", "trim"])
+
+            dialog._remove_rule_preset_by_id("preset-rule")
+            self.assertEqual(dialog.preset_combo.count(), 1)
+            self.assertEqual(dialog.preset_combo.currentData(), "preset-steps")
+            self.assertTrue(saved)
+            self.assertEqual(saved[-1][0]["id"], "preset-steps")
+
     def test_dialog_exposes_loop_lines_params_and_json(self) -> None:
         rules = {
             "tag": [

@@ -102,6 +102,45 @@ class CoverGridSettingsTests(unittest.TestCase):
             )
             self.assertEqual(repo_reload.get_text_rule_preview_result_height(), 260)
 
+    def test_repository_text_rule_presets_persist_and_normalize(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = LibraryRepository(
+                db_path=root / "library.db",
+                scan_report_path=root / "scan_report.json",
+            )
+            self.assertEqual(repo.get_text_rule_presets(), [])
+
+            repo.set_text_rule_presets(
+                [
+                    {
+                        "id": "preset-1",
+                        "kind": "rule",
+                        "name": "Title rule",
+                        "source": "txt_head_text",
+                        "steps": [{"type": "take_line", "index": 2}, {"bad": "ignored"}],
+                    },
+                    {"id": "preset-2", "kind": "steps", "name": "", "steps": [{"type": "trim"}]},
+                    {"id": "", "kind": "rule", "name": "bad", "steps": []},
+                    {"id": "bad-kind", "kind": "unknown", "name": "bad", "steps": []},
+                ]
+            )
+
+            repo_reload = LibraryRepository(
+                db_path=root / "library.db",
+                scan_report_path=root / "scan_report.json",
+            )
+            presets = repo_reload.get_text_rule_presets()
+
+            self.assertEqual(len(presets), 2)
+            self.assertEqual(presets[0]["id"], "preset-1")
+            self.assertEqual(presets[0]["kind"], "rule")
+            self.assertEqual(presets[0]["source"], "txt_head_text")
+            self.assertEqual(presets[0]["steps"], [{"type": "take_line", "index": 2}])
+            self.assertEqual(presets[1]["kind"], "steps")
+            self.assertEqual(presets[1]["name"], "Preset")
+            self.assertNotIn("source", presets[1])
+
 
 @unittest.skipUnless(QT_AVAILABLE, "PySide6 is required for cover grid UI tests")
 class CoverGridUiTests(unittest.TestCase):

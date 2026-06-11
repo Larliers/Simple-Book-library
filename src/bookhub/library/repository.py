@@ -226,6 +226,8 @@ class LibraryRepository:
             self.set_setting("text_preview_chars", DEFAULT_TEXT_PREVIEW_CHARS)
         if self.get_setting("text_rule_preview_result_height", None) is None:
             self.set_setting("text_rule_preview_result_height", 180)
+        if self.get_setting("text_rule_presets", None) is None:
+            self.set_setting("text_rule_presets", [])
         if self.get_setting("scan_on_startup", None) is None:
             self.set_setting("scan_on_startup", False)
         if self.get_setting("auto_scan_on_path_change", None) is None:
@@ -356,6 +358,52 @@ class LibraryRepository:
 
     def set_text_rule_preview_result_height(self, height: int) -> None:
         self.set_setting("text_rule_preview_result_height", min(420, max(96, int(height))))
+
+    def get_text_rule_presets(self) -> list[dict[str, Any]]:
+        return self._normalize_text_rule_presets(self.get_setting("text_rule_presets", []))
+
+    def set_text_rule_presets(self, presets: list[dict[str, Any]]) -> None:
+        self.set_setting("text_rule_presets", self._normalize_text_rule_presets(presets))
+
+    @staticmethod
+    def _normalize_text_rule_presets(value: Any) -> list[dict[str, Any]]:
+        if not isinstance(value, list):
+            return []
+        normalized: list[dict[str, Any]] = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            preset_id = str(item.get("id") or "").strip()
+            kind = str(item.get("kind") or "").strip()
+            if not preset_id or kind not in {"rule", "steps"}:
+                continue
+            steps = LibraryRepository._normalize_text_rule_preset_steps(item.get("steps"))
+            payload: dict[str, Any] = {
+                "id": preset_id,
+                "kind": kind,
+                "name": str(item.get("name") or "Preset").strip() or "Preset",
+                "steps": steps,
+            }
+            if kind == "rule":
+                payload["source"] = str(item.get("source") or "filename").strip() or "filename"
+            normalized.append(payload)
+        return normalized
+
+    @staticmethod
+    def _normalize_text_rule_preset_steps(value: Any) -> list[dict[str, Any]]:
+        if not isinstance(value, list):
+            return []
+        steps: list[dict[str, Any]] = []
+        for step in value:
+            if not isinstance(step, dict):
+                continue
+            step_type = str(step.get("type") or "").strip()
+            if not step_type:
+                continue
+            payload = {str(key): data for key, data in step.items()}
+            payload["type"] = step_type
+            steps.append(payload)
+        return steps
 
     def get_scan_on_startup(self) -> bool:
         return bool(self.get_setting("scan_on_startup", False))

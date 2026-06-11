@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import copy
 import json
+import uuid
 from typing import Any, Callable
 
 from PySide6.QtCore import Qt
@@ -11,6 +13,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -117,12 +120,16 @@ class TextRuleDialog(QDialog):
         preview_chars: int = DEFAULT_TEXT_PREVIEW_CHARS,
         preview_result_height: int = PREVIEW_RESULT_HEIGHT_DEFAULT,
         preview_result_height_changed: Callable[[int], None] | None = None,
+        rule_presets: list[dict[str, Any]] | None = None,
+        rule_presets_changed: Callable[[list[dict[str, Any]]], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self._root_path = root_path
         self._preview_chars = max(100, int(preview_chars or DEFAULT_TEXT_PREVIEW_CHARS))
         self._preview_result_height = self._normalize_preview_result_height(preview_result_height)
         self._preview_result_height_changed = preview_result_height_changed
+        self._rule_presets = self._normalize_rule_presets(rule_presets or [])
+        self._rule_presets_changed = rule_presets_changed
         self._current_field_code = "title"
         self._rules_by_field: dict[str, list[ImportRule]] = {field: [] for field in self.FIELDS}
         self._field_buttons: dict[str, QPushButton] = {}
@@ -244,6 +251,14 @@ class TextRuleDialog(QDialog):
         steps_label.setObjectName("PageSubtitle")
         steps_header.addWidget(steps_label)
         steps_header.addStretch(1)
+        self.import_preset_top_btn = QPushButton(tr("text.rules.preset.import", "Import Preset"))
+        self.import_preset_top_btn.setObjectName("GhostButton")
+        self.import_preset_top_btn.clicked.connect(self._import_selected_preset)
+        steps_header.addWidget(self.import_preset_top_btn)
+        self.save_preset_btn = QPushButton(tr("text.rules.preset.save", "Save Preset"))
+        self.save_preset_btn.setObjectName("GhostButton")
+        self.save_preset_btn.clicked.connect(self._save_selected_rule_as_preset)
+        steps_header.addWidget(self.save_preset_btn)
         self.add_step_btn = QPushButton(tr("text.rules.add_step", "Add Step"))
         self.add_step_btn.setObjectName("GhostButton")
         self.add_step_btn.clicked.connect(self._add_step)
@@ -264,20 +279,40 @@ class TextRuleDialog(QDialog):
 
         template_box = QFrame()
         template_box.setObjectName("SubtlePanel")
-        template_layout = QHBoxLayout(template_box)
+        template_layout = QVBoxLayout(template_box)
         template_layout.setContentsMargins(8, 8, 8, 8)
         template_layout.setSpacing(8)
-        template_layout.addWidget(QLabel(tr("text.rules.templates.title", "Template Rules")))
+        builtin_row = QHBoxLayout()
+        builtin_row.setSpacing(8)
+        builtin_row.addWidget(QLabel(tr("text.rules.templates.title", "Template Rules")))
         self.template_title_btn = QPushButton(tr("text.rules.template.title_line", "Title from first line"))
         self.template_title_btn.clicked.connect(self._insert_template_title_rule)
-        template_layout.addWidget(self.template_title_btn)
+        builtin_row.addWidget(self.template_title_btn)
         self.template_author_btn = QPushButton(tr("text.rules.template.author_bracket", "Author from bracket"))
         self.template_author_btn.clicked.connect(self._insert_template_author_rule)
-        template_layout.addWidget(self.template_author_btn)
+        builtin_row.addWidget(self.template_author_btn)
         self.template_fallback_btn = QPushButton(tr("text.rules.template.fallback_stem", "Fallback from stem"))
         self.template_fallback_btn.clicked.connect(self._insert_template_fallback_rule)
-        template_layout.addWidget(self.template_fallback_btn)
-        template_layout.addStretch(1)
+        builtin_row.addWidget(self.template_fallback_btn)
+        builtin_row.addStretch(1)
+        template_layout.addLayout(builtin_row)
+
+        preset_row = QHBoxLayout()
+        preset_row.setSpacing(8)
+        preset_row.addWidget(QLabel(tr("text.rules.presets.title", "My Presets")))
+        self.preset_combo = QComboBox()
+        self.preset_combo.setObjectName("TextRulePresetCombo")
+        preset_row.addWidget(self.preset_combo, 1)
+        self.import_preset_btn = QPushButton(tr("text.rules.preset.import_current", "Import to current rule"))
+        self.import_preset_btn.setObjectName("GhostButton")
+        self.import_preset_btn.clicked.connect(self._import_selected_preset)
+        preset_row.addWidget(self.import_preset_btn)
+        self.delete_preset_btn = QPushButton(tr("text.rules.preset.delete", "Delete Preset"))
+        self.delete_preset_btn.setObjectName("DangerButton")
+        self.delete_preset_btn.clicked.connect(self._delete_selected_preset)
+        preset_row.addWidget(self.delete_preset_btn)
+        template_layout.addLayout(preset_row)
+        self._refresh_preset_combo()
         layout.addWidget(template_box)
 
         parent_layout.addWidget(editor, 2)
@@ -764,6 +799,156 @@ class TextRuleDialog(QDialog):
         del rules[idx]
         self._refresh_rule_list(selected_row=min(idx, len(rules) - 1))
 
+    def _selected_rule(self) -> ImportRule | None:
+        idx = self.rule_list.currentRow()
+        rules = self._current_rules()
+        if idx < 0 or idx >= len(rules):
+            return None
+        return rules[idx]
+
+    def _save_selected_rule_as_preset(self) -> None:
+        rule = self._selected_rule()
+        if rule is None:
+            QMessageBox.warning(
+                self,
+                tr("text.rules.preset.need_rule", "No rule selected"),
+                tr("text.rules.preset.need_rule_msg", "Please add/select a rule first."),
+            )
+            return
+
+        name, ok = QInputDialog.getText(
+            self,
+            tr("text.rules.preset.save", "Save Preset"),
+            tr("text.rules.preset.name_prompt", "Preset name:"),
+        )
+        name = str(name or "").strip()
+        if not ok or not name:
+            return
+
+        rule_label = tr("text.rules.preset.kind.rule", "Full rule")
+        steps_label = tr("text.rules.preset.kind.steps", "Steps only")
+        kind_text, ok = QInputDialog.getItem(
+            self,
+            tr("text.rules.preset.kind_title", "Preset Type"),
+            tr("text.rules.preset.kind_prompt", "Save as:"),
+            [rule_label, steps_label],
+            0,
+            False,
+        )
+        if not ok:
+            return
+        kind = "steps" if kind_text == steps_label else "rule"
+        self._add_rule_preset(name, kind, rule)
+
+    def _add_rule_preset(self, name: str, kind: str, rule: ImportRule) -> dict[str, Any]:
+        steps = [step.to_dict() for step in rule.steps]
+        preset: dict[str, Any] = {
+            "id": uuid.uuid4().hex,
+            "kind": "steps" if kind == "steps" else "rule",
+            "name": str(name or "Preset").strip() or "Preset",
+            "steps": copy.deepcopy(steps),
+        }
+        if preset["kind"] == "rule":
+            preset["source"] = str(rule.source or "filename")
+        self._set_rule_presets([*self._rule_presets, preset])
+        return preset
+
+    def _import_selected_preset(self) -> None:
+        preset = self._selected_preset()
+        if preset is None:
+            QMessageBox.warning(
+                self,
+                tr("text.rules.preset.none", "No preset"),
+                tr("text.rules.preset.none_msg", "No preset is selected."),
+            )
+            return
+
+        steps = self._steps_from_preset(preset)
+        if str(preset.get("kind") or "") == "rule":
+            rules = self._current_rules()
+            rules.append(
+                ImportRule(
+                    field=self._current_field(),
+                    source=str(preset.get("source") or "filename"),
+                    steps=steps,
+                )
+            )
+            self._refresh_rule_list(selected_row=len(rules) - 1)
+            return
+
+        rule = self._selected_rule()
+        if rule is None:
+            QMessageBox.warning(
+                self,
+                tr("text.rules.preset.need_rule", "No rule selected"),
+                tr("text.rules.preset.need_rule_msg", "Please add/select a rule first."),
+            )
+            return
+        rule.steps.extend(steps)
+        self._render_steps(rule.steps)
+        self._refresh_rule_list_label()
+        self._refresh_preview()
+
+    def _delete_selected_preset(self) -> None:
+        preset = self._selected_preset()
+        if preset is None:
+            return
+        result = QMessageBox.question(
+            self,
+            tr("text.rules.preset.delete", "Delete Preset"),
+            tr("text.rules.preset.delete_confirm", "Delete preset {name}?").format(
+                name=str(preset.get("name") or "")
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if result == QMessageBox.Yes:
+            self._remove_rule_preset_by_id(str(preset.get("id") or ""))
+
+    def _remove_rule_preset_by_id(self, preset_id: str) -> None:
+        self._set_rule_presets([item for item in self._rule_presets if str(item.get("id") or "") != preset_id])
+
+    def _selected_preset(self) -> dict[str, Any] | None:
+        if not hasattr(self, "preset_combo"):
+            return None
+        preset_id = str(self.preset_combo.currentData() or "")
+        for preset in self._rule_presets:
+            if str(preset.get("id") or "") == preset_id:
+                return copy.deepcopy(preset)
+        return None
+
+    def _steps_from_preset(self, preset: dict[str, Any]) -> list[RuleStep]:
+        steps: list[RuleStep] = []
+        for item in preset.get("steps") or []:
+            if isinstance(item, dict):
+                steps.append(RuleStep.from_dict(copy.deepcopy(item)))
+        return steps
+
+    def _set_rule_presets(self, presets: list[dict[str, Any]]) -> None:
+        self._rule_presets = self._normalize_rule_presets(presets)
+        self._refresh_preset_combo()
+        if self._rule_presets_changed is not None:
+            self._rule_presets_changed(copy.deepcopy(self._rule_presets))
+
+    def _refresh_preset_combo(self) -> None:
+        if not hasattr(self, "preset_combo"):
+            return
+        current_id = str(self.preset_combo.currentData() or "")
+        self.preset_combo.blockSignals(True)
+        self.preset_combo.clear()
+        for preset in self._rule_presets:
+            self.preset_combo.addItem(self._format_preset_label(preset), str(preset.get("id") or ""))
+        if current_id:
+            index = self.preset_combo.findData(current_id)
+            if index >= 0:
+                self.preset_combo.setCurrentIndex(index)
+        self.preset_combo.blockSignals(False)
+        has_presets = self.preset_combo.count() > 0
+        self.preset_combo.setEnabled(has_presets)
+        self.import_preset_btn.setEnabled(has_presets)
+        self.import_preset_top_btn.setEnabled(has_presets)
+        self.delete_preset_btn.setEnabled(has_presets)
+
     def _open_help_dialog(self) -> None:
         dialog = TextRuleHelpDialog(self)
         dialog.exec()
@@ -1058,6 +1243,35 @@ class TextRuleDialog(QDialog):
         return min(cls.PREVIEW_RESULT_HEIGHT_MAX, max(cls.PREVIEW_RESULT_HEIGHT_MIN, height))
 
     @staticmethod
+    def _normalize_rule_presets(value: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not isinstance(value, list):
+            return []
+        presets: list[dict[str, Any]] = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            preset_id = str(item.get("id") or "").strip()
+            kind = str(item.get("kind") or "").strip()
+            if not preset_id or kind not in {"rule", "steps"}:
+                continue
+            steps = []
+            for step in item.get("steps") or []:
+                if isinstance(step, dict) and str(step.get("type") or "").strip():
+                    payload = {str(key): data for key, data in step.items()}
+                    payload["type"] = str(payload.get("type") or "").strip()
+                    steps.append(payload)
+            preset: dict[str, Any] = {
+                "id": preset_id,
+                "kind": kind,
+                "name": str(item.get("name") or "Preset").strip() or "Preset",
+                "steps": steps,
+            }
+            if kind == "rule":
+                preset["source"] = str(item.get("source") or "filename").strip() or "filename"
+            presets.append(preset)
+        return presets
+
+    @staticmethod
     def _field_label(code: str) -> str:
         mapping = {
             "title": tr("text.rules.field.title", "Title"),
@@ -1078,6 +1292,19 @@ class TextRuleDialog(QDialog):
             "txt_head_text": tr("text.rules.source.txt_head_text", "TXT head text"),
         }
         return mapping.get(code, code)
+
+    @staticmethod
+    def _preset_kind_label(kind: str) -> str:
+        if kind == "steps":
+            return tr("text.rules.preset.kind.steps", "Steps only")
+        return tr("text.rules.preset.kind.rule", "Full rule")
+
+    @staticmethod
+    def _format_preset_label(preset: dict[str, Any]) -> str:
+        return tr("text.rules.preset.item", "{name} ({kind})").format(
+            name=str(preset.get("name") or "Preset"),
+            kind=TextRuleDialog._preset_kind_label(str(preset.get("kind") or "rule")),
+        )
 
     @classmethod
     def _step_codes_for_category(cls, category: str) -> tuple[str, ...]:
