@@ -15,7 +15,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 try:
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QComboBox, QSplitter
     from PySide6.QtWidgets import QLineEdit
     from PySide6.QtWidgets import QTextBrowser, QTextEdit
 
@@ -27,6 +27,8 @@ try:
 except Exception:  # pragma: no cover - optional UI dependency
     QApplication = None  # type: ignore[assignment]
     QLineEdit = None  # type: ignore[assignment]
+    QComboBox = None  # type: ignore[assignment]
+    QSplitter = None  # type: ignore[assignment]
     QTextBrowser = None  # type: ignore[assignment]
     QTextEdit = None  # type: ignore[assignment]
     TextRuleHelpDialog = None  # type: ignore[assignment]
@@ -141,7 +143,10 @@ class TextRuleDialogTests(unittest.TestCase):
 
             self.assertEqual(dialog._visible_step_param_keys[0], ("start", "end"))
             self.assertIsInstance(dialog.preview_result_label, QTextEdit)
-            self.assertEqual(dialog.preview_result_label.maximumHeight(), 150)
+            self.assertEqual(dialog.preview_result_label.frameShape(), QTextEdit.NoFrame)
+            self.assertEqual(dialog.preview_result_box.minimumHeight(), 96)
+            self.assertEqual(dialog.preview_result_box.maximumHeight(), 420)
+            self.assertIsInstance(dialog.preview_splitter, QSplitter)
 
             dialog.preview_path_edit.setText(str(Path(tmp_dir) / "demo.txt"))
             dialog.preview_head_text_edit.setPlainText("一\n二\n三")
@@ -173,6 +178,103 @@ class TextRuleDialogTests(unittest.TestCase):
             step = payload["title"][0]["steps"][0]
             self.assertEqual(step["type"], "remove_last_lines")
             self.assertEqual(step["count"], 3)
+
+    def test_dialog_exposes_remove_first_lines_param_and_json(self) -> None:
+        rules = {
+            "title": [
+                {
+                    "field": "title",
+                    "source": "txt_head_text",
+                    "steps": [{"type": "remove_first_lines", "count": 2}],
+                }
+            ]
+        }
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dialog = TextRuleDialog(tmp_dir, json.dumps(rules), preview_chars=120)
+            self.addCleanup(dialog.close)
+
+            category_combos = dialog.steps_container.findChildren(QComboBox, "TextRuleStepCategoryCombo")
+            type_combos = dialog.steps_container.findChildren(QComboBox, "TextRuleStepTypeCombo")
+            self.assertEqual(category_combos[0].currentData(), "line")
+            self.assertEqual(type_combos[0].currentData(), "remove_first_lines")
+            self.assertEqual(dialog._visible_step_param_keys[0], ("count",))
+
+            dialog._set_step_param(0, "count", 4)
+
+            payload = json.loads(dialog.rules_json())
+            step = payload["title"][0]["steps"][0]
+            self.assertEqual(step["type"], "remove_first_lines")
+            self.assertEqual(step["count"], 4)
+
+    def test_dialog_groups_step_types_and_exposes_new_cleanup_params(self) -> None:
+        rules = {
+            "title": [
+                {
+                    "field": "title",
+                    "source": "txt_head_text",
+                    "steps": [
+                        {"type": "remove_text", "text": "[汉化组]", "case_sensitive": False},
+                        {"type": "take_after_last_text", "value": " - "},
+                    ],
+                }
+            ]
+        }
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dialog = TextRuleDialog(tmp_dir, json.dumps(rules), preview_chars=120)
+            self.addCleanup(dialog.close)
+
+            category_combos = dialog.steps_container.findChildren(QComboBox, "TextRuleStepCategoryCombo")
+            type_combos = dialog.steps_container.findChildren(QComboBox, "TextRuleStepTypeCombo")
+            self.assertEqual(len(category_combos), 2)
+            self.assertEqual(len(type_combos), 2)
+            self.assertEqual(category_combos[0].currentData(), "delete")
+            self.assertEqual(type_combos[0].currentData(), "remove_text")
+            self.assertEqual(dialog._visible_step_param_keys[0], ("text", "case_sensitive"))
+            self.assertEqual(category_combos[1].currentData(), "extract")
+            self.assertEqual(type_combos[1].currentData(), "take_after_last_text")
+            self.assertEqual(dialog._visible_step_param_keys[1], ("value",))
+
+            dialog._set_step_param(0, "text", "[翻译]")
+            dialog._set_step_param(0, "case_sensitive", True)
+            payload = json.loads(dialog.rules_json())
+            step = payload["title"][0]["steps"][0]
+            self.assertEqual(step["type"], "remove_text")
+            self.assertEqual(step["text"], "[翻译]")
+            self.assertIs(step["case_sensitive"], True)
+
+    def test_preview_result_height_callback_tracks_splitter(self) -> None:
+        rules = {
+            "title": [
+                {
+                    "field": "title",
+                    "source": "txt_head_text",
+                    "steps": [{"type": "take_first_lines", "count": 1}],
+                }
+            ]
+        }
+        saved: list[int] = []
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dialog = TextRuleDialog(
+                tmp_dir,
+                json.dumps(rules),
+                preview_chars=120,
+                preview_result_height=260,
+                preview_result_height_changed=saved.append,
+            )
+            self.addCleanup(dialog.close)
+
+            self.assertEqual(dialog._preview_result_height, 260)
+            dialog.preview_splitter.setSizes([280, 320])
+            dialog._on_preview_splitter_moved(0, 1)
+            expected_height = dialog._normalize_preview_result_height(dialog.preview_splitter.sizes()[1])
+            dialog.reject()
+
+            self.assertTrue(saved)
+            self.assertEqual(saved[-1], expected_height)
+            self.assertNotEqual(saved[-1], 260)
 
     def test_dialog_exposes_loop_lines_params_and_json(self) -> None:
         rules = {

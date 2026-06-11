@@ -224,6 +224,8 @@ class LibraryRepository:
             self.set_setting("cover_selected_border_color_hex", DEFAULT_COVER_SELECTED_BORDER_COLOR)
         if self.get_setting("text_preview_chars", None) is None:
             self.set_setting("text_preview_chars", DEFAULT_TEXT_PREVIEW_CHARS)
+        if self.get_setting("text_rule_preview_result_height", None) is None:
+            self.set_setting("text_rule_preview_result_height", 180)
         if self.get_setting("scan_on_startup", None) is None:
             self.set_setting("scan_on_startup", False)
         if self.get_setting("auto_scan_on_path_change", None) is None:
@@ -343,6 +345,17 @@ class LibraryRepository:
         if value not in TEXT_PREVIEW_CHAR_OPTIONS:
             value = DEFAULT_TEXT_PREVIEW_CHARS
         self.set_setting("text_preview_chars", value)
+
+    def get_text_rule_preview_result_height(self) -> int:
+        raw = self.get_setting("text_rule_preview_result_height", 180)
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            value = 180
+        return min(420, max(96, value))
+
+    def set_text_rule_preview_result_height(self, height: int) -> None:
+        self.set_setting("text_rule_preview_result_height", min(420, max(96, int(height))))
 
     def get_scan_on_startup(self) -> bool:
         return bool(self.get_setting("scan_on_startup", False))

@@ -15,6 +15,32 @@ _BRACKET_PAIRS = {
     "<>": ("<", ">"),
     "《》": ("《", "》"),
 }
+_BRACKET_TYPE_PAIRS = {
+    "square": (("[", "]"), ("［", "］")),
+    "round": (("(", ")"), ("（", "）")),
+    "chinese_square": (("【", "】"),),
+    "corner": (("「", "」"), ("『", "』")),
+    "book_title": (("《", "》"),),
+}
+_PUNCTUATION_TRANSLATION = str.maketrans(
+    {
+        "［": "[",
+        "］": "]",
+        "【": "[",
+        "】": "]",
+        "（": "(",
+        "）": ")",
+        "「": "[",
+        "」": "]",
+        "『": "[",
+        "』": "]",
+        "，": ",",
+        "。": ".",
+        "：": ":",
+        "；": ";",
+        "／": "/",
+    }
+)
 
 
 class StepError(ValueError):
@@ -100,6 +126,85 @@ def _take_between_texts(value: str, step: RuleStep) -> str:
     return value[content_pos:end_pos]
 
 
+def _normalize_spaces(value: str, _step: RuleStep) -> str:
+    return re.sub(r"[\s\u3000]+", " ", value).strip()
+
+
+def _remove_all_spaces(value: str, _step: RuleStep) -> str:
+    return re.sub(r"[\s\u3000]+", "", value)
+
+
+def _normalize_punctuation(value: str, _step: RuleStep) -> str:
+    return value.translate(_PUNCTUATION_TRANSLATION)
+
+
+def _remove_text(value: str, step: RuleStep) -> str:
+    text = str(step.params.get("text") or "")
+    if not text:
+        raise StepError("text is required")
+    if _bool_from_step(step.params, "case_sensitive", True):
+        return value.replace(text, "")
+    return re.sub(re.escape(text), "", value, flags=re.IGNORECASE)
+
+
+def _remove_regex(value: str, step: RuleStep) -> str:
+    pattern = str(step.params.get("pattern") or "")
+    if not pattern:
+        raise StepError("pattern is required")
+    try:
+        return re.sub(pattern, "", value)
+    except re.error as exc:
+        raise StepError(f"Invalid regex pattern: {exc}") from exc
+
+
+def _pairs_for_bracket_type(bracket_type: str) -> tuple[tuple[str, str], ...]:
+    if bracket_type == "all":
+        pairs: list[tuple[str, str]] = []
+        for value in _BRACKET_TYPE_PAIRS.values():
+            pairs.extend(value)
+        return tuple(pairs)
+    pairs = _BRACKET_TYPE_PAIRS.get(bracket_type)
+    if pairs is None:
+        raise StepError(f"Unsupported bracket type: {bracket_type}")
+    return pairs
+
+
+def _remove_bracket_content(value: str, step: RuleStep) -> str:
+    bracket_type = str(step.params.get("bracket_type") or "all")
+    result = value
+    for start, end in _pairs_for_bracket_type(bracket_type):
+        result = re.sub(rf"{re.escape(start)}.*?{re.escape(end)}", "", result, flags=re.DOTALL)
+    return result
+
+
+def _remove_brackets_keep_content(value: str, step: RuleStep) -> str:
+    bracket_type = str(step.params.get("bracket_type") or "all")
+    result = value
+    for start, end in _pairs_for_bracket_type(bracket_type):
+        result = re.sub(rf"{re.escape(start)}(.*?){re.escape(end)}", r"\1", result, flags=re.DOTALL)
+    return result
+
+
+def _take_before_last_text(value: str, step: RuleStep) -> str:
+    needle = str(step.params.get("value") or "")
+    if not needle:
+        raise StepError("value is required")
+    pos = value.rfind(needle)
+    if pos < 0:
+        raise StepError(f"Text not found: {needle}")
+    return value[:pos]
+
+
+def _take_after_last_text(value: str, step: RuleStep) -> str:
+    needle = str(step.params.get("value") or "")
+    if not needle:
+        raise StepError("value is required")
+    pos = value.rfind(needle)
+    if pos < 0:
+        raise StepError(f"Text not found: {needle}")
+    return value[pos + len(needle) :]
+
+
 def _take_line(value: str, step: RuleStep) -> str:
     index = _index_from_step(step.params)
     lines = value.splitlines()
@@ -119,6 +224,14 @@ def _remove_last_lines(value: str, step: RuleStep) -> str:
     if count >= len(lines):
         return ""
     return "\n".join(lines[:-count])
+
+
+def _remove_first_lines(value: str, step: RuleStep) -> str:
+    count = _positive_int_from_step(step.params, "count")
+    lines = value.splitlines()
+    if count >= len(lines):
+        return ""
+    return "\n".join(lines[count:])
 
 
 def _take_line_range(value: str, step: RuleStep) -> StepOutput:
@@ -312,12 +425,32 @@ def apply_step(value: str, step: RuleStep) -> str | StepOutput:
         return _take_before_text(value, step)
     if step_type == "take_between_texts":
         return _take_between_texts(value, step)
+    if step_type == "normalize_spaces":
+        return _normalize_spaces(value, step)
+    if step_type == "remove_all_spaces":
+        return _remove_all_spaces(value, step)
+    if step_type == "normalize_punctuation":
+        return _normalize_punctuation(value, step)
+    if step_type == "remove_text":
+        return _remove_text(value, step)
+    if step_type == "remove_regex":
+        return _remove_regex(value, step)
+    if step_type == "remove_bracket_content":
+        return _remove_bracket_content(value, step)
+    if step_type == "remove_brackets_keep_content":
+        return _remove_brackets_keep_content(value, step)
+    if step_type == "take_before_last_text":
+        return _take_before_last_text(value, step)
+    if step_type == "take_after_last_text":
+        return _take_after_last_text(value, step)
     if step_type == "take_line":
         return _take_line(value, step)
     if step_type == "take_first_lines":
         return _take_first_lines(value, step)
     if step_type == "remove_last_lines":
         return _remove_last_lines(value, step)
+    if step_type == "remove_first_lines":
+        return _remove_first_lines(value, step)
     if step_type == "take_line_range":
         return _take_line_range(value, step)
     if step_type == "take_before_marker":

@@ -359,6 +359,14 @@ QFrame#TextRulePreviewResult QTextEdit#TextRulePreviewText {
     background: transparent;
     border: none;
 }
+QSplitter#TextRulePreviewSplitter::handle {
+    background: #e7edf5;
+    border: 1px solid #d2dbe8;
+    margin: 3px 0;
+}
+QSplitter#TextRulePreviewSplitter::handle:hover {
+    background: #d9e3f1;
+}
 #ViewTogglePanel {
     border: none;
     background: transparent;

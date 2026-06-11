@@ -81,6 +81,27 @@ class CoverGridSettingsTests(unittest.TestCase):
             self.assertEqual(repo_reload.get_cover_selected_border_width(), 4)
             self.assertEqual(repo_reload.get_cover_selected_border_color(), "#11AAEE")
 
+    def test_repository_text_rule_preview_result_height_persists_and_clamps(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = LibraryRepository(
+                db_path=root / "library.db",
+                scan_report_path=root / "scan_report.json",
+            )
+            self.assertEqual(repo.get_text_rule_preview_result_height(), 180)
+
+            repo.set_text_rule_preview_result_height(999)
+            self.assertEqual(repo.get_text_rule_preview_result_height(), 420)
+            repo.set_text_rule_preview_result_height(12)
+            self.assertEqual(repo.get_text_rule_preview_result_height(), 96)
+            repo.set_text_rule_preview_result_height(260)
+
+            repo_reload = LibraryRepository(
+                db_path=root / "library.db",
+                scan_report_path=root / "scan_report.json",
+            )
+            self.assertEqual(repo_reload.get_text_rule_preview_result_height(), 260)
+
 
 @unittest.skipUnless(QT_AVAILABLE, "PySide6 is required for cover grid UI tests")
 class CoverGridUiTests(unittest.TestCase):

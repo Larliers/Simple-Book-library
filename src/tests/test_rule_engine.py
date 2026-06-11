@@ -129,6 +129,122 @@ class RuleEngineTests(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertEqual(result.value, "")
 
+    def test_remove_first_lines_from_head_text(self) -> None:
+        rule = ImportRule(
+            field="title",
+            source="txt_head_text",
+            steps=[RuleStep(type="remove_first_lines", params={"count": 2})],
+        )
+        context = RuleContext(
+            file_path=r"F:\books\x.txt",
+            txt_head_text="第一行\n第二行\n第三行\n第四行",
+        )
+
+        result = apply_rule(rule, context)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.value, "第三行\n第四行")
+
+    def test_remove_first_lines_can_remove_all_lines(self) -> None:
+        rule = ImportRule(
+            field="title",
+            source="txt_head_text",
+            steps=[RuleStep(type="remove_first_lines", params={"count": 9})],
+        )
+        context = RuleContext(file_path=r"F:\books\x.txt", txt_head_text="第一行\n第二行")
+
+        result = apply_rule(rule, context)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.value, "")
+
+    def test_cleanup_steps_normalize_and_remove_spaces(self) -> None:
+        context = RuleContext(file_path=r"F:\books\x.txt", txt_head_text=" 作者　\t 张三 \n 第 001 话 ")
+        cases = [
+            ("normalize_spaces", {}, "作者 张三 第 001 话"),
+            ("remove_all_spaces", {}, "作者张三第001话"),
+            ("normalize_punctuation", {}, " 作者　\t 张三 \n 第 001 话 "),
+        ]
+
+        for step_type, params, expected in cases:
+            with self.subTest(step_type=step_type):
+                rule = ImportRule(field="title", source="txt_head_text", steps=[RuleStep(type=step_type, params=params)])
+                result = apply_rule(rule, context)
+                self.assertTrue(result.success)
+                self.assertEqual(result.value, expected)
+
+    def test_normalize_punctuation_converts_common_full_width_marks(self) -> None:
+        rule = ImportRule(field="title", source="txt_head_text", steps=[RuleStep(type="normalize_punctuation")])
+        context = RuleContext(file_path=r"F:\books\x.txt", txt_head_text="【甲】（乙），丙：丁；戊／己")
+
+        result = apply_rule(rule, context)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.value, "[甲](乙),丙:丁;戊/己")
+
+    def test_remove_text_and_remove_regex(self) -> None:
+        context = RuleContext(file_path=r"F:\books\x.txt", txt_head_text="[汉化组] 标题 (DL版)")
+        fixed_rule = ImportRule(
+            field="title",
+            source="txt_head_text",
+            steps=[RuleStep(type="remove_text", params={"text": "(dl版)", "case_sensitive": False})],
+        )
+        regex_rule = ImportRule(
+            field="title",
+            source="txt_head_text",
+            steps=[RuleStep(type="remove_regex", params={"pattern": r"\[.*?\]\s*"})],
+        )
+
+        fixed = apply_rule(fixed_rule, context)
+        regex = apply_rule(regex_rule, context)
+
+        self.assertTrue(fixed.success)
+        self.assertEqual(fixed.value, "[汉化组] 标题 ")
+        self.assertTrue(regex.success)
+        self.assertEqual(regex.value, "标题 (DL版)")
+
+    def test_remove_regex_invalid_pattern_returns_failure(self) -> None:
+        rule = ImportRule(field="title", source="txt_head_text", steps=[RuleStep(type="remove_regex", params={"pattern": "("})])
+        result = apply_rule(rule, RuleContext(file_path=r"F:\books\x.txt", txt_head_text="abc"))
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.failed_step, "remove_regex")
+        self.assertIn("Invalid regex pattern", str(result.error_message))
+
+    def test_remove_bracket_steps(self) -> None:
+        context = RuleContext(file_path=r"F:\books\x.txt", txt_head_text="[汉化组]【作者】标题（DL版）《副题》")
+        remove_rule = ImportRule(
+            field="title",
+            source="txt_head_text",
+            steps=[RuleStep(type="remove_bracket_content", params={"bracket_type": "all"}), RuleStep(type="trim")],
+        )
+        keep_rule = ImportRule(
+            field="title",
+            source="txt_head_text",
+            steps=[RuleStep(type="remove_brackets_keep_content", params={"bracket_type": "chinese_square"})],
+        )
+
+        removed = apply_rule(remove_rule, context)
+        kept = apply_rule(keep_rule, context)
+
+        self.assertTrue(removed.success)
+        self.assertEqual(removed.value, "标题")
+        self.assertTrue(kept.success)
+        self.assertEqual(kept.value, "[汉化组]作者标题（DL版）《副题》")
+
+    def test_take_before_and_after_last_text(self) -> None:
+        context = RuleContext(file_path=r"F:\books\x.txt", txt_head_text="作者 - 系列 - 标题")
+        before_rule = ImportRule(field="title", source="txt_head_text", steps=[RuleStep(type="take_before_last_text", params={"value": " - "})])
+        after_rule = ImportRule(field="title", source="txt_head_text", steps=[RuleStep(type="take_after_last_text", params={"value": " - "})])
+
+        before = apply_rule(before_rule, context)
+        after = apply_rule(after_rule, context)
+
+        self.assertTrue(before.success)
+        self.assertEqual(before.value, "作者 - 系列")
+        self.assertTrue(after.success)
+        self.assertEqual(after.value, "标题")
+
     def test_take_line_range_from_head_text(self) -> None:
         rule = ImportRule(
             field="title",
@@ -310,7 +426,7 @@ class RuleEngineTests(unittest.TestCase):
 
     def test_invalid_line_count_returns_failure(self) -> None:
         context = RuleContext(file_path=r"F:\books\x.txt", txt_head_text="一\n二")
-        for step_type in ("take_first_lines", "remove_last_lines"):
+        for step_type in ("take_first_lines", "remove_last_lines", "remove_first_lines"):
             with self.subTest(step_type=step_type):
                 rule = ImportRule(
                     field="title",

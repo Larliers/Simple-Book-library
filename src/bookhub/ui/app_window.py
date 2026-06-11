@@ -146,6 +146,9 @@ class AppWindow(QMainWindow):
         self.settings_page.add_text_root_requested.connect(self._on_add_text_root)
         self.settings_page.remove_text_root_requested.connect(self._on_remove_text_root)
         self.settings_page.text_preview_chars_changed.connect(self._on_text_preview_chars_changed)
+        self.settings_page.text_rule_preview_result_height_changed.connect(
+            self._on_text_rule_preview_result_height_changed
+        )
         self.settings_page.manage_text_rules_requested.connect(self._on_manage_text_rules)
         self.settings_page.scan_library_requested.connect(lambda: self._start_scan("manual_library", scope="library"))
         self.settings_page.scan_comic_requested.connect(lambda: self._start_scan("manual_comic", scope="comic"))
@@ -322,6 +325,9 @@ class AppWindow(QMainWindow):
         self.settings_page.set_comic_roots(self._repository.list_comic_roots())
         self.settings_page.set_text_roots_with_rules(self._repository.list_text_roots_with_rules())
         self.settings_page.set_text_preview_chars(self._repository.get_text_preview_chars())
+        self.settings_page.set_text_rule_preview_result_height(
+            self._repository.get_text_rule_preview_result_height()
+        )
         self.settings_page.set_language_selection(self._repository.get_language_code())
         self.settings_page.set_scan_on_startup(self._repository.get_scan_on_startup())
         self.settings_page.set_auto_scan_on_path_change(self._repository.get_auto_scan_on_path_change())
@@ -423,6 +429,9 @@ class AppWindow(QMainWindow):
 
     def _on_text_preview_chars_changed(self, size: int) -> None:
         self._repository.set_text_preview_chars(size)
+
+    def _on_text_rule_preview_result_height_changed(self, height: int) -> None:
+        self._repository.set_text_rule_preview_result_height(height)
 
     def _on_manage_text_rules(self, root_path: str, rules_json: str) -> None:
         self._repository.set_text_root_rules_json(root_path, rules_json)

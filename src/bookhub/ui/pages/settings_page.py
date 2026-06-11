@@ -71,6 +71,7 @@ class SettingsPage(QWidget):
     cover_selected_border_width_changed = Signal(int)
     cover_selected_border_color_changed = Signal(str)
     text_preview_chars_changed = Signal(int)
+    text_rule_preview_result_height_changed = Signal(int)
     cleanup_library_thumbnails_requested = Signal()
     regenerate_library_thumbnails_requested = Signal()
     cleanup_comic_thumbnails_requested = Signal()
@@ -88,6 +89,7 @@ class SettingsPage(QWidget):
         self._thumbnail_task_kind: str | None = None
         self._project_font_families: list[str] = []
         self._font_source: str = "system"
+        self._text_rule_preview_result_height = 180
         self._cover_selected_border_color = DEFAULT_COVER_SELECTED_BORDER_COLOR
 
         root = QVBoxLayout(self)
@@ -642,6 +644,13 @@ class SettingsPage(QWidget):
         self.text_preview_chars_combo.setCurrentIndex(index)
         self.text_preview_chars_combo.blockSignals(False)
 
+    def set_text_rule_preview_result_height(self, height: int) -> None:
+        try:
+            value = int(height)
+        except (TypeError, ValueError):
+            value = 180
+        self._text_rule_preview_result_height = min(420, max(96, value))
+
     def set_available_project_fonts(self, families: list[str]) -> None:
         self._project_font_families = sorted({str(item).strip() for item in families if str(item).strip()})
         current = str(self.font_family_combo.currentData() or "")
@@ -1023,7 +1032,14 @@ class SettingsPage(QWidget):
     def _open_text_rule_dialog(self, target: str) -> None:
         existing_rules = self._text_rules_by_path.get(target, "{}")
         preview_chars = int(self.text_preview_chars_combo.currentData() or DEFAULT_TEXT_PREVIEW_CHARS)
-        dialog = TextRuleDialog(target, existing_rules, self, preview_chars=preview_chars)
+        dialog = TextRuleDialog(
+            target,
+            existing_rules,
+            self,
+            preview_chars=preview_chars,
+            preview_result_height=self._text_rule_preview_result_height,
+            preview_result_height_changed=self.text_rule_preview_result_height_changed.emit,
+        )
         if dialog.exec() != QDialog.Accepted:
             return
         updated_json = dialog.rules_json()

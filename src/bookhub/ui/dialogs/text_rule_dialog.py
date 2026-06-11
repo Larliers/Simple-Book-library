@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Callable
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -18,7 +18,9 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSpinBox,
+    QSplitter,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -40,27 +42,72 @@ from bookhub.ui.dialogs.text_rule_regex_dialog import TextRuleRegexDialog
 class TextRuleDialog(QDialog):
     FIELDS = ("title", "author", "series", "tag")
     SOURCE_CODES = ("filename", "stem", "full_path", "parent_folder", "txt_first_line", "txt_head_text")
+    PREVIEW_RESULT_HEIGHT_MIN = 96
+    PREVIEW_RESULT_HEIGHT_MAX = 420
+    PREVIEW_RESULT_HEIGHT_DEFAULT = 180
     STEP_TYPE_CODES = (
         "trim",
+        "normalize_spaces",
+        "remove_all_spaces",
+        "normalize_punctuation",
         "remove_extension",
         "take_bracket_content",
         "take_after_text",
         "take_before_text",
+        "take_before_last_text",
+        "take_after_last_text",
         "take_between_texts",
         "take_line",
         "take_first_lines",
         "remove_last_lines",
+        "remove_first_lines",
         "take_line_range",
         "take_before_marker",
         "take_after_marker",
         "split_and_take",
         "remove_prefix",
         "remove_suffix",
+        "remove_text",
+        "remove_regex",
+        "remove_bracket_content",
+        "remove_brackets_keep_content",
         "replace_text",
         "regex_extract",
         "loop_lines",
     )
-    NO_PARAM_STEP_TYPES = {"trim", "remove_extension"}
+    STEP_CATEGORIES = (
+        ("clean", ("trim", "normalize_spaces", "remove_all_spaces", "normalize_punctuation")),
+        (
+            "delete",
+            (
+                "remove_prefix",
+                "remove_suffix",
+                "remove_text",
+                "remove_regex",
+                "remove_bracket_content",
+                "remove_brackets_keep_content",
+                "replace_text",
+            ),
+        ),
+        (
+            "extract",
+            (
+                "take_after_text",
+                "take_before_text",
+                "take_before_last_text",
+                "take_after_last_text",
+                "take_between_texts",
+                "take_before_marker",
+                "take_after_marker",
+            ),
+        ),
+        ("line", ("take_line", "take_first_lines", "take_line_range", "remove_first_lines", "remove_last_lines", "loop_lines")),
+        ("bracket", ("take_bracket_content",)),
+        ("split", ("split_and_take",)),
+        ("filename", ("remove_extension",)),
+        ("regex", ("regex_extract",)),
+    )
+    NO_PARAM_STEP_TYPES = {"trim", "remove_extension", "normalize_spaces", "remove_all_spaces", "normalize_punctuation"}
 
     def __init__(
         self,
@@ -68,10 +115,14 @@ class TextRuleDialog(QDialog):
         rules_json: str,
         parent=None,
         preview_chars: int = DEFAULT_TEXT_PREVIEW_CHARS,
+        preview_result_height: int = PREVIEW_RESULT_HEIGHT_DEFAULT,
+        preview_result_height_changed: Callable[[int], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self._root_path = root_path
         self._preview_chars = max(100, int(preview_chars or DEFAULT_TEXT_PREVIEW_CHARS))
+        self._preview_result_height = self._normalize_preview_result_height(preview_result_height)
+        self._preview_result_height_changed = preview_result_height_changed
         self._current_field_code = "title"
         self._rules_by_field: dict[str, list[ImportRule]] = {field: [] for field in self.FIELDS}
         self._field_buttons: dict[str, QPushButton] = {}
@@ -254,6 +305,16 @@ class TextRuleDialog(QDialog):
         preview_header.addWidget(self.preview_refresh_btn)
         preview_layout.addLayout(preview_header)
 
+        self.preview_splitter = QSplitter(Qt.Vertical)
+        self.preview_splitter.setObjectName("TextRulePreviewSplitter")
+        self.preview_splitter.setChildrenCollapsible(False)
+        self.preview_splitter.setHandleWidth(8)
+        self.preview_splitter.splitterMoved.connect(self._on_preview_splitter_moved)
+
+        sample_panel = QWidget()
+        sample_layout = QVBoxLayout(sample_panel)
+        sample_layout.setContentsMargins(0, 0, 0, 0)
+        sample_layout.setSpacing(8)
         preview_form = QFormLayout()
         self.preview_path_edit = QLineEdit()
         self.preview_path_edit.setPlaceholderText(tr("text.rules.preview.path_placeholder", "TXT file path"))
@@ -275,10 +336,12 @@ class TextRuleDialog(QDialog):
         )
         self.preview_head_text_edit.textChanged.connect(self._refresh_preview)
         preview_form.addRow(tr("text.rules.preview.head_text", "Head text"), self.preview_head_text_edit)
-        preview_layout.addLayout(preview_form)
+        sample_layout.addLayout(preview_form)
 
         self.preview_result_box = QFrame()
         self.preview_result_box.setObjectName("TextRulePreviewResult")
+        self.preview_result_box.setMinimumHeight(self.PREVIEW_RESULT_HEIGHT_MIN)
+        self.preview_result_box.setMaximumHeight(self.PREVIEW_RESULT_HEIGHT_MAX)
         result_layout = QVBoxLayout(self.preview_result_box)
         result_layout.setContentsMargins(10, 8, 10, 8)
         result_layout.setSpacing(4)
@@ -289,11 +352,18 @@ class TextRuleDialog(QDialog):
         self.preview_result_label.setAcceptRichText(False)
         self.preview_result_label.setReadOnly(True)
         self.preview_result_label.setLineWrapMode(QTextEdit.WidgetWidth)
-        self.preview_result_label.setFixedHeight(150)
+        self.preview_result_label.setFrameShape(QFrame.NoFrame)
+        self.preview_result_label.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.preview_result_label.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.preview_result_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         result_layout.addWidget(self.preview_result_title)
-        result_layout.addWidget(self.preview_result_label)
-        preview_layout.addWidget(self.preview_result_box)
-        preview_layout.addStretch(1)
+        result_layout.addWidget(self.preview_result_label, 1)
+        self.preview_splitter.addWidget(sample_panel)
+        self.preview_splitter.addWidget(self.preview_result_box)
+        self.preview_splitter.setStretchFactor(0, 1)
+        self.preview_splitter.setStretchFactor(1, 0)
+        self._apply_preview_result_height(self._preview_result_height)
+        preview_layout.addWidget(self.preview_splitter, 1)
 
         parent_layout.addWidget(preview_box, 1)
 
@@ -439,8 +509,21 @@ class TextRuleDialog(QDialog):
         layout.addLayout(header)
 
         form = QFormLayout()
+        category_combo = QComboBox()
+        category_combo.setObjectName("TextRuleStepCategoryCombo")
+        for code, text in self._step_category_options():
+            category_combo.addItem(text, code)
+        category = self._category_for_step_type(step.type)
+        category_idx = category_combo.findData(category)
+        category_combo.setCurrentIndex(category_idx if category_idx >= 0 else 0)
+        category_combo.currentIndexChanged.connect(
+            lambda _=0, idx=step_index, combo=category_combo: self._on_step_category_changed(idx, combo)
+        )
+        form.addRow(tr("text.rules.param.category", "Category"), category_combo)
+
         type_combo = QComboBox()
-        for code in self.STEP_TYPE_CODES:
+        type_combo.setObjectName("TextRuleStepTypeCombo")
+        for code in self._step_codes_for_category(category):
             type_combo.addItem(self._step_type_label(code), code)
         type_idx = type_combo.findData(step.type)
         type_combo.setCurrentIndex(type_idx if type_idx >= 0 else 0)
@@ -477,6 +560,18 @@ class TextRuleDialog(QDialog):
             value_idx = widget.findText(value)
             widget.setCurrentIndex(value_idx if value_idx >= 0 else 0)
             widget.currentTextChanged.connect(lambda text, idx=step_index: self._set_step_param(idx, "bracket", text))
+            form.addRow(label, widget)
+            return
+
+        if key == "bracket_type":
+            widget = QComboBox()
+            for code, text in self._bracket_type_options():
+                widget.addItem(text, code)
+            value_idx = widget.findData(str(step.params.get("bracket_type") or "all"))
+            widget.setCurrentIndex(value_idx if value_idx >= 0 else 0)
+            widget.currentIndexChanged.connect(
+                lambda _=0, idx=step_index, combo=widget: self._set_combo_step_param(idx, "bracket_type", combo)
+            )
             form.addRow(label, widget)
             return
 
@@ -528,11 +623,23 @@ class TextRuleDialog(QDialog):
             form.addRow(label, widget)
             return
 
+        if key == "case_sensitive":
+            widget = QComboBox()
+            for value, text in self._case_sensitive_options():
+                widget.addItem(text, value)
+            value_idx = widget.findData(self._safe_bool(step.params.get("case_sensitive"), True))
+            widget.setCurrentIndex(value_idx if value_idx >= 0 else 0)
+            widget.currentIndexChanged.connect(
+                lambda _=0, idx=step_index, combo=widget: self._set_combo_step_param(idx, "case_sensitive", combo)
+            )
+            form.addRow(label, widget)
+            return
+
         if key in {"index", "group", "count"}:
             widget = QSpinBox()
             widget.setRange(0 if key == "group" else 1, 999)
             widget.setValue(self._safe_int(step.params.get(key), 1))
-            if key == "count" and str(step.params.get("scope") or "all") == "all":
+            if key == "count" and step.type in {"take_before_marker", "take_after_marker"} and str(step.params.get("scope") or "all") == "all":
                 widget.setEnabled(False)
             widget.valueChanged.connect(lambda value, idx=step_index, param=key: self._set_step_param(idx, param, value))
             form.addRow(label, widget)
@@ -551,6 +658,19 @@ class TextRuleDialog(QDialog):
         if rule_idx < 0 or rule_idx >= len(rules):
             return []
         return rules[rule_idx].steps
+
+    def _on_step_category_changed(self, step_index: int, combo: QComboBox) -> None:
+        if self._rendering_steps:
+            return
+        steps = self._selected_steps()
+        if step_index < 0 or step_index >= len(steps):
+            return
+        codes = self._step_codes_for_category(str(combo.currentData() or "clean"))
+        new_type = codes[0] if codes else "trim"
+        steps[step_index] = RuleStep(type=new_type, params=self._default_params_for_step_type(new_type, {}))
+        self._render_steps(steps)
+        self._refresh_rule_list_label()
+        self._refresh_preview()
 
     def _on_step_type_changed(self, step_index: int, combo: QComboBox) -> None:
         if self._rendering_steps:
@@ -773,10 +893,38 @@ class TextRuleDialog(QDialog):
         self.preview_result_box.style().unpolish(self.preview_result_box)
         self.preview_result_box.style().polish(self.preview_result_box)
 
+    def _apply_preview_result_height(self, height: int) -> None:
+        height = self._normalize_preview_result_height(height)
+        self._preview_result_height = height
+        sample_height = max(180, 560 - height)
+        self.preview_splitter.setSizes([sample_height, height])
+
+    def _on_preview_splitter_moved(self, _pos: int, _index: int) -> None:
+        sizes = self.preview_splitter.sizes()
+        if len(sizes) < 2:
+            return
+        self._preview_result_height = self._normalize_preview_result_height(sizes[1])
+
+    def _save_preview_result_height(self) -> None:
+        if self._preview_result_height_changed is not None:
+            self._preview_result_height_changed(self._preview_result_height)
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        self._save_preview_result_height()
+        super().closeEvent(event)
+
+    def accept(self) -> None:
+        self._save_preview_result_height()
+        super().accept()
+
+    def reject(self) -> None:
+        self._save_preview_result_height()
+        super().reject()
+
     def _param_keys_for_step_type(self, step_type: str) -> tuple[str, ...]:
         if step_type in self.NO_PARAM_STEP_TYPES:
             return ()
-        if step_type in {"take_after_text", "take_before_text", "remove_prefix", "remove_suffix"}:
+        if step_type in {"take_after_text", "take_before_text", "take_before_last_text", "take_after_last_text", "remove_prefix", "remove_suffix"}:
             return ("value",)
         if step_type == "take_between_texts":
             return ("start", "end")
@@ -786,6 +934,8 @@ class TextRuleDialog(QDialog):
             return ("count",)
         if step_type == "remove_last_lines":
             return ("count",)
+        if step_type == "remove_first_lines":
+            return ("count",)
         if step_type == "take_line_range":
             return ("start", "end")
         if step_type in {"take_before_marker", "take_after_marker"}:
@@ -794,6 +944,12 @@ class TextRuleDialog(QDialog):
             return ("separator", "index")
         if step_type == "take_bracket_content":
             return ("bracket", "index")
+        if step_type == "remove_text":
+            return ("text", "case_sensitive")
+        if step_type == "remove_regex":
+            return ("pattern",)
+        if step_type in {"remove_bracket_content", "remove_brackets_keep_content"}:
+            return ("bracket_type",)
         if step_type == "replace_text":
             return ("old", "new")
         if step_type == "regex_extract":
@@ -806,7 +962,7 @@ class TextRuleDialog(QDialog):
         old_params = old_params or {}
         if step_type in self.NO_PARAM_STEP_TYPES:
             return {}
-        if step_type in {"take_after_text", "take_before_text", "remove_prefix", "remove_suffix"}:
+        if step_type in {"take_after_text", "take_before_text", "take_before_last_text", "take_after_last_text", "remove_prefix", "remove_suffix"}:
             return {"value": str(old_params.get("value") or "")}
         if step_type == "take_between_texts":
             return {
@@ -818,6 +974,8 @@ class TextRuleDialog(QDialog):
         if step_type == "take_first_lines":
             return {"count": self._safe_int(old_params.get("count"), 1)}
         if step_type == "remove_last_lines":
+            return {"count": self._safe_int(old_params.get("count"), 1)}
+        if step_type == "remove_first_lines":
             return {"count": self._safe_int(old_params.get("count"), 1)}
         if step_type == "take_line_range":
             return {
@@ -841,6 +999,15 @@ class TextRuleDialog(QDialog):
                 "bracket": str(old_params.get("bracket") or "[]"),
                 "index": self._safe_int(old_params.get("index"), 1),
             }
+        if step_type == "remove_text":
+            return {
+                "text": str(old_params.get("text") or old_params.get("value") or ""),
+                "case_sensitive": self._safe_bool(old_params.get("case_sensitive"), True),
+            }
+        if step_type == "remove_regex":
+            return {"pattern": str(old_params.get("pattern") or "")}
+        if step_type in {"remove_bracket_content", "remove_brackets_keep_content"}:
+            return {"bracket_type": str(old_params.get("bracket_type") or "all")}
         if step_type == "replace_text":
             return {
                 "old": str(old_params.get("old") or ""),
@@ -882,6 +1049,14 @@ class TextRuleDialog(QDialog):
             return default
         return bool(value)
 
+    @classmethod
+    def _normalize_preview_result_height(cls, value: object) -> int:
+        try:
+            height = int(value)
+        except (TypeError, ValueError):
+            height = cls.PREVIEW_RESULT_HEIGHT_DEFAULT
+        return min(cls.PREVIEW_RESULT_HEIGHT_MAX, max(cls.PREVIEW_RESULT_HEIGHT_MIN, height))
+
     @staticmethod
     def _field_label(code: str) -> str:
         mapping = {
@@ -904,24 +1079,61 @@ class TextRuleDialog(QDialog):
         }
         return mapping.get(code, code)
 
+    @classmethod
+    def _step_codes_for_category(cls, category: str) -> tuple[str, ...]:
+        for code, steps in cls.STEP_CATEGORIES:
+            if code == category:
+                return steps
+        return cls.STEP_CATEGORIES[0][1]
+
+    @classmethod
+    def _category_for_step_type(cls, step_type: str) -> str:
+        for category, steps in cls.STEP_CATEGORIES:
+            if step_type in steps:
+                return category
+        return cls.STEP_CATEGORIES[0][0]
+
+    @staticmethod
+    def _step_category_options() -> tuple[tuple[str, str], ...]:
+        return (
+            ("clean", tr("text.rules.category.clean", "Text cleanup")),
+            ("delete", tr("text.rules.category.delete", "Text delete")),
+            ("extract", tr("text.rules.category.extract", "Text extract")),
+            ("line", tr("text.rules.category.line", "Line processing")),
+            ("bracket", tr("text.rules.category.bracket", "Bracket processing")),
+            ("split", tr("text.rules.category.split", "Split processing")),
+            ("filename", tr("text.rules.category.filename", "File name")),
+            ("regex", tr("text.rules.category.regex", "Advanced regex")),
+        )
+
     @staticmethod
     def _step_type_label(code: str) -> str:
         mapping = {
             "trim": tr("text.rules.step.trim", "Trim"),
+            "normalize_spaces": tr("text.rules.step.normalize_spaces", "Normalize spaces"),
+            "remove_all_spaces": tr("text.rules.step.remove_all_spaces", "Remove all spaces"),
+            "normalize_punctuation": tr("text.rules.step.normalize_punctuation", "Normalize punctuation"),
             "remove_extension": tr("text.rules.step.remove_extension", "Remove extension"),
             "take_bracket_content": tr("text.rules.step.take_bracket_content", "Take bracket content"),
             "take_after_text": tr("text.rules.step.take_after_text", "Take after text"),
             "take_before_text": tr("text.rules.step.take_before_text", "Take before text"),
+            "take_before_last_text": tr("text.rules.step.take_before_last_text", "Take before last text"),
+            "take_after_last_text": tr("text.rules.step.take_after_last_text", "Take after last text"),
             "take_between_texts": tr("text.rules.step.take_between_texts", "Take between texts"),
             "take_line": tr("text.rules.step.take_line", "Take line N"),
             "take_first_lines": tr("text.rules.step.take_first_lines", "Take first N lines"),
             "remove_last_lines": tr("text.rules.step.remove_last_lines", "Remove last N lines"),
+            "remove_first_lines": tr("text.rules.step.remove_first_lines", "Remove first N lines"),
             "take_line_range": tr("text.rules.step.take_line_range", "Take line N-M"),
             "take_before_marker": tr("text.rules.step.take_before_marker", "Take before marker"),
             "take_after_marker": tr("text.rules.step.take_after_marker", "Take after marker"),
             "split_and_take": tr("text.rules.step.split_and_take", "Split and take"),
             "remove_prefix": tr("text.rules.step.remove_prefix", "Remove prefix"),
             "remove_suffix": tr("text.rules.step.remove_suffix", "Remove suffix"),
+            "remove_text": tr("text.rules.step.remove_text", "Remove text"),
+            "remove_regex": tr("text.rules.step.remove_regex", "Remove regex"),
+            "remove_bracket_content": tr("text.rules.step.remove_bracket_content", "Remove bracket content"),
+            "remove_brackets_keep_content": tr("text.rules.step.remove_brackets_keep_content", "Remove brackets keep content"),
             "replace_text": tr("text.rules.step.replace_text", "Replace text"),
             "regex_extract": tr("text.rules.step.regex_extract", "Regex extract"),
             "loop_lines": tr("text.rules.step.loop_lines", "Loop lines extract"),
@@ -931,11 +1143,14 @@ class TextRuleDialog(QDialog):
     @staticmethod
     def _param_label(code: str) -> str:
         mapping = {
+            "category": tr("text.rules.param.category", "Category"),
+            "text": tr("text.rules.param.text", "Text"),
             "value": tr("text.rules.param.value", "Value"),
             "start": tr("text.rules.param.start", "Start"),
             "end": tr("text.rules.param.end", "End"),
             "separator": tr("text.rules.param.separator", "Separator"),
             "bracket": tr("text.rules.param.bracket", "Bracket"),
+            "bracket_type": tr("text.rules.param.bracket_type", "Bracket type"),
             "index": tr("text.rules.param.index", "Index"),
             "count": tr("text.rules.param.count", "Count"),
             "scope": tr("text.rules.param.scope", "Range"),
@@ -947,6 +1162,7 @@ class TextRuleDialog(QDialog):
             "join": tr("text.rules.param.join", "Join"),
             "custom_separator": tr("text.rules.param.custom_separator", "Custom separator"),
             "skip_failed": tr("text.rules.param.skip_failed", "Skip unmatched lines"),
+            "case_sensitive": tr("text.rules.param.case_sensitive", "Case sensitive"),
         }
         return mapping.get(code, code)
 
@@ -986,4 +1202,22 @@ class TextRuleDialog(QDialog):
         return (
             (True, tr("text.rules.option.skip_failed.true", "Skip unmatched lines")),
             (False, tr("text.rules.option.skip_failed.false", "Fail on unmatched line")),
+        )
+
+    @staticmethod
+    def _case_sensitive_options() -> tuple[tuple[bool, str], ...]:
+        return (
+            (True, tr("text.rules.option.case_sensitive.true", "Case sensitive")),
+            (False, tr("text.rules.option.case_sensitive.false", "Ignore case")),
+        )
+
+    @staticmethod
+    def _bracket_type_options() -> tuple[tuple[str, str], ...]:
+        return (
+            ("all", tr("text.rules.option.bracket_type.all", "All brackets")),
+            ("square", tr("text.rules.option.bracket_type.square", "Square brackets")),
+            ("round", tr("text.rules.option.bracket_type.round", "Round brackets")),
+            ("chinese_square", tr("text.rules.option.bracket_type.chinese_square", "Chinese square brackets")),
+            ("corner", tr("text.rules.option.bracket_type.corner", "Corner brackets")),
+            ("book_title", tr("text.rules.option.bracket_type.book_title", "Book title brackets")),
         )
