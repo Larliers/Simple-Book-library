@@ -1,6 +1,6 @@
 ﻿# src 结构说明书（精简且完整）
 
-更新时间：2026-06-11
+更新时间：2026-06-12
 
 ## 1. 文档目标
 - 保留字符串式文件路径结构。
@@ -16,6 +16,7 @@ src/
 │  ├─ test_comic_page_cache.py
 │  ├─ test_rule_engine.py
 │  ├─ test_rule_preview.py
+│  ├─ test_text_rule_structure_parser.py
 │  ├─ test_text_rule_dialog.py
 │  └─ test_scan_pdf_degrade.py
 ├─ sql/
@@ -55,6 +56,7 @@ src/
    │  │  ├─ rule_models.py
    │  │  ├─ rule_preview.py
    │  │  ├─ source_resolver.py
+   │  │  ├─ structure_parser.py
    │  │  └─ step_handlers.py
    │  ├─ thumbnail_tasks.py
    │  ├─ thumbnail_worker.py
@@ -105,7 +107,8 @@ src/
 - `src/main.py`：应用入口；设置应用图标，创建 Qt 应用并启动主窗口。
 - `src/tests/test_rule_engine.py`：Text 规则引擎回归测试（步骤提取、行范围 warning、回退链、非法正则容错）。
 - `src/tests/test_rule_preview.py`：Text 规则预览回归测试（自动样本、规则链回退、非法正则失败、空目录无样本）。
-- `src/tests/test_text_rule_dialog.py`：Text 规则弹窗 smoke 测试（旧 JSON 加载、字段切换、上下文参数、预览状态、帮助文档布局）。
+- `src/tests/test_text_rule_dialog.py`：Text 规则弹窗 smoke 测试（旧 JSON 加载、字段切换、上下文参数、预览状态、格式诊断、帮助文档布局）。
+- `src/tests/test_text_rule_structure_parser.py`：Text 规则结构解析测试（嵌套括号、括号外分隔符、样本格式分组）。
 - `src/tests/test_scan_pdf_degrade.py`：PDF 后端降级容错回归测试（PyMuPDF 不可用时的聚合 warning 与入库行为）。
 - `src/tests/test_comic_preview_pipeline.py`：漫画快扫占位与后台并行补图回归测试（占位复制、压缩替换、原图删除、超大图降采样、排序顺序）。
 - `src/tests/test_comic_page_cache.py`：漫画页缓存回归测试（数据缓存命中、卡片复用与收藏联动失效）。
@@ -129,7 +132,8 @@ src/
 - `src/bookhub/library/text_rules/rule_models.py`：Text Novel 规则模型（`ImportRule`/`RuleStep`/`RuleContext`/`RuleResult`，含预览 warning 字段）。
 - `src/bookhub/library/text_rules/rule_engine.py`：规则执行器与规则链回退（`apply_rule`、`apply_rule_chain`），透传步骤 warning。
 - `src/bookhub/library/text_rules/source_resolver.py`：规则 source 解析（`filename`/`stem`/`txt_first_line`/`txt_head_text` 等）。
-- `src/bookhub/library/text_rules/step_handlers.py`：规则步骤处理（文本清洗、文本删除、split、单行/范围行提取、删除前/后 N 行、分界线截取、按行循环提取、括号提取、regex_extract 等）。
+- `src/bookhub/library/text_rules/structure_parser.py`：Text 规则结构解析；支持嵌套括号块解析、括号范围过滤、括号外分隔符结构签名与多样本格式诊断分组。
+- `src/bookhub/library/text_rules/step_handlers.py`：规则步骤处理（文本清洗、文本删除、split、多分隔符取段、分隔范围拼接、单行/范围行提取、删除前/后 N 行、分界线截取、按行循环提取、嵌套感知括号提取/删除、regex_extract 等）。
 - `src/bookhub/library/text_rules/rule_preview.py`：Text 规则预览辅助；查找首个 TXT 样本、读取首行/开头文本并复用规则链执行预览。
 - `src/bookhub/library/text_rules/rule_examples.py`：默认规则链示例。
 - `src/bookhub/library/worker.py`：扫描任务线程包装；汇总多 scope 统计与 warning。
@@ -147,9 +151,9 @@ src/
 - `src/bookhub/ui/dialogs/add_tag_dialog.py`：添加标签对话框。
 - `src/bookhub/ui/dialogs/add_to_collection_dialog.py`：旧版加入书单对话框（兼容保留）。
 - `src/bookhub/ui/dialogs/quick_add_dialog.py`：快速添加标签/加入书单弹窗。
-- `src/bookhub/ui/dialogs/text_rule_dialog.py`：Text Novel 规则步骤编辑对话框；左侧字段 Tab/规则链，中列按类别筛选的卡片式步骤编辑与用户预设导入/保存，右侧常驻 TXT 样本预览（项目样式滚动结果区，可拖拽并记忆高度）；右上角提供常用正则与使用文档入口。
-- `src/bookhub/ui/dialogs/text_rule_help_dialog.py`：Text Rules 内置使用文档窗口。
-- `src/bookhub/ui/dialogs/text_rule_regex_dialog.py`：Text Rules 常用正则示范窗口；按用途、示例文本、正则、提取结果展示。
+- `src/bookhub/ui/dialogs/text_rule_dialog.py`：Text Novel 规则步骤编辑对话框；左侧字段 Tab/规则链，中列按类别筛选的卡片式步骤编辑（含嵌套括号与分隔处理步骤）与用户预设导入/保存，右侧常驻 TXT 样本预览和文件名格式诊断（项目样式滚动结果区，可拖拽并记忆高度）；右上角提供常用正则与使用文档入口。
+- `src/bookhub/ui/dialogs/text_rule_help_dialog.py`：Text Rules 内置使用文档窗口；说明 source、步骤、分隔提取、嵌套括号、格式诊断和常见排错。
+- `src/bookhub/ui/dialogs/text_rule_regex_dialog.py`：Text Rules 常用正则示范窗口；按用途、示例文本、正则、提取结果展示，覆盖日期、tag、分隔/混合分隔文件名、Pixiv id 等示例。
 
 ### 3.7 UI 数据模型（bookhub/ui/models）
 - `src/bookhub/ui/models/__init__.py`：模型包入口。
@@ -189,7 +193,7 @@ src/
 - 打包准备：新增书柜主题应用图标，`scripts/build_nuitka.ps1` 使用 `Nuitka==4.1.2` 构建 exe，并显式打包 `src/assets`、i18n locales、`fitz` 与 `pymupdf` 原始包目录；PyMuPDF 采用预编译 `.pyd/.dll` 随包携带并关闭 Nuitka excluded-module 运行时阻断；`scripts/`、`src/tests/`、运行数据库、扫描日志、缩略图缓存不进入发行包。
 - 2026-05-29 外部工具链注释：本次仅完成 Hue 离线落地与本地 MCP 集成（`F:\Coding_Dev\UI\hue*`、全局 `mcp.json`），`src/` 代码与目录结构未发生变更。
 - 2026-05-30 外部工具链注释：Hue MCP 相关目录已统一迁移到 `F:\MCP\hue-mcp-server` 与 `F:\MCP\hue`；本次仍不涉及 `src/` 代码变更。
-- 2026-06-11 UI 范本注释：新增 `Simple-Book-library-Dev_Document\UI\新UI\glassmorphism-ui.html` 作为 Glassmorphism 交互画板；设置、弹窗、组件状态已拆到底部独立预览区，便于后续拖拽/缩放窗口设计；页面内新增中文/英文 i18n 浮动预览按钮，且注释标明不进入后续正式开发；左侧侧栏删除“导入书籍”入口；范本新增日间/夜间主题变量、按本地时间 `22:00-07:00` 自动切换的夜间模式设置区、检查频率与过渡时长预览控件；本次不涉及 `src/` 代码与目录结构变更。
+- 2026-06-11 UI 范本注释：新增 `Simple-Book-library-Dev_Document\UI\新UI\glassmorphism-ui.html` 作为 Glassmorphism 交互画板；设置、弹窗、组件状态已拆到底部独立预览区，便于后续拖拽/缩放窗口设计；页面内新增中文/英文 i18n 浮动预览按钮，且注释标明不进入后续正式开发；左侧侧栏删除“导入书籍”入口；Library 总页面主区采用 cover-only 封面网格，标题/作者/tag 等信息交由右侧详情栏承载；范本新增日间/夜间主题变量、按本地时间 `22:00-07:00` 自动切换的夜间模式设置区、检查频率与自动过渡时长预览控件；手动 Day/Night/Auto 预览使用快速切换，避免分钟级过渡造成白天样式灰化残留；本次不涉及 `src/` 代码与目录结构变更。
 - 缩略图：WebP 落盘，DB 保存 `file://` URL。
 - 数据能力：Collections、Favorites、Tags 已接入。
 - Library 展示：主区双栏，右侧详情栏常驻且可拖拽宽度。

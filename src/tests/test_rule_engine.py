@@ -55,6 +55,95 @@ class RuleEngineTests(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertEqual(result.value, "三体")
 
+    def test_split_multi_and_take_uses_any_separator(self) -> None:
+        rule = ImportRule(
+            field="author",
+            source="stem",
+            steps=[
+                RuleStep(
+                    type="split_multi_and_take",
+                    params={"separators": "-\n_\n／", "index": 2},
+                )
+            ],
+        )
+        context = RuleContext(file_path="标题-作者_完结.txt")
+
+        result = apply_rule(rule, context)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.value, "作者")
+
+    def test_split_multi_and_take_validates_index_and_separators(self) -> None:
+        context = RuleContext(file_path="标题-作者.txt")
+        cases = [
+            ({"separators": "", "index": 1}, "separators is required"),
+            ({"separators": "-", "index": 4}, "out of range"),
+        ]
+
+        for params, expected in cases:
+            with self.subTest(expected=expected):
+                rule = ImportRule(
+                    field="author",
+                    source="stem",
+                    steps=[RuleStep(type="split_multi_and_take", params=params)],
+                )
+                result = apply_rule(rule, context)
+                self.assertFalse(result.success)
+                self.assertEqual(result.failed_step, "split_multi_and_take")
+                self.assertIn(expected, str(result.error_message))
+
+    def test_split_and_join_range_returns_parts_and_warning(self) -> None:
+        context = RuleContext(file_path="标题-副题-作者.txt")
+        rule = ImportRule(
+            field="title",
+            source="stem",
+            steps=[
+                RuleStep(
+                    type="split_and_join_range",
+                    params={"separator": "-", "start": 1, "end": 2, "joiner": " - "},
+                )
+            ],
+        )
+        warn_rule = ImportRule(
+            field="title",
+            source="stem",
+            steps=[
+                RuleStep(
+                    type="split_and_join_range",
+                    params={"separator": "-", "start": 2, "end": 9, "joiner": "/"},
+                )
+            ],
+        )
+
+        result = apply_rule(rule, context)
+        warn_result = apply_rule(warn_rule, context)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.value, "标题 - 副题")
+        self.assertTrue(warn_result.success)
+        self.assertEqual(warn_result.value, "副题/作者")
+        self.assertIn("truncated to part 3", str(warn_result.warning_message))
+
+    def test_split_and_join_range_invalid_params_return_failure(self) -> None:
+        context = RuleContext(file_path="标题-作者.txt")
+        cases = [
+            ({"separator": "", "start": 1, "end": 2}, "separator is required"),
+            ({"separator": "-", "start": 2, "end": 1}, "start must be <= end"),
+            ({"separator": "-", "start": 5, "end": 6}, "out of range"),
+        ]
+
+        for params, expected in cases:
+            with self.subTest(expected=expected):
+                rule = ImportRule(
+                    field="title",
+                    source="stem",
+                    steps=[RuleStep(type="split_and_join_range", params=params)],
+                )
+                result = apply_rule(rule, context)
+                self.assertFalse(result.success)
+                self.assertEqual(result.failed_step, "split_and_join_range")
+                self.assertIn(expected, str(result.error_message))
+
     def test_take_between_texts(self) -> None:
         rule = ImportRule(
             field="title",
@@ -529,6 +618,87 @@ class RuleEngineTests(unittest.TestCase):
                 result = apply_rule(rule, context)
                 self.assertTrue(result.success)
                 self.assertEqual(result.value, expected)
+
+    def test_nested_bracket_content_uses_outer_scope_by_default(self) -> None:
+        rule = ImportRule(
+            field="author",
+            source="filename",
+            steps=[RuleStep(type="take_bracket_content", params={"bracket": "[]", "index": 1})],
+        )
+        context = RuleContext(file_path=r"F:\books\[作者【社团】] 标题.txt")
+
+        result = apply_rule(rule, context)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.value, "作者【社团】")
+
+    def test_take_all_bracket_contents_respects_scope(self) -> None:
+        context = RuleContext(file_path=r"F:\books\[作者【社团】][奇幻] 标题.txt")
+        outer_rule = ImportRule(
+            field="tag",
+            source="filename",
+            steps=[
+                RuleStep(
+                    type="take_all_bracket_contents",
+                    params={"bracket_type": "all", "bracket_scope": "outer", "join": "newline"},
+                )
+            ],
+        )
+        all_rule = ImportRule(
+            field="tag",
+            source="filename",
+            steps=[
+                RuleStep(
+                    type="take_all_bracket_contents",
+                    params={"bracket_type": "all", "bracket_scope": "all", "join": "newline"},
+                )
+            ],
+        )
+
+        outer_result = apply_rule(outer_rule, context)
+        all_result = apply_rule(all_rule, context)
+
+        self.assertTrue(outer_result.success)
+        self.assertEqual(outer_result.value, "作者【社团】\n奇幻")
+        self.assertTrue(all_result.success)
+        self.assertEqual(all_result.value, "作者【社团】\n社团\n奇幻")
+
+    def test_new_bracket_steps_extract_remove_and_filter(self) -> None:
+        context = RuleContext(file_path=r"F:\books\[作者【社团】][奇幻] 标题.txt")
+        cases = [
+            (
+                RuleStep(type="take_last_bracket_content", params={"bracket_type": "all", "bracket_scope": "outer"}),
+                "奇幻",
+            ),
+            (
+                RuleStep(type="remove_nth_bracket", params={"bracket_type": "all", "bracket_scope": "outer", "index": 2}),
+                "[作者【社团】] 标题.txt",
+            ),
+            (
+                RuleStep(type="keep_only_bracket_type", params={"bracket_type": "chinese_square", "bracket_scope": "all"}),
+                "社团",
+            ),
+        ]
+
+        for step, expected in cases:
+            with self.subTest(step=step.type):
+                result = apply_rule(ImportRule(field="tag", source="filename", steps=[step]), context)
+                self.assertTrue(result.success)
+                self.assertEqual(result.value, expected)
+
+    def test_unclosed_bracket_does_not_crash_and_returns_failure(self) -> None:
+        rule = ImportRule(
+            field="tag",
+            source="filename",
+            steps=[RuleStep(type="take_all_bracket_contents", params={"bracket_type": "all"})],
+        )
+        context = RuleContext(file_path=r"F:\books\[作者【社团 标题.txt")
+
+        result = apply_rule(rule, context)
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.failed_step, "take_all_bracket_contents")
+        self.assertIn("No bracket content matched", str(result.error_message))
 
     def test_rule_chain_fallback(self) -> None:
         chain = [

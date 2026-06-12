@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import uuid
+from pathlib import Path
 from typing import Any, Callable
 
 from PySide6.QtCore import Qt
@@ -38,6 +39,7 @@ from bookhub.library.text_rules.rule_preview import (
     preview_rule_chain,
     read_txt_preview_sample,
 )
+from bookhub.library.text_rules.structure_parser import build_structure_report, format_structure_signature
 from bookhub.ui.dialogs.text_rule_help_dialog import TextRuleHelpDialog
 from bookhub.ui.dialogs.text_rule_regex_dialog import TextRuleRegexDialog
 
@@ -68,12 +70,18 @@ class TextRuleDialog(QDialog):
         "take_before_marker",
         "take_after_marker",
         "split_and_take",
+        "split_multi_and_take",
+        "split_and_join_range",
         "remove_prefix",
         "remove_suffix",
         "remove_text",
         "remove_regex",
         "remove_bracket_content",
         "remove_brackets_keep_content",
+        "take_last_bracket_content",
+        "take_all_bracket_contents",
+        "remove_nth_bracket",
+        "keep_only_bracket_type",
         "replace_text",
         "regex_extract",
         "loop_lines",
@@ -105,8 +113,17 @@ class TextRuleDialog(QDialog):
             ),
         ),
         ("line", ("take_line", "take_first_lines", "take_line_range", "remove_first_lines", "remove_last_lines", "loop_lines")),
-        ("bracket", ("take_bracket_content",)),
-        ("split", ("split_and_take",)),
+        (
+            "bracket",
+            (
+                "take_bracket_content",
+                "take_last_bracket_content",
+                "take_all_bracket_contents",
+                "remove_nth_bracket",
+                "keep_only_bracket_type",
+            ),
+        ),
+        ("split", ("split_and_take", "split_multi_and_take", "split_and_join_range")),
         ("filename", ("remove_extension",)),
         ("regex", ("regex_extract",)),
     )
@@ -187,6 +204,7 @@ class TextRuleDialog(QDialog):
 
         self._load_auto_preview_sample()
         self._refresh_rule_list(selected_row=0)
+        self._refresh_structure_diagnostics()
 
     def _build_left_column(self, parent_layout: QHBoxLayout) -> None:
         left = QFrame()
@@ -400,6 +418,33 @@ class TextRuleDialog(QDialog):
         self._apply_preview_result_height(self._preview_result_height)
         preview_layout.addWidget(self.preview_splitter, 1)
 
+        diagnostic_box = QFrame()
+        diagnostic_box.setObjectName("SubtlePanel")
+        diagnostic_layout = QVBoxLayout(diagnostic_box)
+        diagnostic_layout.setContentsMargins(8, 8, 8, 8)
+        diagnostic_layout.setSpacing(6)
+        diagnostic_header = QHBoxLayout()
+        diagnostic_title = QLabel(tr("text.rules.structure.title", "Format diagnostics"))
+        diagnostic_title.setObjectName("PageSubtitle")
+        diagnostic_header.addWidget(diagnostic_title)
+        diagnostic_header.addStretch(1)
+        self.structure_refresh_btn = QPushButton(tr("text.rules.structure.refresh", "Refresh"))
+        self.structure_refresh_btn.setObjectName("GhostButton")
+        self.structure_refresh_btn.clicked.connect(self._refresh_structure_diagnostics)
+        diagnostic_header.addWidget(self.structure_refresh_btn)
+        diagnostic_layout.addLayout(diagnostic_header)
+
+        self.structure_result_label = QTextEdit()
+        self.structure_result_label.setObjectName("TextRulePreviewText")
+        self.structure_result_label.setAcceptRichText(False)
+        self.structure_result_label.setReadOnly(True)
+        self.structure_result_label.setFrameShape(QFrame.NoFrame)
+        self.structure_result_label.setFixedHeight(96)
+        self.structure_result_label.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.structure_result_label.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        diagnostic_layout.addWidget(self.structure_result_label)
+        preview_layout.addWidget(diagnostic_box, 0)
+
         parent_layout.addWidget(preview_box, 1)
 
     def _load_rules(self, rules_json: str) -> None:
@@ -580,7 +625,7 @@ class TextRuleDialog(QDialog):
 
     def _add_param_widget(self, form: QFormLayout, step_index: int, step: RuleStep, key: str) -> None:
         label = self._param_label_for_step(step.type, key)
-        if step.type == "take_line_range" and key in {"start", "end"}:
+        if step.type in {"take_line_range", "split_and_join_range"} and key in {"start", "end"}:
             widget = QSpinBox()
             widget.setRange(1, 999)
             widget.setValue(self._safe_int(step.params.get(key), 1))
@@ -588,13 +633,36 @@ class TextRuleDialog(QDialog):
             form.addRow(label, widget)
             return
 
+        if key == "separators":
+            widget = QTextEdit()
+            widget.setAcceptRichText(False)
+            widget.setFixedHeight(64)
+            widget.setPlainText(str(step.params.get(key) or ""))
+            widget.textChanged.connect(
+                lambda idx=step_index, param=key, edit=widget: self._set_step_param(idx, param, edit.toPlainText())
+            )
+            form.addRow(label, widget)
+            return
+
         if key == "bracket":
             widget = QComboBox()
-            widget.addItems(["[]", "【】", "()", "（）", "<>", "《》"])
+            widget.addItems(["[]", "［］", "【】", "()", "（）", "<>", "＜＞", "《》", "「」", "『』"])
             value = str(step.params.get("bracket") or "[]")
             value_idx = widget.findText(value)
             widget.setCurrentIndex(value_idx if value_idx >= 0 else 0)
             widget.currentTextChanged.connect(lambda text, idx=step_index: self._set_step_param(idx, "bracket", text))
+            form.addRow(label, widget)
+            return
+
+        if key == "bracket_scope":
+            widget = QComboBox()
+            for code, text in self._bracket_scope_options():
+                widget.addItem(text, code)
+            value_idx = widget.findData(str(step.params.get("bracket_scope") or "outer"))
+            widget.setCurrentIndex(value_idx if value_idx >= 0 else 0)
+            widget.currentIndexChanged.connect(
+                lambda _=0, idx=step_index, combo=widget: self._set_combo_step_param(idx, "bracket_scope", combo)
+            )
             form.addRow(label, widget)
             return
 
@@ -1078,6 +1146,59 @@ class TextRuleDialog(QDialog):
         self.preview_result_box.style().unpolish(self.preview_result_box)
         self.preview_result_box.style().polish(self.preview_result_box)
 
+    def _refresh_structure_diagnostics(self) -> None:
+        if not hasattr(self, "structure_result_label"):
+            return
+        values = self._sample_txt_names_for_structure()
+        if not values:
+            self.structure_result_label.setPlainText(
+                tr("text.rules.structure.no_samples", "No TXT samples for format diagnostics.")
+            )
+            return
+        report = build_structure_report(values)
+        dominant = report.dominant_group
+        if dominant is None:
+            self.structure_result_label.setPlainText(
+                tr("text.rules.structure.no_samples", "No TXT samples for format diagnostics.")
+            )
+            return
+
+        lines = [
+            tr("text.rules.structure.sample_count", "Samples: {count}").format(count=report.total),
+            tr("text.rules.structure.main_format", "Main format: {format}").format(
+                format=format_structure_signature(dominant.signature)
+            ),
+            tr("text.rules.structure.consistency", "Consistency: {score:.0f}% ({count}/{total})").format(
+                score=report.consistency_score,
+                count=dominant.count,
+                total=report.total,
+            ),
+        ]
+        if len(report.groups) > 1:
+            lines.append(tr("text.rules.structure.groups", "Groups: {count}").format(count=len(report.groups)))
+        if report.outlier_samples:
+            lines.append(tr("text.rules.structure.outliers", "Outliers:"))
+            lines.extend(f"  {value}" for value in report.outlier_samples)
+        else:
+            lines.append(tr("text.rules.structure.no_outliers", "Outliers: none"))
+        self.structure_result_label.setPlainText("\n".join(lines))
+
+    def _sample_txt_names_for_structure(self) -> list[str]:
+        root = Path(self._root_path)
+        if not root.exists():
+            return []
+        values: list[str] = []
+        try:
+            iterator = root.rglob("*.txt") if root.is_dir() else [root]
+            for file_path in iterator:
+                if len(values) >= 80:
+                    break
+                if file_path.is_file():
+                    values.append(file_path.name)
+        except OSError:
+            return []
+        return sorted(values)
+
     def _apply_preview_result_height(self, height: int) -> None:
         height = self._normalize_preview_result_height(height)
         self._preview_result_height = height
@@ -1127,14 +1248,26 @@ class TextRuleDialog(QDialog):
             return ("value", "scope", "unit", "count")
         if step_type == "split_and_take":
             return ("separator", "index")
+        if step_type == "split_multi_and_take":
+            return ("separators", "index")
+        if step_type == "split_and_join_range":
+            return ("separator", "start", "end", "joiner")
         if step_type == "take_bracket_content":
-            return ("bracket", "index")
+            return ("bracket", "bracket_scope", "index")
         if step_type == "remove_text":
             return ("text", "case_sensitive")
         if step_type == "remove_regex":
             return ("pattern",)
         if step_type in {"remove_bracket_content", "remove_brackets_keep_content"}:
-            return ("bracket_type",)
+            return ("bracket_type", "bracket_scope")
+        if step_type == "take_last_bracket_content":
+            return ("bracket_type", "bracket_scope")
+        if step_type == "take_all_bracket_contents":
+            return ("bracket_type", "bracket_scope", "join", "custom_separator")
+        if step_type == "remove_nth_bracket":
+            return ("bracket_type", "bracket_scope", "index")
+        if step_type == "keep_only_bracket_type":
+            return ("bracket_type", "bracket_scope", "join", "custom_separator")
         if step_type == "replace_text":
             return ("old", "new")
         if step_type == "regex_extract":
@@ -1179,9 +1312,23 @@ class TextRuleDialog(QDialog):
                 "separator": str(old_params.get("separator") or ""),
                 "index": self._safe_int(old_params.get("index"), 1),
             }
+        if step_type == "split_multi_and_take":
+            return {
+                "separators": str(old_params.get("separators") or "-\n_\n／\n/"),
+                "index": self._safe_int(old_params.get("index"), 1),
+            }
+        if step_type == "split_and_join_range":
+            separator = str(old_params.get("separator") or "")
+            return {
+                "separator": separator,
+                "start": self._safe_int(old_params.get("start"), 1),
+                "end": self._safe_int(old_params.get("end"), 1),
+                "joiner": str(old_params.get("joiner") if old_params.get("joiner") is not None else separator),
+            }
         if step_type == "take_bracket_content":
             return {
                 "bracket": str(old_params.get("bracket") or "[]"),
+                "bracket_scope": str(old_params.get("bracket_scope") or "outer"),
                 "index": self._safe_int(old_params.get("index"), 1),
             }
         if step_type == "remove_text":
@@ -1192,7 +1339,35 @@ class TextRuleDialog(QDialog):
         if step_type == "remove_regex":
             return {"pattern": str(old_params.get("pattern") or "")}
         if step_type in {"remove_bracket_content", "remove_brackets_keep_content"}:
-            return {"bracket_type": str(old_params.get("bracket_type") or "all")}
+            return {
+                "bracket_type": str(old_params.get("bracket_type") or "all"),
+                "bracket_scope": str(old_params.get("bracket_scope") or "outer"),
+            }
+        if step_type == "take_last_bracket_content":
+            return {
+                "bracket_type": str(old_params.get("bracket_type") or "all"),
+                "bracket_scope": str(old_params.get("bracket_scope") or "outer"),
+            }
+        if step_type == "take_all_bracket_contents":
+            return {
+                "bracket_type": str(old_params.get("bracket_type") or "all"),
+                "bracket_scope": str(old_params.get("bracket_scope") or "outer"),
+                "join": str(old_params.get("join") or "newline"),
+                "custom_separator": str(old_params.get("custom_separator") or ""),
+            }
+        if step_type == "remove_nth_bracket":
+            return {
+                "bracket_type": str(old_params.get("bracket_type") or "all"),
+                "bracket_scope": str(old_params.get("bracket_scope") or "outer"),
+                "index": self._safe_int(old_params.get("index"), 1),
+            }
+        if step_type == "keep_only_bracket_type":
+            return {
+                "bracket_type": str(old_params.get("bracket_type") or "all"),
+                "bracket_scope": str(old_params.get("bracket_scope") or "outer"),
+                "join": str(old_params.get("join") or "newline"),
+                "custom_separator": str(old_params.get("custom_separator") or ""),
+            }
         if step_type == "replace_text":
             return {
                 "old": str(old_params.get("old") or ""),
@@ -1355,12 +1530,18 @@ class TextRuleDialog(QDialog):
             "take_before_marker": tr("text.rules.step.take_before_marker", "Take before marker"),
             "take_after_marker": tr("text.rules.step.take_after_marker", "Take after marker"),
             "split_and_take": tr("text.rules.step.split_and_take", "Split and take"),
+            "split_multi_and_take": tr("text.rules.step.split_multi_and_take", "Split by multiple separators and take"),
+            "split_and_join_range": tr("text.rules.step.split_and_join_range", "Split and join range"),
             "remove_prefix": tr("text.rules.step.remove_prefix", "Remove prefix"),
             "remove_suffix": tr("text.rules.step.remove_suffix", "Remove suffix"),
             "remove_text": tr("text.rules.step.remove_text", "Remove text"),
             "remove_regex": tr("text.rules.step.remove_regex", "Remove regex"),
             "remove_bracket_content": tr("text.rules.step.remove_bracket_content", "Remove bracket content"),
             "remove_brackets_keep_content": tr("text.rules.step.remove_brackets_keep_content", "Remove brackets keep content"),
+            "take_last_bracket_content": tr("text.rules.step.take_last_bracket_content", "Take last bracket content"),
+            "take_all_bracket_contents": tr("text.rules.step.take_all_bracket_contents", "Take all bracket contents"),
+            "remove_nth_bracket": tr("text.rules.step.remove_nth_bracket", "Remove Nth bracket block"),
+            "keep_only_bracket_type": tr("text.rules.step.keep_only_bracket_type", "Keep only bracket type"),
             "replace_text": tr("text.rules.step.replace_text", "Replace text"),
             "regex_extract": tr("text.rules.step.regex_extract", "Regex extract"),
             "loop_lines": tr("text.rules.step.loop_lines", "Loop lines extract"),
@@ -1376,8 +1557,11 @@ class TextRuleDialog(QDialog):
             "start": tr("text.rules.param.start", "Start"),
             "end": tr("text.rules.param.end", "End"),
             "separator": tr("text.rules.param.separator", "Separator"),
+            "separators": tr("text.rules.param.separators", "Separators"),
+            "joiner": tr("text.rules.param.joiner", "Joiner"),
             "bracket": tr("text.rules.param.bracket", "Bracket"),
             "bracket_type": tr("text.rules.param.bracket_type", "Bracket type"),
+            "bracket_scope": tr("text.rules.param.bracket_scope", "Nested scope"),
             "index": tr("text.rules.param.index", "Index"),
             "count": tr("text.rules.param.count", "Count"),
             "scope": tr("text.rules.param.scope", "Range"),
@@ -1399,6 +1583,10 @@ class TextRuleDialog(QDialog):
             return tr("text.rules.param.start_line", "Start line")
         if step_type == "take_line_range" and code == "end":
             return tr("text.rules.param.end_line", "End line")
+        if step_type == "split_and_join_range" and code == "start":
+            return tr("text.rules.param.start_part", "Start part")
+        if step_type == "split_and_join_range" and code == "end":
+            return tr("text.rules.param.end_part", "End part")
         return TextRuleDialog._param_label(code)
 
     @staticmethod
@@ -1406,6 +1594,14 @@ class TextRuleDialog(QDialog):
         return (
             ("all", tr("text.rules.option.scope.all", "All")),
             ("count", tr("text.rules.option.scope.count", "Count")),
+        )
+
+    @staticmethod
+    def _bracket_scope_options() -> tuple[tuple[str, str], ...]:
+        return (
+            ("outer", tr("text.rules.option.bracket_scope.outer", "Outer blocks")),
+            ("all", tr("text.rules.option.bracket_scope.all", "All blocks")),
+            ("inner", tr("text.rules.option.bracket_scope.inner", "Inner blocks")),
         )
 
     @staticmethod
@@ -1447,4 +1643,5 @@ class TextRuleDialog(QDialog):
             ("chinese_square", tr("text.rules.option.bracket_type.chinese_square", "Chinese square brackets")),
             ("corner", tr("text.rules.option.bracket_type.corner", "Corner brackets")),
             ("book_title", tr("text.rules.option.bracket_type.book_title", "Book title brackets")),
+            ("angle", tr("text.rules.option.bracket_type.angle", "Angle brackets")),
         )

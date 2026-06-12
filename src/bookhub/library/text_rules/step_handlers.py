@@ -1,27 +1,19 @@
 ﻿from __future__ import annotations
 
 import re
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from bookhub.library.text_rules.rule_models import RuleStep
+from bookhub.library.text_rules.structure_parser import (
+    BracketBlock,
+    bracket_blocks_for_pair,
+    filter_bracket_blocks,
+    parse_bracket_blocks,
+)
 
-_BRACKET_PAIRS = {
-    "[]": ("[", "]"),
-    "【】": ("【", "】"),
-    "()": ("(", ")"),
-    "（）": ("（", "）"),
-    "<>": ("<", ">"),
-    "《》": ("《", "》"),
-}
-_BRACKET_TYPE_PAIRS = {
-    "square": (("[", "]"), ("［", "］")),
-    "round": (("(", ")"), ("（", "）")),
-    "chinese_square": (("【", "】"),),
-    "corner": (("「", "」"), ("『", "』")),
-    "book_title": (("《", "》"),),
-}
 _PUNCTUATION_TRANSLATION = str.maketrans(
     {
         "［": "[",
@@ -75,16 +67,15 @@ def _positive_int_from_step(params: dict[str, Any], key: str, default: int = 1) 
 
 def _take_bracket_content(value: str, step: RuleStep) -> str:
     bracket = str(step.params.get("bracket") or "[]")
-    pair = _BRACKET_PAIRS.get(bracket)
-    if pair is None:
-        raise StepError(f"Unsupported bracket pair: {bracket}")
-    start, end = pair
+    scope = _bracket_scope_from_step(step.params)
     index = _index_from_step(step.params)
-    pattern = rf"{re.escape(start)}(.*?){re.escape(end)}"
-    matches = re.findall(pattern, value, flags=re.DOTALL)
-    if index > len(matches):
+    try:
+        blocks = bracket_blocks_for_pair(value, bracket, scope=scope)
+    except ValueError as exc:
+        raise StepError(str(exc)) from exc
+    if index > len(blocks):
         raise StepError(f"Bracket content index {index} out of range")
-    return matches[index - 1]
+    return blocks[index - 1].content(value)
 
 
 def _take_after_text(value: str, step: RuleStep) -> str:
@@ -157,32 +148,62 @@ def _remove_regex(value: str, step: RuleStep) -> str:
         raise StepError(f"Invalid regex pattern: {exc}") from exc
 
 
-def _pairs_for_bracket_type(bracket_type: str) -> tuple[tuple[str, str], ...]:
-    if bracket_type == "all":
-        pairs: list[tuple[str, str]] = []
-        for value in _BRACKET_TYPE_PAIRS.values():
-            pairs.extend(value)
-        return tuple(pairs)
-    pairs = _BRACKET_TYPE_PAIRS.get(bracket_type)
-    if pairs is None:
-        raise StepError(f"Unsupported bracket type: {bracket_type}")
-    return pairs
+def _bracket_scope_from_step(params: dict[str, Any]) -> str:
+    return str(params.get("bracket_scope") or "outer").strip()
+
+
+def _bracket_blocks_for_type(value: str, step: RuleStep) -> list[BracketBlock]:
+    bracket_type = str(step.params.get("bracket_type") or "all").strip()
+    scope = _bracket_scope_from_step(step.params)
+    try:
+        return filter_bracket_blocks(parse_bracket_blocks(value), bracket_type=bracket_type, scope=scope)
+    except ValueError as exc:
+        raise StepError(str(exc)) from exc
+
+
+def _replace_bracket_blocks(value: str, blocks: list[BracketBlock], *, keep_content: bool) -> str:
+    result = value
+    for block in sorted(blocks, key=lambda item: item.start, reverse=True):
+        replacement = block.content(value) if keep_content else ""
+        result = result[: block.start] + replacement + result[block.end :]
+    return result
 
 
 def _remove_bracket_content(value: str, step: RuleStep) -> str:
-    bracket_type = str(step.params.get("bracket_type") or "all")
-    result = value
-    for start, end in _pairs_for_bracket_type(bracket_type):
-        result = re.sub(rf"{re.escape(start)}.*?{re.escape(end)}", "", result, flags=re.DOTALL)
-    return result
+    return _replace_bracket_blocks(value, _bracket_blocks_for_type(value, step), keep_content=False)
 
 
 def _remove_brackets_keep_content(value: str, step: RuleStep) -> str:
-    bracket_type = str(step.params.get("bracket_type") or "all")
-    result = value
-    for start, end in _pairs_for_bracket_type(bracket_type):
-        result = re.sub(rf"{re.escape(start)}(.*?){re.escape(end)}", r"\1", result, flags=re.DOTALL)
-    return result
+    return _replace_bracket_blocks(value, _bracket_blocks_for_type(value, step), keep_content=True)
+
+
+def _take_last_bracket_content(value: str, step: RuleStep) -> str:
+    blocks = _bracket_blocks_for_type(value, step)
+    if not blocks:
+        raise StepError("No bracket content matched")
+    return blocks[-1].content(value)
+
+
+def _take_all_bracket_contents(value: str, step: RuleStep) -> str:
+    blocks = _bracket_blocks_for_type(value, step)
+    if not blocks:
+        raise StepError("No bracket content matched")
+    return _join_separator(step.params).join(block.content(value) for block in blocks)
+
+
+def _remove_nth_bracket(value: str, step: RuleStep) -> str:
+    blocks = _bracket_blocks_for_type(value, step)
+    index = _index_from_step(step.params)
+    if index > len(blocks):
+        raise StepError(f"Bracket index {index} out of range")
+    return _replace_bracket_blocks(value, [blocks[index - 1]], keep_content=False)
+
+
+def _keep_only_bracket_type(value: str, step: RuleStep) -> str:
+    blocks = _bracket_blocks_for_type(value, step)
+    if not blocks:
+        raise StepError("No bracket content matched")
+    return _join_separator(step.params).join(block.content(value) for block in blocks)
 
 
 def _take_before_last_text(value: str, step: RuleStep) -> str:
@@ -302,6 +323,64 @@ def _split_and_take(value: str, step: RuleStep) -> str:
     if index > len(parts):
         raise StepError(f"Split index {index} out of range")
     return parts[index - 1]
+
+
+def _multi_separators_from_step(params: dict[str, Any]) -> list[str]:
+    raw = params.get("separators", "")
+    if isinstance(raw, list):
+        separators = [str(item) for item in raw]
+    else:
+        text = str(raw or "")
+        if text.strip().startswith("["):
+            try:
+                decoded = json.loads(text)
+            except json.JSONDecodeError as exc:
+                raise StepError(f"Invalid separators JSON: {exc}") from exc
+            if not isinstance(decoded, list):
+                raise StepError("separators JSON must be a list")
+            separators = [str(item) for item in decoded]
+        elif "\n" in text or "\r" in text:
+            separators = text.splitlines()
+        else:
+            separators = text.split("|")
+    normalized = [item for item in separators if item]
+    if not normalized:
+        raise StepError("separators is required")
+    return sorted(normalized, key=len, reverse=True)
+
+
+def _split_by_any_separator(value: str, separators: list[str]) -> list[str]:
+    pattern = "|".join(re.escape(separator) for separator in separators)
+    return re.split(pattern, value)
+
+
+def _split_multi_and_take(value: str, step: RuleStep) -> str:
+    separators = _multi_separators_from_step(step.params)
+    index = _index_from_step(step.params)
+    parts = _split_by_any_separator(value, separators)
+    if index > len(parts):
+        raise StepError(f"Split index {index} out of range")
+    return parts[index - 1]
+
+
+def _split_and_join_range(value: str, step: RuleStep) -> StepOutput:
+    separator = str(step.params.get("separator") or "")
+    if not separator:
+        raise StepError("separator is required")
+    start = _positive_int_from_step(step.params, "start")
+    end = _positive_int_from_step(step.params, "end")
+    if start > end:
+        raise StepError("start must be <= end")
+    parts = value.split(separator)
+    if start > len(parts):
+        raise StepError(f"Split start {start} out of range")
+    effective_end = min(end, len(parts))
+    joiner = str(step.params.get("joiner") if step.params.get("joiner") is not None else separator)
+    selected = joiner.join(parts[start - 1 : effective_end])
+    warning = None
+    if end > len(parts):
+        warning = f"Split end {end} out of range; truncated to part {len(parts)}"
+    return StepOutput(value=selected, warning_message=warning)
 
 
 def _remove_prefix(value: str, step: RuleStep) -> str:
@@ -439,6 +518,14 @@ def apply_step(value: str, step: RuleStep) -> str | StepOutput:
         return _remove_bracket_content(value, step)
     if step_type == "remove_brackets_keep_content":
         return _remove_brackets_keep_content(value, step)
+    if step_type == "take_last_bracket_content":
+        return _take_last_bracket_content(value, step)
+    if step_type == "take_all_bracket_contents":
+        return _take_all_bracket_contents(value, step)
+    if step_type == "remove_nth_bracket":
+        return _remove_nth_bracket(value, step)
+    if step_type == "keep_only_bracket_type":
+        return _keep_only_bracket_type(value, step)
     if step_type == "take_before_last_text":
         return _take_before_last_text(value, step)
     if step_type == "take_after_last_text":
@@ -459,6 +546,10 @@ def apply_step(value: str, step: RuleStep) -> str | StepOutput:
         return _take_around_marker(value, step, after=True)
     if step_type == "split_and_take":
         return _split_and_take(value, step)
+    if step_type == "split_multi_and_take":
+        return _split_multi_and_take(value, step)
+    if step_type == "split_and_join_range":
+        return _split_and_join_range(value, step)
     if step_type == "remove_prefix":
         return _remove_prefix(value, step)
     if step_type == "remove_suffix":

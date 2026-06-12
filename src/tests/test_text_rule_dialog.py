@@ -72,7 +72,7 @@ class TextRuleDialogTests(unittest.TestCase):
 
             dialog._set_current_field("author")
             self.assertEqual(dialog.rule_list.count(), 1)
-            self.assertEqual(dialog._visible_step_param_keys[0], ("bracket", "index"))
+            self.assertEqual(dialog._visible_step_param_keys[0], ("bracket", "bracket_scope", "index"))
 
             dialog._set_current_field("title")
             dialog.preview_path_edit.setText(str(Path(tmp_dir) / "demo.txt"))
@@ -243,6 +243,47 @@ class TextRuleDialogTests(unittest.TestCase):
             self.assertEqual(step["type"], "remove_text")
             self.assertEqual(step["text"], "[翻译]")
             self.assertIs(step["case_sensitive"], True)
+
+    def test_dialog_exposes_split_steps_and_structure_diagnostics(self) -> None:
+        rules = {
+            "title": [
+                {
+                    "field": "title",
+                    "source": "stem",
+                    "steps": [
+                        {"type": "split_multi_and_take", "separators": "-\n_", "index": 2},
+                        {"type": "split_and_join_range", "separator": "-", "start": 1, "end": 2, "joiner": " - "},
+                    ],
+                }
+            ]
+        }
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            Path(tmp_dir, "[标题]-[作者]-[完结].txt").write_text("demo", encoding="utf-8")
+            Path(tmp_dir, "[另一标题]-[作者]-[连载].txt").write_text("demo", encoding="utf-8")
+            Path(tmp_dir, "散装标题 作者 完结.txt").write_text("demo", encoding="utf-8")
+
+            dialog = TextRuleDialog(tmp_dir, json.dumps(rules), preview_chars=120)
+            self.addCleanup(dialog.close)
+
+            self.assertEqual(dialog._visible_step_param_keys[0], ("separators", "index"))
+            self.assertEqual(dialog._visible_step_param_keys[1], ("separator", "start", "end", "joiner"))
+            category_combos = dialog.steps_container.findChildren(QComboBox, "TextRuleStepCategoryCombo")
+            self.assertEqual(category_combos[0].currentData(), "split")
+            self.assertIsInstance(dialog.structure_result_label, QTextEdit)
+            structure_text = dialog.structure_result_label.toPlainText()
+            self.assertTrue("样本数" in structure_text or "Samples" in structure_text)
+            self.assertTrue("一致度" in structure_text or "Consistency" in structure_text)
+            self.assertIn("散装标题 作者 完结.txt", structure_text)
+
+            dialog._set_step_param(0, "separators", "-\n_\n／")
+            dialog._set_step_param(1, "joiner", "/")
+            payload = json.loads(dialog.rules_json())
+            steps = payload["title"][0]["steps"]
+            self.assertEqual(steps[0]["type"], "split_multi_and_take")
+            self.assertEqual(steps[0]["separators"], "-\n_\n／")
+            self.assertEqual(steps[1]["type"], "split_and_join_range")
+            self.assertEqual(steps[1]["joiner"], "/")
 
     def test_preview_result_height_callback_tracks_splitter(self) -> None:
         rules = {
@@ -425,6 +466,46 @@ class TextRuleDialogTests(unittest.TestCase):
             self.assertEqual(loop_step["custom_separator"], " / ")
             self.assertIs(loop_step["skip_failed"], False)
 
+    def test_dialog_exposes_nested_bracket_step_params_and_json(self) -> None:
+        rules = {
+            "tag": [
+                {
+                    "field": "tag",
+                    "source": "filename",
+                    "steps": [
+                        {
+                            "type": "take_all_bracket_contents",
+                            "bracket_type": "all",
+                            "bracket_scope": "outer",
+                            "join": "newline",
+                            "custom_separator": " / ",
+                        }
+                    ],
+                }
+            ]
+        }
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dialog = TextRuleDialog(tmp_dir, json.dumps(rules), preview_chars=120)
+            self.addCleanup(dialog.close)
+            dialog._set_current_field("tag")
+
+            self.assertEqual(
+                dialog._visible_step_param_keys[0],
+                ("bracket_type", "bracket_scope", "join", "custom_separator"),
+            )
+
+            dialog._set_step_param(0, "bracket_scope", "all")
+            dialog._set_step_param(0, "join", "custom")
+            dialog._render_steps(dialog._selected_steps())
+
+            payload = json.loads(dialog.rules_json())
+            step = payload["tag"][0]["steps"][0]
+            self.assertEqual(step["type"], "take_all_bracket_contents")
+            self.assertEqual(step["bracket_scope"], "all")
+            self.assertEqual(step["join"], "custom")
+            self.assertEqual(step["custom_separator"], " / ")
+
     def test_help_dialog_is_single_guide_column(self) -> None:
         dialog = TextRuleHelpDialog()
         self.addCleanup(dialog.close)
@@ -433,6 +514,7 @@ class TextRuleDialogTests(unittest.TestCase):
 
         self.assertEqual(len(browsers), 1)
         self.assertIn("Quick Start", browsers[0].toPlainText())
+        self.assertIn("nested brackets", browsers[0].toPlainText())
         self.assertNotIn("Common Regex", browsers[0].toPlainText())
 
     def test_regex_dialog_uses_plain_examples(self) -> None:
@@ -448,7 +530,9 @@ class TextRuleDialogTests(unittest.TestCase):
         self.assertIn(r"Regex: (\d{4})年(\d{1,2})月(\d{1,2})日", text)
         self.assertIn("Extract result: 分组1=2026", text)
         self.assertIn(r"Regex: #\[(.+?)\]", text)
-        self.assertNotIn("- ", text)
+        self.assertIn(r"Regex: ^#(.+)$", text)
+        self.assertIn(r"Regex: id=(\d+)", text)
+        self.assertNotIn("\n- ", text)
         self.assertNotIn(" | ", text)
 
 

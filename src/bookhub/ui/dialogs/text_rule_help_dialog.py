@@ -48,6 +48,14 @@ class TextRuleHelpDialog(QDialog):
                 "text.rules.help.step.remove_brackets",
                 "- remove_bracket_content / remove_brackets_keep_content: delete bracket blocks, or keep content and remove brackets",
             ),
+            tr(
+                "text.rules.help.step.bracket_nested",
+                "- bracket steps understand nested brackets. Use bracket scope outer/all/inner to avoid duplicate inner content.",
+            ),
+            tr(
+                "text.rules.help.step.bracket_multi",
+                "- take_all_bracket_contents / keep_only_bracket_type can join multiple results by newline; newline output works well for tag import.",
+            ),
             tr("text.rules.help.step.take_after_text", "- take_after_text: keep content after marker"),
             tr("text.rules.help.step.take_last_text", "- take_before_last_text / take_after_last_text: split by the last marker occurrence"),
             tr("text.rules.help.step.take_between_texts", "- take_between_texts: extract text between two markers"),
@@ -65,6 +73,14 @@ class TextRuleHelpDialog(QDialog):
                 "- take_before_marker / take_after_marker: split by marker, then keep all or N lines/chars before/after it",
             ),
             tr("text.rules.help.step.split_and_take", "- split_and_take: split by separator and pick Nth part"),
+            tr(
+                "text.rules.help.step.split_multi_and_take",
+                "- split_multi_and_take: split by multiple separators and pick Nth part. Put one separator per line.",
+            ),
+            tr(
+                "text.rules.help.step.split_and_join_range",
+                "- split_and_join_range: split by separator, keep parts N to M, then join them back.",
+            ),
             tr("text.rules.help.step.regex_extract", "- regex_extract: advanced mode (for regex users)"),
             tr(
                 "text.rules.help.step.loop_lines",
@@ -96,6 +112,14 @@ class TextRuleHelpDialog(QDialog):
             tr(
                 "text.rules.help.trouble.4",
                 "- Line and marker steps should use source=txt_head_text. Increase Text preview chars in Settings if later lines are missing.",
+            ),
+            tr(
+                "text.rules.help.trouble.5",
+                "- Future format grouping will use bracket blocks and separators outside brackets. Separators inside brackets are ignored for structure matching.",
+            ),
+            tr(
+                "text.rules.help.trouble.6",
+                "- Format diagnostics only estimates whether sample file names share one structure. It does not modify rules or scanning results.",
             ),
         ]
         return "\n".join(lines)
