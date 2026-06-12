@@ -149,6 +149,7 @@ class AppWindow(QMainWindow):
         self.settings_page.text_rule_preview_result_height_changed.connect(
             self._on_text_rule_preview_result_height_changed
         )
+        self.settings_page.text_rule_dialog_size_changed.connect(self._on_text_rule_dialog_size_changed)
         self.settings_page.text_rule_presets_changed.connect(self._on_text_rule_presets_changed)
         self.settings_page.manage_text_rules_requested.connect(self._on_manage_text_rules)
         self.settings_page.scan_library_requested.connect(lambda: self._start_scan("manual_library", scope="library"))
@@ -356,6 +357,7 @@ class AppWindow(QMainWindow):
         self.settings_page.set_text_rule_preview_result_height(
             self._repository.get_text_rule_preview_result_height()
         )
+        self.settings_page.set_text_rule_dialog_size(self._repository.get_text_rule_dialog_size())
         self.settings_page.set_text_rule_presets(self._repository.get_text_rule_presets())
         self.settings_page.set_language_selection(self._repository.get_language_code())
         self.settings_page.set_scan_on_startup(self._repository.get_scan_on_startup())
@@ -461,6 +463,9 @@ class AppWindow(QMainWindow):
 
     def _on_text_rule_preview_result_height_changed(self, height: int) -> None:
         self._repository.set_text_rule_preview_result_height(height)
+
+    def _on_text_rule_dialog_size_changed(self, width: int, height: int) -> None:
+        self._repository.set_text_rule_dialog_size(width, height)
 
     def _on_text_rule_presets_changed(self, presets: list[dict[str, object]]) -> None:
         self._repository.set_text_rule_presets(presets)
@@ -662,9 +667,14 @@ class AppWindow(QMainWindow):
         )
         worker.scan_completed.connect(self._on_scan_completed)
         worker.scan_failed.connect(self._on_scan_failed)
+        worker.progress.connect(self._on_scan_progress)
         worker.finished.connect(self._on_worker_finished)
         self._scan_worker = worker
         worker.start()
+
+    def _on_scan_progress(self, current: int, total: int, label: str, snapshot_obj: object) -> None:
+        snapshot = snapshot_obj if isinstance(snapshot_obj, dict) else {}
+        self.settings_page.set_scan_progress(current, total, label, snapshot)
 
     def _on_scan_completed(self, summary_obj: object) -> None:
         summary = summary_obj if isinstance(summary_obj, dict) else {}

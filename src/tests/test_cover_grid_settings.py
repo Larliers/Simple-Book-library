@@ -26,6 +26,7 @@ try:
 
     from bookhub.ui.models.resource import ResourceItem
     from bookhub.ui.pages.library_page import LibraryPage
+    from bookhub.ui.pages.settings_page import SettingsPage
     from bookhub.ui.viewmodels.library_viewmodel import LibraryViewModel
     from bookhub.ui.widgets.book_card import BookCardWidget, format_author_publisher_meta
 
@@ -34,6 +35,7 @@ except Exception:  # pragma: no cover - optional UI dependency
     QApplication = None  # type: ignore[assignment]
     BookCardWidget = None  # type: ignore[assignment]
     LibraryPage = None  # type: ignore[assignment]
+    SettingsPage = None  # type: ignore[assignment]
     LibraryViewModel = None  # type: ignore[assignment]
     ResourceItem = None  # type: ignore[assignment]
     format_author_publisher_meta = None  # type: ignore[assignment]
@@ -102,6 +104,25 @@ class CoverGridSettingsTests(unittest.TestCase):
                 scan_report_path=root / "scan_report.json",
             )
             self.assertEqual(repo_reload.get_text_rule_preview_result_height(), 260)
+
+    def test_repository_text_rule_dialog_size_persists_and_clamps(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = LibraryRepository(
+                db_path=root / "library.db",
+                scan_report_path=root / "scan_report.json",
+            )
+            self.assertEqual(repo.get_text_rule_dialog_size(), (1320, 820))
+
+            repo.set_text_rule_dialog_size(5000, 100)
+            self.assertEqual(repo.get_text_rule_dialog_size(), (1920, 700))
+            repo.set_text_rule_dialog_size(1440, 900)
+
+            repo_reload = LibraryRepository(
+                db_path=root / "library.db",
+                scan_report_path=root / "scan_report.json",
+            )
+            self.assertEqual(repo_reload.get_text_rule_dialog_size(), (1440, 900))
 
     def test_repository_text_rule_presets_persist_and_normalize(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -203,6 +224,36 @@ class CoverGridUiTests(unittest.TestCase):
         self.assertEqual(format_author_publisher_meta("KrankheitRan", "Unknown"), "KrankheitRan")
         self.assertEqual(format_author_publisher_meta("A", "B"), "A / B")
         self.assertEqual(format_author_publisher_meta(None, None), "Unknown")
+
+    def test_settings_page_scan_progress_panel(self) -> None:
+        page = SettingsPage()
+        try:
+            self.assertTrue(page.nav.item(0).text())
+            self.assertTrue(page.general_subtitle.text())
+            self.assertIsNotNone(page.scan_progress_panel)
+
+            page.set_scan_running(True, "text")
+            self.assertFalse(page.scan_text_btn.isEnabled())
+            page.set_scan_progress(
+                2,
+                4,
+                r"D:\Books\sample.txt",
+                {"text_added_count": 1, "text_updated_count": 1, "text_errors": ["bad"]},
+            )
+            self.assertEqual(page.scan_progress_bar.value(), 50)
+            self.assertIn("2 / 4", page.scan_progress_count.text())
+            self.assertIn("sample.txt", page.scan_current_path.text())
+            self.assertFalse(page.scan_error_logs_btn.isHidden())
+
+            page.scan_error_logs_btn.click()
+            self.assertEqual(page.nav.currentRow(), 1)
+
+            page.set_scan_running(False, "text")
+            self.assertTrue(page.scan_text_btn.isEnabled())
+            page.set_scan_summary({"scope": "text", "text_added_count": 2, "ignored_unsupported": 1})
+            self.assertIn("2", page.scan_current_path.text())
+        finally:
+            page.deleteLater()
 
 
 if __name__ == "__main__":

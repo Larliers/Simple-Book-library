@@ -87,6 +87,38 @@ class ScanPdfDegradeTests(unittest.TestCase):
             self.assertEqual(record["author"], "Mock Author")
             self.assertEqual(record["thumbnail_path"], "file:///mock-thumb.webp")
 
+    def test_scan_roots_reports_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            root = base / "pdfs"
+            root.mkdir(parents=True, exist_ok=True)
+            pdf_path = root / "progress.pdf"
+            pdf_path.write_bytes(b"%PDF-1.4\nmock\n")
+
+            repository = LibraryRepository(base / "library.db", base / "scan_report.json")
+            request = ScanRequest(roots=[str(root)], scan_depth=2, hash_strategy="size_mtime")
+            events: list[tuple[int, int, str, dict[str, object]]] = []
+
+            with mock.patch(
+                "bookhub.library.scanner._probe_pdf_backend",
+                return_value=(False, "ImportError: No module named fitz"),
+            ):
+                result = scan_roots(
+                    repository,
+                    request,
+                    progress_cb=lambda current, total, path, summary: events.append(
+                        (current, total, path, summary)
+                    ),
+                )
+
+            self.assertEqual(result.added_count, 1)
+            self.assertEqual(len(events), 1)
+            current, total, path, summary = events[0]
+            self.assertEqual(current, 1)
+            self.assertEqual(total, 1)
+            self.assertTrue(path.endswith("progress.pdf"))
+            self.assertEqual(summary["added_count"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QStackedWidget,
     QTextEdit,
@@ -72,6 +74,7 @@ class SettingsPage(QWidget):
     cover_selected_border_color_changed = Signal(str)
     text_preview_chars_changed = Signal(int)
     text_rule_preview_result_height_changed = Signal(int)
+    text_rule_dialog_size_changed = Signal(int, int)
     text_rule_presets_changed = Signal(list)
     cleanup_library_thumbnails_requested = Signal()
     regenerate_library_thumbnails_requested = Signal()
@@ -91,6 +94,7 @@ class SettingsPage(QWidget):
         self._project_font_families: list[str] = []
         self._font_source: str = "system"
         self._text_rule_preview_result_height = 180
+        self._text_rule_dialog_size = (1320, 820)
         self._text_rule_presets: list[dict[str, object]] = []
         self._cover_selected_border_color = DEFAULT_COVER_SELECTED_BORDER_COLOR
 
@@ -124,14 +128,27 @@ class SettingsPage(QWidget):
         self.content_stack = QStackedWidget()
         shell.addWidget(self.content_stack, 1)
 
+        content_scroll = QScrollArea()
+        content_scroll.setObjectName("SettingsGeneralScroll")
+        content_scroll.setWidgetResizable(True)
+        content_scroll.setFrameShape(QFrame.NoFrame)
         content = QWidget()
+        content_scroll.setWidget(content)
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(12)
 
+        header_row = QHBoxLayout()
+        title_block = QVBoxLayout()
         self.title = QLabel("General Settings")
         self.title.setObjectName("PageTitle")
-        content_layout.addWidget(self.title)
+        title_block.addWidget(self.title)
+        self.general_subtitle = QLabel("Manage paths, scan strategy, display preferences and maintenance tasks.")
+        self.general_subtitle.setObjectName("PageSubtitle")
+        self.general_subtitle.setWordWrap(True)
+        title_block.addWidget(self.general_subtitle)
+        header_row.addLayout(title_block, 1)
+        content_layout.addLayout(header_row)
 
         startup = QFrame()
         startup.setObjectName("PageSection")
@@ -148,7 +165,10 @@ class SettingsPage(QWidget):
         self.tray_check.setChecked(True)
         self.tray_check.stateChanged.connect(self._emit_auto_scan_on_path_change_changed)
         startup_layout.addWidget(self.tray_check)
-        content_layout.addWidget(startup)
+        preferences_grid = QGridLayout()
+        preferences_grid.setSpacing(12)
+        content_layout.addLayout(preferences_grid)
+        preferences_grid.addWidget(startup, 0, 0)
 
         lang = QFrame()
         lang.setObjectName("PageSection")
@@ -163,7 +183,7 @@ class SettingsPage(QWidget):
         self.restart_hint = QLabel("Restart application to apply language changes.")
         self.restart_hint.setObjectName("PageSubtitle")
         lang_layout.addWidget(self.restart_hint)
-        content_layout.addWidget(lang)
+        preferences_grid.addWidget(lang, 0, 1)
 
         font_box = QFrame()
         font_box.setObjectName("PageSection")
@@ -204,7 +224,7 @@ class SettingsPage(QWidget):
         self.font_preview_label.setWordWrap(True)
         font_layout.addWidget(self.font_preview_label)
 
-        content_layout.addWidget(font_box)
+        preferences_grid.addWidget(font_box, 1, 0)
 
         library_box = QFrame()
         library_box.setObjectName("PageSection")
@@ -315,7 +335,25 @@ class SettingsPage(QWidget):
             self.text_preview_chars_combo.addItem(f"{size}", int(size))
         self.text_preview_chars_combo.currentIndexChanged.connect(self._emit_text_preview_chars_changed)
         options_row.addWidget(self.text_preview_chars_combo, 1)
-        library_layout.addLayout(options_row)
+        scan_strategy_box = QFrame()
+        scan_strategy_box.setObjectName("PageSection")
+        scan_strategy_layout = QVBoxLayout(scan_strategy_box)
+        scan_strategy_layout.setContentsMargins(14, 14, 14, 14)
+        self.scan_strategy_title = QLabel("SCAN STRATEGY")
+        self.scan_strategy_title.setStyleSheet(
+            "font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #6a7382;"
+        )
+        scan_strategy_layout.addWidget(self.scan_strategy_title)
+        scan_strategy_layout.addLayout(options_row)
+        preferences_grid.addWidget(scan_strategy_box, 1, 1)
+
+        display_box = QFrame()
+        display_box.setObjectName("PageSection")
+        display_layout = QVBoxLayout(display_box)
+        display_layout.setContentsMargins(14, 14, 14, 14)
+        self.display_title = QLabel("DISPLAY")
+        self.display_title.setStyleSheet("font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #6a7382;")
+        display_layout.addWidget(self.display_title)
 
         cover_border_row = QHBoxLayout()
         cover_border_row.setSpacing(10)
@@ -343,7 +381,7 @@ class SettingsPage(QWidget):
         self.cover_selected_border_color_preview.setFixedWidth(100)
         cover_border_row.addWidget(self.cover_selected_border_color_preview)
         cover_border_row.addStretch(1)
-        library_layout.addLayout(cover_border_row)
+        display_layout.addLayout(cover_border_row)
 
         comic_perf_row = QHBoxLayout()
         comic_perf_row.setSpacing(10)
@@ -378,7 +416,8 @@ class SettingsPage(QWidget):
             self.comic_page_size_combo.addItem(str(page_size), page_size)
         self.comic_page_size_combo.currentIndexChanged.connect(self._emit_comic_page_size_changed)
         comic_perf_row.addWidget(self.comic_page_size_combo, 1)
-        library_layout.addLayout(comic_perf_row)
+        display_layout.addLayout(comic_perf_row)
+        content_layout.addWidget(display_box)
 
         self.formats_hint = QLabel(
             "Library supports PDF/EPUB. Text Novel roots support TXT with configurable preview extraction."
@@ -386,11 +425,55 @@ class SettingsPage(QWidget):
         self.formats_hint.setObjectName("PageSubtitle")
         self.formats_hint.setWordWrap(True)
         library_layout.addWidget(self.formats_hint)
+        content_layout.addWidget(library_box)
+
+        maintenance_box = QFrame()
+        maintenance_box.setObjectName("PageSection")
+        maintenance_layout = QVBoxLayout(maintenance_box)
+        maintenance_layout.setContentsMargins(14, 14, 14, 14)
+        maintenance_layout.setSpacing(10)
+        self.maintenance_title = QLabel("SCAN AND MAINTENANCE")
+        self.maintenance_title.setStyleSheet(
+            "font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #6a7382;"
+        )
+        maintenance_layout.addWidget(self.maintenance_title)
+
+        self.scan_progress_panel = QFrame()
+        self.scan_progress_panel.setObjectName("SubtlePanel")
+        scan_progress_layout = QVBoxLayout(self.scan_progress_panel)
+        scan_progress_layout.setContentsMargins(10, 8, 10, 8)
+        scan_progress_layout.setSpacing(6)
+        progress_header = QHBoxLayout()
+        self.scan_progress_title = QLabel("Current task")
+        self.scan_progress_title.setObjectName("PageSubtitle")
+        progress_header.addWidget(self.scan_progress_title, 1)
+        self.scan_progress_count = QLabel("")
+        self.scan_progress_count.setObjectName("PageSubtitle")
+        progress_header.addWidget(self.scan_progress_count)
+        self.scan_error_logs_btn = QPushButton("View Error Logs")
+        self.scan_error_logs_btn.setObjectName("GhostButton")
+        self.scan_error_logs_btn.clicked.connect(lambda: self.nav.setCurrentRow(1))
+        self.scan_error_logs_btn.hide()
+        progress_header.addWidget(self.scan_error_logs_btn)
+        scan_progress_layout.addLayout(progress_header)
+        self.scan_progress_bar = QProgressBar()
+        self.scan_progress_bar.setRange(0, 100)
+        self.scan_progress_bar.setValue(0)
+        scan_progress_layout.addWidget(self.scan_progress_bar)
+        self.scan_current_path = QLabel("")
+        self.scan_current_path.setObjectName("PageSubtitle")
+        self.scan_current_path.setWordWrap(True)
+        scan_progress_layout.addWidget(self.scan_current_path)
+        self.scan_progress_stats = QLabel("")
+        self.scan_progress_stats.setObjectName("PageSubtitle")
+        self.scan_progress_stats.setWordWrap(True)
+        scan_progress_layout.addWidget(self.scan_progress_stats)
+        maintenance_layout.addWidget(self.scan_progress_panel)
 
         self.scan_summary = QLabel("")
         self.scan_summary.setObjectName("PageSubtitle")
         self.scan_summary.setWordWrap(True)
-        library_layout.addWidget(self.scan_summary)
+        maintenance_layout.addWidget(self.scan_summary)
 
         scan_row = QHBoxLayout()
         scan_row.setSpacing(8)
@@ -407,7 +490,7 @@ class SettingsPage(QWidget):
         self.scan_text_btn.clicked.connect(self.scan_text_requested.emit)
         scan_row.addWidget(self.scan_text_btn)
         scan_row.addStretch(1)
-        library_layout.addLayout(scan_row)
+        maintenance_layout.addLayout(scan_row)
 
         library_thumb_row = QHBoxLayout()
         library_thumb_row.setSpacing(8)
@@ -420,7 +503,7 @@ class SettingsPage(QWidget):
         self.regenerate_library_thumbnails_btn.clicked.connect(self.regenerate_library_thumbnails_requested.emit)
         library_thumb_row.addWidget(self.regenerate_library_thumbnails_btn)
         library_thumb_row.addStretch(1)
-        library_layout.addLayout(library_thumb_row)
+        maintenance_layout.addLayout(library_thumb_row)
 
         comic_thumb_row = QHBoxLayout()
         comic_thumb_row.setSpacing(8)
@@ -433,7 +516,7 @@ class SettingsPage(QWidget):
         self.regenerate_comic_thumbnails_btn.clicked.connect(self.regenerate_comic_thumbnails_requested.emit)
         comic_thumb_row.addWidget(self.regenerate_comic_thumbnails_btn)
         comic_thumb_row.addStretch(1)
-        library_layout.addLayout(comic_thumb_row)
+        maintenance_layout.addLayout(comic_thumb_row)
 
         self.thumbnail_task_panel = QFrame()
         self.thumbnail_task_panel.setObjectName("PageSection")
@@ -448,9 +531,9 @@ class SettingsPage(QWidget):
         self.thumbnail_task_status = QLabel("")
         self.thumbnail_task_status.setObjectName("PageSubtitle")
         panel_layout.addWidget(self.thumbnail_task_status)
-        library_layout.addWidget(self.thumbnail_task_panel)
+        maintenance_layout.addWidget(self.thumbnail_task_panel)
 
-        content_layout.addWidget(library_box)
+        content_layout.addWidget(maintenance_box)
 
         self._scan_buttons: dict[str, QPushButton] = {
             "library": self.scan_library_btn,
@@ -469,7 +552,7 @@ class SettingsPage(QWidget):
         }
         content_layout.addStretch(1)
 
-        self.content_stack.addWidget(content)
+        self.content_stack.addWidget(content_scroll)
 
         self.error_logs_page = QFrame()
         self.error_logs_page.setObjectName("PageSection")
@@ -653,6 +736,14 @@ class SettingsPage(QWidget):
             value = 180
         self._text_rule_preview_result_height = min(420, max(96, value))
 
+    def set_text_rule_dialog_size(self, size: tuple[int, int] | list[int]) -> None:
+        try:
+            width = int(size[0])
+            height = int(size[1])
+        except (TypeError, ValueError, IndexError):
+            width, height = 1320, 820
+        self._text_rule_dialog_size = (min(1920, max(1100, width)), min(1200, max(700, height)))
+
     def set_text_rule_presets(self, presets: list[dict[str, object]]) -> None:
         self._text_rule_presets = [dict(item) for item in presets if isinstance(item, dict)]
 
@@ -752,6 +843,7 @@ class SettingsPage(QWidget):
                 failed=failed,
             )
             self.scan_summary.setText(self.scan_summary.text() + suffix)
+        self._set_scan_idle_summary(summary)
 
     def set_scan_running(self, running: bool, scope: str = "all") -> None:
         target_scopes = {"library", "comic", "text"} if scope == "all" else {scope}
@@ -759,6 +851,15 @@ class SettingsPage(QWidget):
             if button_scope in target_scopes:
                 button.setEnabled(not running)
         if running:
+            self.scan_progress_title.setText(
+                tr("settings.scan_progress.running", "Scanning {scope} folders...").format(scope=scope)
+            )
+            self.scan_progress_bar.setRange(0, 100)
+            self.scan_progress_bar.setValue(0)
+            self.scan_progress_count.setText("0 / 0")
+            self.scan_current_path.setText(tr("settings.scan_progress.waiting", "Preparing scan..."))
+            self.scan_progress_stats.setText("")
+            self.scan_error_logs_btn.hide()
             for target_scope in target_scopes:
                 button = self._scan_buttons.get(target_scope)
                 if button is None:
@@ -771,6 +872,90 @@ class SettingsPage(QWidget):
                 )
         else:
             self._update_scan_button_texts()
+            self._set_scan_idle_summary(self._last_summary)
+
+    def set_scan_progress(self, current: int, total: int, label: str, snapshot: dict[str, object]) -> None:
+        safe_current = max(0, int(current or 0))
+        safe_total = max(0, int(total or 0))
+        if safe_total > 0:
+            self.scan_progress_bar.setRange(0, 100)
+            self.scan_progress_bar.setValue(min(100, max(0, int(safe_current / safe_total * 100))))
+        else:
+            self.scan_progress_bar.setRange(0, 0)
+        self.scan_progress_count.setText(f"{safe_current} / {safe_total}")
+        self.scan_current_path.setText(
+            tr("settings.scan_progress.current_path", "Current: {path}").format(path=str(label or ""))
+        )
+        errors_count = self._scan_error_count(snapshot)
+        stats = tr(
+            "settings.scan_progress.stats",
+            "Added {added}  Updated {updated}  Skipped {skipped}  Errors {errors}",
+        ).format(
+            added=self._summary_added_count(snapshot),
+            updated=self._summary_updated_count(snapshot),
+            skipped=self._summary_skipped_count(snapshot),
+            errors=errors_count,
+        )
+        self.scan_progress_stats.setText(stats)
+        self.scan_error_logs_btn.setVisible(errors_count > 0)
+
+    def _set_scan_idle_summary(self, summary: dict[str, object]) -> None:
+        errors_count = self._scan_error_count(summary)
+        if summary:
+            self.scan_progress_title.setText(tr("settings.scan_progress.idle", "No scan running"))
+            self.scan_progress_count.setText("")
+            self.scan_current_path.setText(
+                tr(
+                    "settings.scan_progress.last_done",
+                    "Last completed: {scope}; added {added}, updated {updated}, errors {errors}",
+                ).format(
+                    scope=str(summary.get("scope") or "all"),
+                    added=self._summary_added_count(summary),
+                    updated=self._summary_updated_count(summary),
+                    skipped=self._summary_skipped_count(summary),
+                    errors=errors_count,
+                )
+            )
+        else:
+            self.scan_progress_title.setText(tr("settings.scan_progress.idle", "No scan running"))
+            self.scan_progress_count.setText("")
+            self.scan_current_path.setText(tr("settings.scan_progress.never", "No scan has completed yet."))
+        self.scan_progress_bar.setRange(0, 100)
+        self.scan_progress_bar.setValue(0)
+        self.scan_progress_stats.setText("")
+        self.scan_error_logs_btn.setVisible(errors_count > 0)
+
+    @staticmethod
+    def _summary_added_count(summary: dict[str, object]) -> int:
+        return (
+            int(summary.get("added_count", 0) or 0)
+            + int(summary.get("comic_added_count", 0) or 0)
+            + int(summary.get("text_added_count", 0) or 0)
+        )
+
+    @staticmethod
+    def _summary_updated_count(summary: dict[str, object]) -> int:
+        return (
+            int(summary.get("updated_count", 0) or 0)
+            + int(summary.get("comic_updated_count", 0) or 0)
+            + int(summary.get("text_updated_count", 0) or 0)
+        )
+
+    @staticmethod
+    def _summary_skipped_count(summary: dict[str, object]) -> int:
+        return int(summary.get("ignored_unsupported", 0) or 0)
+
+    @staticmethod
+    def _scan_error_count(summary: dict[str, object]) -> int:
+        errors = summary.get("errors", [])
+        comic_errors = summary.get("comic_errors", [])
+        text_errors = summary.get("text_errors", [])
+        conflicts = summary.get("name_conflicts", [])
+        total = 0
+        for value in (errors, comic_errors, text_errors, conflicts):
+            if isinstance(value, list):
+                total += len(value)
+        return total
 
     def _update_scan_button_texts(self) -> None:
         self.scan_library_btn.setText(tr("settings.scan.library", "Scan Library Folders"))
@@ -794,6 +979,12 @@ class SettingsPage(QWidget):
                 item.setText(tr(key, fallback))
         self.app_title.setText(tr("settings.app_title", "System Architect"))
         self.title.setText(tr("settings.title", "General Settings"))
+        self.general_subtitle.setText(
+            tr(
+                "settings.subtitle",
+                "Manage paths, scan strategy, display preferences and maintenance tasks.",
+            )
+        )
         self.startup_label.setText(tr("settings.startup_options", "Startup Options"))
         self.launch_check.setText(tr("settings.scan_on_startup", "Scan on startup"))
         self.tray_check.setText(tr("settings.auto_scan_on_path_change", "Auto scan when path changed"))
@@ -806,10 +997,12 @@ class SettingsPage(QWidget):
         self.add_text_path_button.setText(tr("settings.add_text_path", "+ Add Text Path"))
         self.restart_hint.setText(tr("settings.restart_hint", "Restart application to apply language changes."))
         self.scan_depth_label.setText(tr("settings.scan_depth", "Scan depth"))
+        self.scan_strategy_title.setText(tr("settings.section.scan_strategy", "Scan Strategy"))
         self.hash_strategy_label.setText(tr("settings.hash_strategy", "Missed hash matching"))
         self.card_spacing_label.setText(tr("settings.card_spacing", "Card spacing"))
         self.topbar_search_font_size_label.setText(tr("settings.topbar_search_font_size", "Search font size"))
         self.cover_selected_border_title.setText(tr("settings.cover_selected_border", "Cover selected border"))
+        self.display_title.setText(tr("settings.section.display", "Display"))
         self.cover_selected_border_width_label.setText(tr("settings.cover_selected_border.width", "Width (px)"))
         self.cover_selected_border_color_label.setText(tr("settings.cover_selected_border.color", "Color"))
         self.cover_selected_border_color_btn.setText(tr("settings.cover_selected_border.pick", "Pick Color"))
@@ -840,6 +1033,8 @@ class SettingsPage(QWidget):
         self.font_preview_label.setText(
             tr("settings.font.preview", "Preview: The quick brown fox jumps over the lazy dog 你好，世界")
         )
+        self.maintenance_title.setText(tr("settings.section.maintenance", "Scan and Maintenance"))
+        self.scan_error_logs_btn.setText(tr("settings.scan_progress.view_errors", "View Error Logs"))
         self._update_scan_button_texts()
         self._update_thumbnail_button_texts()
         self.formats_hint.setText(
@@ -1044,6 +1239,8 @@ class SettingsPage(QWidget):
             preview_chars=preview_chars,
             preview_result_height=self._text_rule_preview_result_height,
             preview_result_height_changed=self.text_rule_preview_result_height_changed.emit,
+            dialog_size=self._text_rule_dialog_size,
+            dialog_size_changed=self.text_rule_dialog_size_changed.emit,
             rule_presets=self._text_rule_presets,
             rule_presets_changed=self._emit_text_rule_presets_changed,
         )

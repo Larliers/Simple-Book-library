@@ -226,6 +226,8 @@ class LibraryRepository:
             self.set_setting("text_preview_chars", DEFAULT_TEXT_PREVIEW_CHARS)
         if self.get_setting("text_rule_preview_result_height", None) is None:
             self.set_setting("text_rule_preview_result_height", 180)
+        if self.get_setting("text_rule_dialog_size", None) is None:
+            self.set_setting("text_rule_dialog_size", [1320, 820])
         if self.get_setting("text_rule_presets", None) is None:
             self.set_setting("text_rule_presets", [])
         if self.get_setting("scan_on_startup", None) is None:
@@ -358,6 +360,22 @@ class LibraryRepository:
 
     def set_text_rule_preview_result_height(self, height: int) -> None:
         self.set_setting("text_rule_preview_result_height", min(420, max(96, int(height))))
+
+    def get_text_rule_dialog_size(self) -> tuple[int, int]:
+        raw = self.get_setting("text_rule_dialog_size", [1320, 820])
+        if not isinstance(raw, (list, tuple)) or len(raw) != 2:
+            return (1320, 820)
+        try:
+            width = int(raw[0])
+            height = int(raw[1])
+        except (TypeError, ValueError):
+            return (1320, 820)
+        return (min(1920, max(1100, width)), min(1200, max(700, height)))
+
+    def set_text_rule_dialog_size(self, width: int, height: int) -> None:
+        normalized_width = min(1920, max(1100, int(width)))
+        normalized_height = min(1200, max(700, int(height)))
+        self.set_setting("text_rule_dialog_size", [normalized_width, normalized_height])
 
     def get_text_rule_presets(self) -> list[dict[str, Any]]:
         return self._normalize_text_rule_presets(self.get_setting("text_rule_presets", []))

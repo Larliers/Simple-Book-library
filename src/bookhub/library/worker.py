@@ -18,6 +18,7 @@ from bookhub.library.scanner import scan_comic_roots, scan_roots, scan_text_root
 class ScanWorker(QThread):
     scan_completed = Signal(object)
     scan_failed = Signal(str)
+    progress = Signal(int, int, str, object)
 
     def __init__(
         self,
@@ -55,6 +56,12 @@ class ScanWorker(QThread):
     def run(self) -> None:
         try:
             repository = LibraryRepository(self._db_path, self._scan_report_path)
+            progress_cb = lambda current, total, label, snapshot: self.progress.emit(
+                int(current),
+                int(total),
+                str(label),
+                dict(snapshot),
+            )
             request = ScanRequest(
                 roots=self._roots,
                 scan_depth=self._scan_depth,
@@ -62,7 +69,7 @@ class ScanWorker(QThread):
                 trigger=self._trigger,
             )
             if self._scope in {"all", "library"}:
-                result = scan_roots(repository, request)
+                result = scan_roots(repository, request, progress_cb=progress_cb)
             else:
                 from bookhub.library.models import ScanResult
 
@@ -74,7 +81,7 @@ class ScanWorker(QThread):
                     max_depth=5,
                     placeholder_copy_enabled=self._comic_placeholder_copy_enabled,
                 )
-                comic_result = scan_comic_roots(repository, comic_request)
+                comic_result = scan_comic_roots(repository, comic_request, progress_cb=progress_cb)
             else:
                 from bookhub.library.models import ScanResult
 
@@ -89,7 +96,7 @@ class ScanWorker(QThread):
                     ],
                     preview_chars=self._text_preview_chars,
                 )
-                text_result = scan_text_roots(repository, text_request)
+                text_result = scan_text_roots(repository, text_request, progress_cb=progress_cb)
             else:
                 from bookhub.library.models import ScanResult
 

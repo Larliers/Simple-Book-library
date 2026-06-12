@@ -107,7 +107,7 @@ src/
 - `src/main.py`：应用入口；设置应用图标，创建 Qt 应用并启动主窗口。
 - `src/tests/test_rule_engine.py`：Text 规则引擎回归测试（步骤提取、行范围 warning、回退链、非法正则容错）。
 - `src/tests/test_rule_preview.py`：Text 规则预览回归测试（自动样本、规则链回退、非法正则失败、空目录无样本）。
-- `src/tests/test_text_rule_dialog.py`：Text 规则弹窗 smoke 测试（旧 JSON 加载、字段切换、上下文参数、预览状态、格式诊断、帮助文档布局）。
+- `src/tests/test_text_rule_dialog.py`：Text 规则弹窗 smoke 测试（旧 JSON 加载、字段切换、上下文参数、预览状态、格式诊断、多样本预览、窗口尺寸记忆、帮助文档布局）。
 - `src/tests/test_text_rule_structure_parser.py`：Text 规则结构解析测试（嵌套括号、括号外分隔符、样本格式分组）。
 - `src/tests/test_scan_pdf_degrade.py`：PDF 后端降级容错回归测试（PyMuPDF 不可用时的聚合 warning 与入库行为）。
 - `src/tests/test_comic_preview_pipeline.py`：漫画快扫占位与后台并行补图回归测试（占位复制、压缩替换、原图删除、超大图降采样、排序顺序）。
@@ -124,8 +124,8 @@ src/
 
 ### 3.4 书库后端组件（bookhub/library）
 - `src/bookhub/library/__init__.py`：后端模块导出入口。
-- `src/bookhub/library/repository.py`：SQLite 读写中心；设置、书籍、书单、收藏、标签操作；漫画排序与显示模式、Text 规则预览结果区高度/用户预设等 UI 偏好持久化。
-- `src/bookhub/library/scanner.py`：目录扫描与文件过滤；构建入库候选（PDF/EPUB、Comic、Text Novel）；Text 规则 author 入库前清理 Unknown/unkown 等占位作者，tag 结果按换行拆分为多标签；漫画目录快照判定、`folder_modified_at` 写入与超大封面降采样占位。
+- `src/bookhub/library/repository.py`：SQLite 读写中心；设置、书籍、书单、收藏、标签操作；漫画排序与显示模式、Text 规则预览结果区高度、规则窗口尺寸、用户预设等 UI 偏好持久化。
+- `src/bookhub/library/scanner.py`：目录扫描与文件过滤；构建入库候选（PDF/EPUB、Comic、Text Novel）；扫描函数支持可选进度回调并输出当前路径与统计快照；Text 规则 author 入库前清理 Unknown/unkown 等占位作者，tag 结果按换行拆分为多标签；漫画目录快照判定、`folder_modified_at` 写入与超大封面降采样占位。
 - `src/bookhub/library/preview_paths.py`：预览图目录结构与路径构建服务（`resource_type + variant`）。
 - `src/bookhub/library/metadata.py`：元数据提取与缩略图生成（WebP，`file://` 路径）。
 - `src/bookhub/library/models.py`：扫描/任务的数据结构定义。
@@ -136,14 +136,14 @@ src/
 - `src/bookhub/library/text_rules/step_handlers.py`：规则步骤处理（文本清洗、文本删除、split、多分隔符取段、分隔范围拼接、单行/范围行提取、删除前/后 N 行、分界线截取、按行循环提取、嵌套感知括号提取/删除、regex_extract 等）。
 - `src/bookhub/library/text_rules/rule_preview.py`：Text 规则预览辅助；查找首个 TXT 样本、读取首行/开头文本并复用规则链执行预览。
 - `src/bookhub/library/text_rules/rule_examples.py`：默认规则链示例。
-- `src/bookhub/library/worker.py`：扫描任务线程包装；汇总多 scope 统计与 warning。
+- `src/bookhub/library/worker.py`：扫描任务线程包装；透传 Library/Comic/Text 扫描进度信号；汇总多 scope 统计与 warning。
 - `src/bookhub/library/thumbnail_tasks.py`：缩略图清理与重建任务实现。
 - `src/bookhub/library/thumbnail_worker.py`：缩略图任务线程包装。
 - `src/bookhub/library/error_logs.py`：扫描/冲突日志读写；日志目录固定解析为项目根下 `src/Scan_error_logs`（避免相对路径导致 `src/src/Scan_error_logs`）。
 
 ### 3.5 UI 主组件（bookhub/ui）
 - `src/bookhub/ui/__init__.py`：UI 包导出入口。
-- `src/bookhub/ui/app_window.py`：主窗口装配；连接 sidebar、topbar、pages 与后端任务；按当前页面将顶部搜索路由到 Library 或 Text Novel 资源集。
+- `src/bookhub/ui/app_window.py`：主窗口装配；连接 sidebar、topbar、pages 与后端任务；把扫描线程进度转发给 SettingsPage；按当前页面将顶部搜索路由到 Library 或 Text Novel 资源集。
 
 ### 3.6 对话框组件（bookhub/ui/dialogs）
 - `src/bookhub/ui/dialogs/__init__.py`：对话框包入口。
@@ -151,8 +151,8 @@ src/
 - `src/bookhub/ui/dialogs/add_tag_dialog.py`：添加标签对话框。
 - `src/bookhub/ui/dialogs/add_to_collection_dialog.py`：旧版加入书单对话框（兼容保留）。
 - `src/bookhub/ui/dialogs/quick_add_dialog.py`：快速添加标签/加入书单弹窗。
-- `src/bookhub/ui/dialogs/text_rule_dialog.py`：Text Novel 规则步骤编辑对话框；左侧字段 Tab/规则链，中列按类别筛选的卡片式步骤编辑（含嵌套括号与分隔处理步骤）与用户预设导入/保存，右侧常驻 TXT 样本预览和文件名格式诊断（项目样式滚动结果区，可拖拽并记忆高度）；右上角提供常用正则与使用文档入口。
-- `src/bookhub/ui/dialogs/text_rule_help_dialog.py`：Text Rules 内置使用文档窗口；说明 source、步骤、分隔提取、嵌套括号、格式诊断和常见排错。
+- `src/bookhub/ui/dialogs/text_rule_dialog.py`：Text Novel 规则步骤编辑对话框；左侧字段 Tab/规则链，中列按类别筛选的卡片式步骤编辑（含嵌套括号与分隔处理步骤）与用户预设导入/保存，右侧常驻 TXT 单样本预览、文件名格式诊断与多样本预览（项目样式滚动结果区，可拖拽并记忆高度）；窗口宽高会作为 UI 偏好记忆；右上角提供常用正则与使用文档入口。
+- `src/bookhub/ui/dialogs/text_rule_help_dialog.py`：Text Rules 内置使用文档窗口；说明 source、步骤、分隔提取、嵌套括号、格式诊断、多样本预览、窗口尺寸记忆和常见排错。
 - `src/bookhub/ui/dialogs/text_rule_regex_dialog.py`：Text Rules 常用正则示范窗口；按用途、示例文本、正则、提取结果展示，覆盖日期、tag、分隔/混合分隔文件名、Pixiv id 等示例。
 
 ### 3.7 UI 数据模型（bookhub/ui/models）
@@ -165,7 +165,7 @@ src/
 - `src/bookhub/ui/pages/library_page.py`：Library 页面；grid/list；右侧详情栏；单/双击交互；网格区域移除 `+ ADD NEW BOOK` 末尾方块入口，仅保留封面直陈列。
 - `src/bookhub/ui/pages/collections_page.py`：书单页与书单详情页；详情支持 grid/list 视图与侧键返回上一级。
 - `src/bookhub/ui/pages/favorites_page.py`：收藏页；支持 grid/list 视图与排序持久化；封面网格与 Library/Comic 共享无壳层 cover-only 卡片表现。
-- `src/bookhub/ui/pages/settings_page.py`：设置页（扫描、匹配策略、卡片间距、封面选中边框粗细/颜色、缩略图任务、错误日志、Text Novel）；导航仅保留 General 与 Error logs；Text Novel 路径行支持“Delete + Rules + Path”布局；支持 Text 预览长度与漫画显示模式（瀑布流/分页）及分页容量配置；扫描/缩略图任务按 Library/Comic/Text 分类型入口。
+- `src/bookhub/ui/pages/settings_page.py`：设置页；General 页重排为基础偏好、扫描策略、字体与界面、路径管理、扫描与维护等区块；导航仅保留 General 与 Error logs；扫描进度面板显示任务名、进度条、当前路径、统计快照与错误日志入口；Text Novel 路径行支持“Delete + Rules + Path”布局；支持 Text 预览长度、Text 规则窗口尺寸/结果区高度偏好与漫画显示模式（瀑布流/分页）及分页容量配置；扫描/缩略图任务按 Library/Comic/Text 分类型入口。
 - `src/bookhub/ui/pages/text_novel_page.py`：Text Novel 页面；固定列表视图；接收 AppWindow 按文本小说标题/作者/tag/路径过滤后的资源；右侧详情栏展示 TXT 预览文本；双击外部打开。
 
 ### 3.9 UI 资源组件（bookhub/ui/resources）

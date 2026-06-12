@@ -81,6 +81,14 @@ class TextRuleHelpDialog(QDialog):
                 "text.rules.help.step.split_and_join_range",
                 "- split_and_join_range: split by separator, keep parts N to M, then join them back.",
             ),
+            tr(
+                "text.rules.help.step.multi_preview",
+                "- Multi-sample preview: run current field rules on multiple TXT samples. Click a row to load it into single-sample preview.",
+            ),
+            tr(
+                "text.rules.help.step.structure_groups",
+                "- Format diagnostics: show file-name structure groups and outliers. It is only a diagnostic aid.",
+            ),
             tr("text.rules.help.step.regex_extract", "- regex_extract: advanced mode (for regex users)"),
             tr(
                 "text.rules.help.step.loop_lines",
@@ -120,6 +128,10 @@ class TextRuleHelpDialog(QDialog):
             tr(
                 "text.rules.help.trouble.6",
                 "- Format diagnostics only estimates whether sample file names share one structure. It does not modify rules or scanning results.",
+            ),
+            tr(
+                "text.rules.help.trouble.7",
+                "- Text Rules remembers its last window size. This is a UI preference and is saved even if rule edits are canceled.",
             ),
         ]
         return "\n".join(lines)

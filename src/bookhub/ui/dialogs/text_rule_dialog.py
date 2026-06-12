@@ -39,7 +39,11 @@ from bookhub.library.text_rules.rule_preview import (
     preview_rule_chain,
     read_txt_preview_sample,
 )
-from bookhub.library.text_rules.structure_parser import build_structure_report, format_structure_signature
+from bookhub.library.text_rules.structure_parser import (
+    build_structure_report,
+    format_structure_signature,
+    structure_signature,
+)
 from bookhub.ui.dialogs.text_rule_help_dialog import TextRuleHelpDialog
 from bookhub.ui.dialogs.text_rule_regex_dialog import TextRuleRegexDialog
 
@@ -137,6 +141,8 @@ class TextRuleDialog(QDialog):
         preview_chars: int = DEFAULT_TEXT_PREVIEW_CHARS,
         preview_result_height: int = PREVIEW_RESULT_HEIGHT_DEFAULT,
         preview_result_height_changed: Callable[[int], None] | None = None,
+        dialog_size: tuple[int, int] | list[int] | None = None,
+        dialog_size_changed: Callable[[int, int], None] | None = None,
         rule_presets: list[dict[str, Any]] | None = None,
         rule_presets_changed: Callable[[list[dict[str, Any]]], None] | None = None,
     ) -> None:
@@ -145,6 +151,8 @@ class TextRuleDialog(QDialog):
         self._preview_chars = max(100, int(preview_chars or DEFAULT_TEXT_PREVIEW_CHARS))
         self._preview_result_height = self._normalize_preview_result_height(preview_result_height)
         self._preview_result_height_changed = preview_result_height_changed
+        self._dialog_size = self._normalize_dialog_size(dialog_size)
+        self._dialog_size_changed = dialog_size_changed
         self._rule_presets = self._normalize_rule_presets(rule_presets or [])
         self._rule_presets_changed = rule_presets_changed
         self._current_field_code = "title"
@@ -156,7 +164,7 @@ class TextRuleDialog(QDialog):
         self._load_rules(rules_json)
 
         self.setWindowTitle(tr("text.rules.title", "Text Rules"))
-        self.resize(1320, 820)
+        self.resize(*self._dialog_size)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
@@ -205,6 +213,7 @@ class TextRuleDialog(QDialog):
         self._load_auto_preview_sample()
         self._refresh_rule_list(selected_row=0)
         self._refresh_structure_diagnostics()
+        self._set_multi_preview_placeholder()
 
     def _build_left_column(self, parent_layout: QHBoxLayout) -> None:
         left = QFrame()
@@ -444,6 +453,29 @@ class TextRuleDialog(QDialog):
         self.structure_result_label.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         diagnostic_layout.addWidget(self.structure_result_label)
         preview_layout.addWidget(diagnostic_box, 0)
+
+        multi_box = QFrame()
+        multi_box.setObjectName("SubtlePanel")
+        multi_layout = QVBoxLayout(multi_box)
+        multi_layout.setContentsMargins(8, 8, 8, 8)
+        multi_layout.setSpacing(6)
+        multi_header = QHBoxLayout()
+        multi_title = QLabel(tr("text.rules.multi_preview.title", "Multi-sample preview"))
+        multi_title.setObjectName("PageSubtitle")
+        multi_header.addWidget(multi_title)
+        multi_header.addStretch(1)
+        self.multi_preview_btn = QPushButton(tr("text.rules.multi_preview.run", "Run"))
+        self.multi_preview_btn.setObjectName("GhostButton")
+        self.multi_preview_btn.clicked.connect(self._run_multi_sample_preview)
+        multi_header.addWidget(self.multi_preview_btn)
+        multi_layout.addLayout(multi_header)
+
+        self.multi_preview_list = QListWidget()
+        self.multi_preview_list.setObjectName("TextRuleMultiPreviewList")
+        self.multi_preview_list.setFixedHeight(150)
+        self.multi_preview_list.itemClicked.connect(self._load_multi_preview_item)
+        multi_layout.addWidget(self.multi_preview_list)
+        preview_layout.addWidget(multi_box, 0)
 
         parent_layout.addWidget(preview_box, 1)
 
@@ -1149,13 +1181,14 @@ class TextRuleDialog(QDialog):
     def _refresh_structure_diagnostics(self) -> None:
         if not hasattr(self, "structure_result_label"):
             return
-        values = self._sample_txt_names_for_structure()
-        if not values:
+        samples = self._sample_txt_rows(limit=80)
+        if not samples:
             self.structure_result_label.setPlainText(
                 tr("text.rules.structure.no_samples", "No TXT samples for format diagnostics.")
             )
             return
-        report = build_structure_report(values)
+        filenames = [sample["filename"] for sample in samples]
+        report = build_structure_report(filenames)
         dominant = report.dominant_group
         if dominant is None:
             self.structure_result_label.setPlainText(
@@ -1176,28 +1209,125 @@ class TextRuleDialog(QDialog):
         ]
         if len(report.groups) > 1:
             lines.append(tr("text.rules.structure.groups", "Groups: {count}").format(count=len(report.groups)))
+        for group_index, group in enumerate(report.groups[:5], start=1):
+            signature = group.signature
+            group_samples = [
+                sample["relative_path"]
+                for sample in samples
+                if structure_signature(sample["filename"]) == signature
+            ][:3]
+            lines.append(
+                tr("text.rules.structure.group_item", "Group {index}: {count} samples, {format}").format(
+                    index=group_index,
+                    count=group.count,
+                    format=format_structure_signature(signature),
+                )
+            )
+            lines.extend(f"  {value}" for value in group_samples)
         if report.outlier_samples:
             lines.append(tr("text.rules.structure.outliers", "Outliers:"))
-            lines.extend(f"  {value}" for value in report.outlier_samples)
+            dominant_signature = dominant.signature
+            outlier_paths = [
+                sample["relative_path"]
+                for sample in samples
+                if structure_signature(sample["filename"]) != dominant_signature
+            ][:5]
+            lines.extend(f"  {value}" for value in outlier_paths)
         else:
             lines.append(tr("text.rules.structure.no_outliers", "Outliers: none"))
         self.structure_result_label.setPlainText("\n".join(lines))
 
-    def _sample_txt_names_for_structure(self) -> list[str]:
+    def _sample_txt_rows(self, *, limit: int) -> list[dict[str, str]]:
         root = Path(self._root_path)
         if not root.exists():
             return []
-        values: list[str] = []
+        values: list[dict[str, str]] = []
         try:
             iterator = root.rglob("*.txt") if root.is_dir() else [root]
             for file_path in iterator:
-                if len(values) >= 80:
+                if len(values) >= limit:
                     break
                 if file_path.is_file():
-                    values.append(file_path.name)
+                    try:
+                        relative_path = str(file_path.relative_to(root)) if root.is_dir() else file_path.name
+                    except ValueError:
+                        relative_path = file_path.name
+                    values.append(
+                        {
+                            "path": str(file_path),
+                            "relative_path": relative_path,
+                            "filename": file_path.name,
+                        }
+                    )
         except OSError:
             return []
-        return sorted(values)
+        return sorted(values, key=lambda item: item["relative_path"].lower())
+
+    def _set_multi_preview_placeholder(self) -> None:
+        if not hasattr(self, "multi_preview_list"):
+            return
+        self.multi_preview_list.clear()
+        self.multi_preview_list.addItem(tr("text.rules.multi_preview.placeholder", "Run multi-sample preview to validate current rules."))
+
+    def _run_multi_sample_preview(self) -> None:
+        if not hasattr(self, "multi_preview_list"):
+            return
+        self.multi_preview_list.clear()
+        rows = self._sample_txt_rows(limit=20)
+        if not rows:
+            self.multi_preview_list.addItem(tr("text.rules.multi_preview.no_samples", "No TXT samples."))
+            return
+        rules = self._current_rules()
+        if not rules:
+            self.multi_preview_list.addItem(tr("text.rules.preview.no_rules", "No rules for current field."))
+            return
+        for row in rows:
+            sample = read_txt_preview_sample(row["path"], self._preview_chars)
+            if sample is None:
+                text = tr("text.rules.multi_preview.unreadable", "FAIL {path}: unreadable").format(
+                    path=row["relative_path"]
+                )
+                item = QListWidgetItem(text)
+                item.setData(Qt.UserRole, row["path"])
+                self.multi_preview_list.addItem(item)
+                continue
+            context = build_preview_context(sample.file_path, sample.txt_first_line, sample.txt_head_text)
+            result = preview_rule_chain(rules, context)
+            if result.success:
+                value = str(result.value or "").replace("\n", " / ")
+                text = tr("text.rules.multi_preview.success", "OK {path}: {value}").format(
+                    path=row["relative_path"],
+                    value=value[:120],
+                )
+            else:
+                failed_step = result.failed_step or tr("text.rules.preview.unknown_step", "unknown")
+                error = result.error_message or tr("text.rules.preview.unknown_error", "Unknown error")
+                text = tr("text.rules.multi_preview.failed", "FAIL {path}: {step} - {error}").format(
+                    path=row["relative_path"],
+                    step=failed_step,
+                    error=str(error)[:80],
+                )
+            item = QListWidgetItem(text)
+            item.setData(Qt.UserRole, row["path"])
+            self.multi_preview_list.addItem(item)
+
+    def _load_multi_preview_item(self, item: QListWidgetItem) -> None:
+        file_path = str(item.data(Qt.UserRole) or "")
+        if not file_path:
+            return
+        sample = read_txt_preview_sample(file_path, self._preview_chars)
+        if sample is None:
+            return
+        self.preview_path_edit.blockSignals(True)
+        self.preview_first_line_edit.blockSignals(True)
+        self.preview_head_text_edit.blockSignals(True)
+        self.preview_path_edit.setText(sample.file_path)
+        self.preview_first_line_edit.setText(sample.txt_first_line)
+        self.preview_head_text_edit.setPlainText(sample.txt_head_text)
+        self.preview_path_edit.blockSignals(False)
+        self.preview_first_line_edit.blockSignals(False)
+        self.preview_head_text_edit.blockSignals(False)
+        self._refresh_preview()
 
     def _apply_preview_result_height(self, height: int) -> None:
         height = self._normalize_preview_result_height(height)
@@ -1215,16 +1345,25 @@ class TextRuleDialog(QDialog):
         if self._preview_result_height_changed is not None:
             self._preview_result_height_changed(self._preview_result_height)
 
+    def _save_dialog_size(self) -> None:
+        if self._dialog_size_changed is not None:
+            size = self.size()
+            width, height = self._normalize_dialog_size((size.width(), size.height()))
+            self._dialog_size_changed(width, height)
+
     def closeEvent(self, event) -> None:  # noqa: N802
         self._save_preview_result_height()
+        self._save_dialog_size()
         super().closeEvent(event)
 
     def accept(self) -> None:
         self._save_preview_result_height()
+        self._save_dialog_size()
         super().accept()
 
     def reject(self) -> None:
         self._save_preview_result_height()
+        self._save_dialog_size()
         super().reject()
 
     def _param_keys_for_step_type(self, step_type: str) -> tuple[str, ...]:
@@ -1416,6 +1555,15 @@ class TextRuleDialog(QDialog):
         except (TypeError, ValueError):
             height = cls.PREVIEW_RESULT_HEIGHT_DEFAULT
         return min(cls.PREVIEW_RESULT_HEIGHT_MAX, max(cls.PREVIEW_RESULT_HEIGHT_MIN, height))
+
+    @staticmethod
+    def _normalize_dialog_size(value: object) -> tuple[int, int]:
+        try:
+            width = int(value[0])  # type: ignore[index]
+            height = int(value[1])  # type: ignore[index]
+        except (TypeError, ValueError, IndexError):
+            width, height = 1320, 820
+        return (min(1920, max(1100, width)), min(1200, max(700, height)))
 
     @staticmethod
     def _normalize_rule_presets(value: list[dict[str, Any]]) -> list[dict[str, Any]]:

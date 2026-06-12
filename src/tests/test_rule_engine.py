@@ -92,6 +92,28 @@ class RuleEngineTests(unittest.TestCase):
                 self.assertEqual(result.failed_step, "split_multi_and_take")
                 self.assertIn(expected, str(result.error_message))
 
+    def test_split_multi_and_take_accepts_json_list_and_pipe_separator(self) -> None:
+        cases = [
+            ("标题|作者|完结.txt", '["|"]', "作者"),
+            ("标题[作者[完结.txt", "[", "作者"),
+        ]
+
+        for file_path, separators, expected in cases:
+            with self.subTest(file_path=file_path):
+                rule = ImportRule(
+                    field="author",
+                    source="stem",
+                    steps=[
+                        RuleStep(
+                            type="split_multi_and_take",
+                            params={"separators": separators, "index": 2},
+                        )
+                    ],
+                )
+                result = apply_rule(rule, RuleContext(file_path=file_path))
+                self.assertTrue(result.success)
+                self.assertEqual(result.value, expected)
+
     def test_split_and_join_range_returns_parts_and_warning(self) -> None:
         context = RuleContext(file_path="标题-副题-作者.txt")
         rule = ImportRule(

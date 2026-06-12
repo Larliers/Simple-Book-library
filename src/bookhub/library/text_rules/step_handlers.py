@@ -331,9 +331,10 @@ def _multi_separators_from_step(params: dict[str, Any]) -> list[str]:
         separators = [str(item) for item in raw]
     else:
         text = str(raw or "")
-        if text.strip().startswith("["):
+        stripped = text.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
             try:
-                decoded = json.loads(text)
+                decoded = json.loads(stripped)
             except json.JSONDecodeError as exc:
                 raise StepError(f"Invalid separators JSON: {exc}") from exc
             if not isinstance(decoded, list):

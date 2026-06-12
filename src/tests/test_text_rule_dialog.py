@@ -259,7 +259,10 @@ class TextRuleDialogTests(unittest.TestCase):
         }
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            Path(tmp_dir, "[标题]-[作者]-[完结].txt").write_text("demo", encoding="utf-8")
+            Path(tmp_dir, "a").mkdir()
+            Path(tmp_dir, "b").mkdir()
+            Path(tmp_dir, "a", "[标题]-[作者]-[完结].txt").write_text("demo", encoding="utf-8")
+            Path(tmp_dir, "b", "[标题]-[作者]-[完结].txt").write_text("demo", encoding="utf-8")
             Path(tmp_dir, "[另一标题]-[作者]-[连载].txt").write_text("demo", encoding="utf-8")
             Path(tmp_dir, "散装标题 作者 完结.txt").write_text("demo", encoding="utf-8")
 
@@ -274,7 +277,17 @@ class TextRuleDialogTests(unittest.TestCase):
             structure_text = dialog.structure_result_label.toPlainText()
             self.assertTrue("样本数" in structure_text or "Samples" in structure_text)
             self.assertTrue("一致度" in structure_text or "Consistency" in structure_text)
+            self.assertIn("a", structure_text)
+            self.assertIn("b", structure_text)
             self.assertIn("散装标题 作者 完结.txt", structure_text)
+            dialog._run_multi_sample_preview()
+            multi_text = "\n".join(dialog.multi_preview_list.item(index).text() for index in range(dialog.multi_preview_list.count()))
+            self.assertTrue("成功" in multi_text or "OK" in multi_text)
+            self.assertTrue("失败" in multi_text or "FAIL" in multi_text)
+
+            first_item = dialog.multi_preview_list.item(0)
+            dialog._load_multi_preview_item(first_item)
+            self.assertTrue(dialog.preview_path_edit.text().endswith(".txt"))
 
             dialog._set_step_param(0, "separators", "-\n_\n／")
             dialog._set_step_param(1, "joiner", "/")
@@ -284,6 +297,28 @@ class TextRuleDialogTests(unittest.TestCase):
             self.assertEqual(steps[0]["separators"], "-\n_\n／")
             self.assertEqual(steps[1]["type"], "split_and_join_range")
             self.assertEqual(steps[1]["joiner"], "/")
+
+    def test_dialog_size_callback_tracks_window_resize(self) -> None:
+        rules = {"title": [{"field": "title", "source": "filename", "steps": [{"type": "trim"}]}]}
+        saved: list[tuple[int, int]] = []
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dialog = TextRuleDialog(
+                tmp_dir,
+                json.dumps(rules),
+                preview_chars=120,
+                dialog_size=(1500, 900),
+                dialog_size_changed=lambda width, height: saved.append((width, height)),
+            )
+            self.addCleanup(dialog.close)
+
+            self.assertEqual(dialog.width(), 1500)
+            self.assertEqual(dialog.height(), 900)
+            dialog.resize(5000, 100)
+            dialog.reject()
+
+            self.assertTrue(saved)
+            self.assertEqual(saved[-1], (1920, 700))
 
     def test_preview_result_height_callback_tracks_splitter(self) -> None:
         rules = {

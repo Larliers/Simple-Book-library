@@ -6,7 +6,7 @@ import os
 import re
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from PIL import Image
 
@@ -36,6 +36,8 @@ from bookhub.library.preview_paths import build_preview_path, is_preview_variant
 from bookhub.library.repository import LibraryRepository
 from bookhub.library.text_rules import ImportRule, RuleContext, apply_rule_chain, load_rules_from_json
 from bookhub.library.text_rules.rule_examples import default_text_title_rule_chain
+
+ScanProgressCallback = Callable[[int, int, str, dict[str, object]], None]
 
 
 def _lanczos_resample() -> object:
@@ -401,7 +403,51 @@ def _clean_text_rule_author(value: str | None) -> str | None:
     return " / ".join(cleaned)
 
 
-def scan_comic_roots(repository: LibraryRepository, request: ComicScanRequest) -> ScanResult:
+def _emit_scan_progress(
+    progress_cb: ScanProgressCallback | None,
+    current: int,
+    total: int,
+    label: str,
+    result: ScanResult,
+) -> None:
+    if progress_cb is None:
+        return
+    snapshot = result.to_summary()
+    progress_cb(current, total, label, snapshot)
+
+
+def _count_library_scan_files(roots: list[str], scan_depth: int) -> int:
+    total = 0
+    for raw_root in roots:
+        root = Path(raw_root)
+        if not root.exists() or not root.is_dir():
+            continue
+        try:
+            total += sum(1 for _ in _iter_files_with_depth(root, scan_depth))
+        except OSError:
+            continue
+    return total
+
+
+def _count_text_scan_files(roots: list[TextScanRoot]) -> int:
+    total = 0
+    for root in roots:
+        root_path = Path(str(root.path or ""))
+        if not root_path.exists() or not root_path.is_dir():
+            continue
+        try:
+            for _dir_path, _dir_names, file_names in os.walk(root_path):
+                total += sum(1 for name in file_names if Path(name).suffix.lower() == TEXT_FILE_EXTENSION)
+        except OSError:
+            continue
+    return total
+
+
+def scan_comic_roots(
+    repository: LibraryRepository,
+    request: ComicScanRequest,
+    progress_cb: ScanProgressCallback | None = None,
+) -> ScanResult:
     result = ScanResult()
     max_depth = min(5, max(1, int(request.max_depth or 5)))
     placeholder_copy_enabled = bool(request.placeholder_copy_enabled)
@@ -428,7 +474,11 @@ def scan_comic_roots(repository: LibraryRepository, request: ComicScanRequest) -
             result.comic_errors.append(f"Comic root traversal failed for {raw_root}: {exc}")
             continue
         result.comic_scanned_dirs += scanned_dir_count
-        for folder_path, cover_path, image_count, folder_snapshot, folder_mtime, folder_modified_at in leaf_candidates:
+        total = len(leaf_candidates)
+        for index, (folder_path, cover_path, image_count, folder_snapshot, folder_mtime, folder_modified_at) in enumerate(
+            leaf_candidates,
+            start=1,
+        ):
             result.comic_detected_folders += 1
             normalized_folder = repository.normalize_path(folder_path)
             normalized_root = repository.normalize_path(root)
@@ -522,6 +572,7 @@ def scan_comic_roots(repository: LibraryRepository, request: ComicScanRequest) -
                 "folder_modified_at": folder_modified_at,
                 "info_text": info_text,
             }
+            _emit_scan_progress(progress_cb, index, total, normalized_folder, result)
 
     if result.comic_large_image_downscaled_count > 0:
         result.warnings.append(
@@ -535,10 +586,15 @@ def scan_comic_roots(repository: LibraryRepository, request: ComicScanRequest) -
     return result
 
 
-def scan_text_roots(repository: LibraryRepository, request: TextScanRequest) -> ScanResult:
+def scan_text_roots(
+    repository: LibraryRepository,
+    request: TextScanRequest,
+    progress_cb: ScanProgressCallback | None = None,
+) -> ScanResult:
     result = ScanResult()
     preview_chars = max(100, int(request.preview_chars or 1200))
     scanned_roots = [repository.normalize_path(item.path) for item in request.roots if str(item.path).strip()]
+    total_files = _count_text_scan_files(request.roots)
     removed_missing = _remove_missing_books_in_scope(repository, scanned_roots, resource_type="text_novel")
     if removed_missing > 0:
         result.removed_missing_count += removed_missing
@@ -585,6 +641,7 @@ def scan_text_roots(repository: LibraryRepository, request: TextScanRequest) -> 
                     fingerprints = compute_fingerprints(file_path)
                 except OSError as exc:
                     result.text_errors.append(f"Text fingerprint failed for {normalized_path}: {exc}")
+                    _emit_scan_progress(progress_cb, result.text_scanned_files, total_files, normalized_path, result)
                     continue
 
                 payload: dict[str, Any] = {
@@ -617,6 +674,7 @@ def scan_text_roots(repository: LibraryRepository, request: TextScanRequest) -> 
                             existing_title=(duplicate.get("title") or duplicate.get("file_name")),
                         )
                     )
+                    _emit_scan_progress(progress_cb, result.text_scanned_files, total_files, normalized_path, result)
                     continue
 
                 inserted = repository.upsert_book(payload)
@@ -624,10 +682,15 @@ def scan_text_roots(repository: LibraryRepository, request: TextScanRequest) -> 
                     result.text_added_count += 1
                 else:
                     result.text_updated_count += 1
+                _emit_scan_progress(progress_cb, result.text_scanned_files, total_files, normalized_path, result)
     return result
 
 
-def scan_roots(repository: LibraryRepository, request: ScanRequest) -> ScanResult:
+def scan_roots(
+    repository: LibraryRepository,
+    request: ScanRequest,
+    progress_cb: ScanProgressCallback | None = None,
+) -> ScanResult:
     result = ScanResult()
     scan_depth = min(3, max(1, request.scan_depth))
     hash_strategy: HashStrategy = request.hash_strategy
@@ -643,6 +706,7 @@ def scan_roots(repository: LibraryRepository, request: ScanRequest) -> ScanResul
         result.removed_missing_book_count += removed_missing
     pdf_backend_ok, pdf_backend_reason = _probe_pdf_backend()
     skipped_pdf_backend_count = 0
+    total_files = _count_library_scan_files(scanned_roots, scan_depth)
 
     for raw_root in scanned_roots:
         root = Path(raw_root)
@@ -656,6 +720,7 @@ def scan_roots(repository: LibraryRepository, request: ScanRequest) -> ScanResul
             if extension not in SUPPORTED_EXTENSIONS:
                 result.ignored_unsupported += 1
                 result.unsupported_files.append(str(file_path.resolve(strict=False)))
+                _emit_scan_progress(progress_cb, result.scanned_files, total_files, str(file_path), result)
                 continue
 
             normalized_path = repository.normalize_path(file_path)
@@ -663,6 +728,7 @@ def scan_roots(repository: LibraryRepository, request: ScanRequest) -> ScanResul
                 fingerprints = compute_fingerprints(file_path)
             except OSError as exc:
                 result.errors.append(f"Fingerprint failed for {normalized_path}: {exc}")
+                _emit_scan_progress(progress_cb, result.scanned_files, total_files, normalized_path, result)
                 continue
 
             metadata = None
@@ -720,6 +786,7 @@ def scan_roots(repository: LibraryRepository, request: ScanRequest) -> ScanResul
                         existing_title=(duplicate.get("title") or duplicate.get("file_name")),
                     )
                 )
+                _emit_scan_progress(progress_cb, result.scanned_files, total_files, normalized_path, result)
                 continue
 
             inserted = repository.upsert_book(payload)
@@ -727,6 +794,7 @@ def scan_roots(repository: LibraryRepository, request: ScanRequest) -> ScanResul
                 result.added_count += 1
             else:
                 result.updated_count += 1
+            _emit_scan_progress(progress_cb, result.scanned_files, total_files, normalized_path, result)
 
     if skipped_pdf_backend_count > 0:
         result.warnings.append(
