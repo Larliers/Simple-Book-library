@@ -186,6 +186,10 @@ class WebAppWindow(QMainWindow):
         elif key == "comicPageSize":
             repo.set_comic_page_size(int(value))
             reload_needed = True
+        elif key == "viewportBufferScreens":
+            repo.set_viewport_buffer_screens(int(value))
+        elif key == "gridColumns":
+            repo.set_grid_columns(int(value))
         elif key == "comicPlaceholderCopy":
             repo.set_comic_placeholder_copy_enabled(self._as_bool(value))
         elif key == "autoGenerateComicThumbs":

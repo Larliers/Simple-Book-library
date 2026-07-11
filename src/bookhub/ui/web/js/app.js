@@ -15,6 +15,8 @@ const State = {
   themeTimer: null,
   renderGen: 0,
   renderTimer: null,
+  scrollPos: {},
+  comicPageNum: { comic: 1, comic_fav: 1 },
 };
 
 const COMIC_PAGES = new Set(["comic", "comic_fav"]);
@@ -121,14 +123,31 @@ function renderNav() {
   });
 }
 
+function savePageScroll(page) {
+  if (!page || page === "settings") return;
+  const area = $("contentArea");
+  if (!area) return;
+  State.scrollPos[page] = area.scrollTop;
+  if (COMIC_PAGES.has(page) && State._comicPage) {
+    State.comicPageNum[page] = State._comicPage;
+  }
+}
+
+function clearPageScroll(page) {
+  State.scrollPos[page] = 0;
+}
+
 function selectPage(page) {
   // Same-page nav click: avoid wiping/rebuilding hundreds of cards.
   if (page === State.currentPage && page !== "settings") return;
+  savePageScroll(State.currentPage);
   State.currentPage = page;
   document.querySelectorAll(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.page === page));
   $("settingsBtn").classList.toggle("active", page === "settings");
   const detail = $("detailPanel");
   if (page === "settings") {
+    // Invalidate in-flight comic scroll appenders / rAF grids.
+    State.renderGen += 1;
     detail.classList.add("hidden");
     renderSettings();
     return;
@@ -172,8 +191,17 @@ function renderPage(expectedGen) {
 
   const area = $("contentArea");
   if (gen !== State.renderGen) return;
+  teardownVirtualWindow(area);
   clear(area);
-  area.classList.remove("view-enter"); void area.offsetWidth; area.classList.add("view-enter");
+  // Large comic waterfall: skip enter animation — empty+animate looked like full white reload.
+  const skipEnter = COMIC_PAGES.has(page) && (data.viewMode || "waterfall") !== "pagination" && count > 48;
+  area.classList.remove("view-enter", "view-enter-skip");
+  if (skipEnter) {
+    area.classList.add("view-enter-skip");
+  } else {
+    void area.offsetWidth;
+    area.classList.add("view-enter");
+  }
 
   const showViewToggle = !COMIC_PAGES.has(page) && !LIST_ONLY.has(page) && data.mode !== "collections";
   $("viewModeToggle").style.display = showViewToggle ? "" : "none";
@@ -244,7 +272,7 @@ function renderPageTools(page, data) {
     sel.addEventListener("change", () => {
       State.bridge.setPageSort(page, sel.value, (json) => {
         const d = safeParse(json);
-        if (d) { State.pages[page] = d; State._comicPage = 1; scheduleRenderPage(); }
+        if (d) { State.pages[page] = d; State.comicPageNum[page] = 1; State._comicPage = 1; clearPageScroll(page); scheduleRenderPage(); }
       });
     });
     wrap.appendChild(sel);
@@ -252,34 +280,143 @@ function renderPageTools(page, data) {
   }
 }
 
-function renderGrid(area, items, page, isCollectionDetail, gen) {
-  const grid = elem("div", "cover-grid");
-  area.appendChild(grid);
-  const CHUNK = 36;
-  let index = 0;
-  const appendChunk = () => {
-    if (gen != null && gen !== State.renderGen) return;
-    const end = Math.min(index + CHUNK, items.length);
-    const frag = document.createDocumentFragment();
-    for (; index < end; index++) {
-      const item = items[index];
-      const card = elem("article", "book-card");
-      if (State.selected[page] === item.id) card.classList.add("selected");
-      card.appendChild(buildCover(item, "cover"));
-      card.addEventListener("click", () => selectResource(page, item.id, card));
-      card.addEventListener("dblclick", () => State.bridge.openResource(page, item.id));
-      card.addEventListener("contextmenu", (e) => { e.preventDefault(); openContextMenu(e, page, item, isCollectionDetail); });
-      frag.appendChild(card);
-    }
-    grid.appendChild(frag);
-    if (index < items.length) requestAnimationFrame(appendChunk);
+function getBufferScreens() {
+  const v = Number(State.settings.viewportBufferScreens);
+  if (!Number.isFinite(v)) return 3;
+  return Math.min(6, Math.max(3, Math.round(v)));
+}
+
+function getGridColumns() {
+  const v = Number(State.settings.gridColumns);
+  if (!Number.isFinite(v)) return 6;
+  const allowed = new Set([4, 5, 6, 7, 8, 10, 12]);
+  const rounded = Math.round(v);
+  return allowed.has(rounded) ? rounded : 6;
+}
+
+function contentInnerWidth(area) {
+  const cs = getComputedStyle(area);
+  const pl = parseFloat(cs.paddingLeft) || 0;
+  const pr = parseFloat(cs.paddingRight) || 0;
+  return Math.max(0, area.clientWidth - pl - pr);
+}
+
+function measureCoverGridMetrics(areaWidth, withMeta) {
+  const gap = 18;
+  const minCol = withMeta ? 140 : 100;
+  const desired = getGridColumns();
+  // Cap columns so each cover stays readable; fewer cols => larger on-screen footprint => fewer concurrent decodes.
+  let cols = Math.max(1, Math.min(desired, Math.floor((areaWidth + gap) / (minCol + gap)) || 1));
+  let cardWidth = (areaWidth - (cols - 1) * gap) / cols;
+  if (cardWidth < minCol && cols > 1) {
+    cols = Math.max(1, Math.floor((areaWidth + gap) / (minCol + gap)) || 1);
+    cardWidth = (areaWidth - (cols - 1) * gap) / cols;
+  }
+  const coverHeight = cardWidth * 1.5;
+  const rowHeight = coverHeight + gap + (withMeta ? 48 : 0);
+  return { cols, cardWidth, coverHeight, rowHeight, gap };
+}
+
+function visibleIndexRange(scrollTop, viewH, itemCount, cols, rowH, bufferScreens) {
+  if (!itemCount || rowH <= 0) return { start: 0, end: -1, totalRows: 0, topPad: 0, bottomPad: 0 };
+  const totalRows = Math.max(1, Math.ceil(itemCount / cols));
+  const bufferPx = bufferScreens * Math.max(viewH, 1);
+  const startRow = Math.max(0, Math.floor((scrollTop - bufferPx) / rowH));
+  const endRow = Math.min(
+    totalRows - 1,
+    Math.max(0, Math.ceil((scrollTop + viewH + bufferPx) / rowH) - 1)
+  );
+  const start = Math.min(itemCount, startRow * cols);
+  const end = Math.min(itemCount, (endRow + 1) * cols) - 1;
+  const topPad = startRow * rowH;
+  const bottomPad = Math.max(0, (totalRows - endRow - 1) * rowH);
+  return { start, end, totalRows, topPad, bottomPad };
+}
+
+const TABLE_ROW_HEIGHT = 64;
+
+function teardownVirtualWindow(area) {
+  if (area && area._virtCleanup) {
+    area._virtCleanup();
+    area._virtCleanup = null;
+  }
+}
+
+function attachVirtualWindow(area, gen, page, syncFn) {
+  let rafId = null;
+  const schedule = () => {
+    if (rafId != null) return;
+    rafId = requestAnimationFrame(() => {
+      rafId = null;
+      if (gen != null && gen !== State.renderGen) return;
+      syncFn();
+      State.scrollPos[page] = area.scrollTop;
+    });
   };
-  appendChunk();
+  const onScroll = () => schedule();
+  area.addEventListener("scroll", onScroll, { passive: true });
+  let ro = null;
+  if (typeof ResizeObserver !== "undefined") {
+    ro = new ResizeObserver(schedule);
+    ro.observe(area);
+  }
+  const saved = Number(State.scrollPos[page] || 0);
+  if (saved > 0) area.scrollTop = saved;
+  schedule();
+  return () => {
+    area.removeEventListener("scroll", onScroll);
+    if (ro) ro.disconnect();
+    if (rafId != null) cancelAnimationFrame(rafId);
+  };
+}
+
+function mountVirtualCoverGrid(area, items, page, withMeta, gen, buildCard) {
+  const topSpacer = elem("div", "virt-spacer-top");
+  const grid = elem("div", withMeta ? "cover-grid with-meta" : "cover-grid");
+  const bottomSpacer = elem("div", "virt-spacer-bottom");
+  area.appendChild(topSpacer);
+  area.appendChild(grid);
+  area.appendChild(bottomSpacer);
+  let lastKey = "";
+
+  const sync = () => {
+    if (gen != null && gen !== State.renderGen) return;
+    const metrics = measureCoverGridMetrics(contentInnerWidth(area), withMeta);
+    grid.style.gridTemplateColumns = `repeat(${metrics.cols}, minmax(0, 1fr))`;
+    const range = visibleIndexRange(
+      area.scrollTop, area.clientHeight, items.length,
+      metrics.cols, metrics.rowHeight, getBufferScreens()
+    );
+    const key = [metrics.cols, range.start, range.end, range.topPad, range.bottomPad].join(":");
+    if (key === lastKey) return;
+    lastKey = key;
+    topSpacer.style.height = range.topPad + "px";
+    bottomSpacer.style.height = range.bottomPad + "px";
+    clear(grid);
+    if (range.end < range.start) return;
+    const frag = document.createDocumentFragment();
+    for (let i = range.start; i <= range.end; i++) frag.appendChild(buildCard(items[i], i));
+    grid.appendChild(frag);
+  };
+
+  area._virtCleanup = attachVirtualWindow(area, gen, page, sync);
+}
+
+function renderGrid(area, items, page, isCollectionDetail, gen) {
+  mountVirtualCoverGrid(area, items, page, false, gen, (item) => {
+    const card = elem("article", "book-card");
+    if (State.selected[page] === item.id) card.classList.add("selected");
+    card.appendChild(buildCover(item, "cover"));
+    card.addEventListener("click", () => selectResource(page, item.id, card));
+    card.addEventListener("dblclick", () => State.bridge.openResource(page, item.id));
+    card.addEventListener("contextmenu", (e) => { e.preventDefault(); openContextMenu(e, page, item, isCollectionDetail); });
+    return card;
+  });
 }
 
 function renderCollections(area, items) {
-  const grid = elem("div", "cover-grid with-meta");
-  items.forEach((item) => {
+  const page = State.currentPage;
+  mountVirtualCoverGrid(area, items, page, true, State.renderGen, (item) => {
     const card = elem("article", "book-card");
     card.appendChild(buildCover(item, "cover"));
     card.appendChild(elem("div", "card-title", item.title));
@@ -295,24 +432,26 @@ function renderCollections(area, items) {
       e.preventDefault();
       openCollectionCardMenu(e, item, openCol);
     });
-    grid.appendChild(card);
+    return card;
   });
-  area.appendChild(grid);
 }
 
 function renderComic(area, data, gen) {
   let items = data.items || [];
   const isPagination = data.viewMode === "pagination";
   let pageSize = data.pageSize || 48;
-  if (!State._comicPage) State._comicPage = 1;
+  const pageKey = State.currentPage;
+  if (!State.comicPageNum[pageKey]) State.comicPageNum[pageKey] = 1;
+  State._comicPage = State.comicPageNum[pageKey];
   let totalPages = 1;
   if (isPagination) {
     totalPages = Math.max(1, Math.ceil(items.length / pageSize));
     if (State._comicPage > totalPages) State._comicPage = totalPages;
+    State.comicPageNum[pageKey] = State._comicPage;
     const start = (State._comicPage - 1) * pageSize;
     items = items.slice(start, start + pageSize);
   }
-  renderGrid(area, items, State.currentPage, false, gen);
+  renderGrid(area, items, pageKey, false, gen);
   if (isPagination) {
     const bar = elem("div", "detail-actions");
     bar.style.justifyContent = "flex-end";
@@ -321,14 +460,26 @@ function renderComic(area, data, gen) {
     const next = elem("button", "ghost-btn", t("comic.pagination.next", "Next"));
     prev.disabled = State._comicPage <= 1;
     next.disabled = State._comicPage >= totalPages;
-    prev.addEventListener("click", () => { State._comicPage--; scheduleRenderPage(); });
-    next.addEventListener("click", () => { State._comicPage++; scheduleRenderPage(); });
+    prev.addEventListener("click", () => {
+      State._comicPage--;
+      State.comicPageNum[pageKey] = State._comicPage;
+      clearPageScroll(pageKey);
+      scheduleRenderPage();
+    });
+    next.addEventListener("click", () => {
+      State._comicPage++;
+      State.comicPageNum[pageKey] = State._comicPage;
+      clearPageScroll(pageKey);
+      scheduleRenderPage();
+    });
     bar.appendChild(prev); bar.appendChild(label); bar.appendChild(next);
     area.appendChild(bar);
   }
 }
 
 function renderTable(area, items, page) {
+  const gen = State.renderGen;
+  const topSpacer = elem("div", "virt-spacer-top");
   const table = elem("table", "table");
   const thead = elem("thead");
   const htr = elem("tr");
@@ -337,31 +488,61 @@ function renderTable(area, items, page) {
   thead.appendChild(htr);
   table.appendChild(thead);
   const tbody = elem("tbody");
-  items.forEach((item) => {
-    const tr = elem("tr");
-    if (State.selected[page] === item.id) tr.classList.add("selected");
-    const coverTd = elem("td");
-    if (item.cover) { const img = elem("img", "mini-cover"); img.src = item.cover; coverTd.appendChild(img); }
-    tr.appendChild(coverTd);
-    tr.appendChild(elem("td", null, item.title));
-    tr.appendChild(elem("td", null, item.author || ""));
-    tr.appendChild(elem("td", null, (item.tags || []).join(", ")));
-    tr.appendChild(elem("td", null, item.path || ""));
-    tr.addEventListener("click", () => selectResource(page, item.id, tr));
-    tr.addEventListener("dblclick", () => State.bridge.openResource(page, item.id));
-    tr.addEventListener("contextmenu", (e) => { e.preventDefault(); openContextMenu(e, page, item, false); });
-    tbody.appendChild(tr);
-  });
   table.appendChild(tbody);
+  const bottomSpacer = elem("div", "virt-spacer-bottom");
+  area.appendChild(topSpacer);
   area.appendChild(table);
+  area.appendChild(bottomSpacer);
+  let lastKey = "";
+
+  const sync = () => {
+    if (gen !== State.renderGen) return;
+    const range = visibleIndexRange(
+      area.scrollTop, area.clientHeight, items.length,
+      1, TABLE_ROW_HEIGHT, getBufferScreens()
+    );
+    const key = [range.start, range.end, range.topPad, range.bottomPad].join(":");
+    if (key === lastKey) return;
+    lastKey = key;
+    topSpacer.style.height = range.topPad + "px";
+    bottomSpacer.style.height = range.bottomPad + "px";
+    clear(tbody);
+    if (range.end < range.start) return;
+    const frag = document.createDocumentFragment();
+    for (let i = range.start; i <= range.end; i++) {
+      const item = items[i];
+      const tr = elem("tr");
+      if (State.selected[page] === item.id) tr.classList.add("selected");
+      const coverTd = elem("td");
+      if (item.cover) coverTd.appendChild(buildCover(item, "mini-cover"));
+      tr.appendChild(coverTd);
+      tr.appendChild(elem("td", null, item.title));
+      tr.appendChild(elem("td", null, item.author || ""));
+      tr.appendChild(elem("td", null, (item.tags || []).join(", ")));
+      tr.appendChild(elem("td", null, item.path || ""));
+      tr.addEventListener("click", () => selectResource(page, item.id, tr));
+      tr.addEventListener("dblclick", () => State.bridge.openResource(page, item.id));
+      tr.addEventListener("contextmenu", (e) => { e.preventDefault(); openContextMenu(e, page, item, false); });
+      frag.appendChild(tr);
+    }
+    tbody.appendChild(frag);
+  };
+
+  area._virtCleanup = attachVirtualWindow(area, gen, page, sync);
 }
 
 function buildCover(item, cls) {
   if (item.cover) {
     const img = elem("img", cls);
-    img.src = item.cover;
     img.alt = item.title || "";
-    img.loading = "lazy";
+    img.decoding = "async";
+    // Grid covers: eager inside the virtual window (window size is capped by buffer screens).
+    if (cls === "cover" || cls === "mini-cover") {
+      img.loading = "eager";
+    } else {
+      img.loading = "lazy";
+    }
+    img.src = item.cover;
     img.onerror = () => { img.replaceWith(buildCoverFallback(item, cls)); };
     return img;
   }
@@ -875,10 +1056,12 @@ function renderSettings() {
   clear($("pageHeadTools"));
   $("viewModeToggle").style.display = "none";
   const area = $("contentArea");
+  teardownVirtualWindow(area);
   clear(area);
   area.classList.remove("view-enter"); void area.offsetWidth; area.classList.add("view-enter");
 
   const grid = elem("div", "settings-grid");
+  grid.style.userSelect = "text";
   const nav = elem("div", "settings-nav");
   const panel = elem("div");
   panel.style.minWidth = "0";
@@ -958,6 +1141,8 @@ function renderSettingsGeneral(panel) {
   grid.appendChild(selectField("settings.text_preview_chars", "textPreviewChars", [[500,"500"],[1000,"1000"],[2000,"2000"]], s.textPreviewChars));
   grid.appendChild(selectField("settings.comic_view_mode", "comicViewMode", [["waterfall", t("settings.comic_view_waterfall", "Waterfall")],["pagination", t("settings.comic_view_pagination", "Pagination")]], s.comicViewMode));
   grid.appendChild(selectField("settings.comic_page_size", "comicPageSize", [[24,"24"],[48,"48"],[72,"72"],[96,"96"]], s.comicPageSize));
+  grid.appendChild(selectField("settings.viewport_buffer_screens", "viewportBufferScreens", [[3,"3"],[4,"4"],[5,"5"],[6,"6"]], s.viewportBufferScreens ?? 3));
+  grid.appendChild(selectField("settings.grid_columns", "gridColumns", [[4,"4"],[5,"5"],[6,"6"],[7,"7"],[8,"8"],[10,"10"],[12,"12"]], s.gridColumns ?? 6));
   grid.appendChild(selectField("settings.comic.thumbnail_workers", "comicThumbnailWorkers", [
     ["auto", t("settings.comic.workers.auto", "Auto")],
     ["2", "2"], ["4", "4"], ["6", "6"], ["8", "8"], ["12", "12"], ["16", "16"],

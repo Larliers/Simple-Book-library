@@ -122,6 +122,25 @@ class WebBridgeSmokeTests(unittest.TestCase):
         bridge = self._make_bridge()
         self.assertEqual(bridge._repo.get_comic_view_mode(), "pagination")
 
+    def test_viewport_buffer_screens_default_and_clamp(self) -> None:
+        bridge = self._make_bridge()
+        self.assertEqual(bridge._repo.get_viewport_buffer_screens(), 3)
+        bridge._repo.set_viewport_buffer_screens(5)
+        self.assertEqual(bridge._repo.get_viewport_buffer_screens(), 5)
+        bridge._repo.set_viewport_buffer_screens(99)
+        self.assertEqual(bridge._repo.get_viewport_buffer_screens(), 3)
+        payload = bridge._settings_payload()
+        self.assertEqual(payload.get("viewportBufferScreens"), 3)
+
+    def test_grid_columns_default_and_clamp(self) -> None:
+        bridge = self._make_bridge()
+        self.assertEqual(bridge._repo.get_grid_columns(), 6)
+        bridge._repo.set_grid_columns(8)
+        self.assertEqual(bridge._repo.get_grid_columns(), 8)
+        bridge._repo.set_grid_columns(99)
+        self.assertEqual(bridge._repo.get_grid_columns(), 6)
+        self.assertEqual(bridge._settings_payload().get("gridColumns"), 6)
+
     def test_to_local_path_handles_file_url(self) -> None:
         self.assertIsNone(to_local_path(""))
         converted = to_local_path("file:///C:/tmp/cover.webp")

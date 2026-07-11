@@ -108,6 +108,17 @@ button:active { transform: translateY(1px) scale(0.985); }
     color var(--active-theme-transition-duration) ease;
 }
 
+/* Keep chrome out of the scrolling cover-grid compositor path (avoids shell flash while images decode). */
+.sidebar.glass, .topbar.glass, .detail-panel.glass {
+  background: var(--glass-strong);
+  isolation: isolate;
+  transform: translateZ(0);
+  contain: layout style;
+  /* Live backdrop-filter resampling of a growing cover grid causes full-chrome flicker in QWebEngine. */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 /* Sidebar */
 .sidebar {
   grid-column: 1;
@@ -221,8 +232,16 @@ button:active { transform: translateY(1px) scale(0.985); }
 .content-split {
   flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--line);
   border-radius: var(--radius); background: var(--card-bg-soft); padding: 12px;
+  isolation: isolate; transform: translateZ(0); contain: layout paint;
+  user-select: none;
+  overflow-anchor: none; /* virtual list: spacer/DOM sync must not auto-adjust scrollTop */
+}
+.virt-spacer-top, .virt-spacer-bottom {
+  width: 100%; flex-shrink: 0; pointer-events: none;
+  overflow-anchor: none;
 }
 .content-split.view-enter { animation: viewEnter 240ms ease; }
+.content-split.view-enter-skip { animation: none; }
 
 .page-sort { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .page-sort .sort-select {
@@ -232,10 +251,13 @@ button:active { transform: translateY(1px) scale(0.985); }
 .cover-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 148px));
   gap: 18px; align-content: start;
+  overflow-anchor: none;
 }
 .cover-grid.with-meta { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 
-.book-card { min-width: 0; border-radius: var(--radius); padding: 0; background: transparent; border: 0; cursor: pointer; }
+.book-card {
+  min-width: 0; border-radius: var(--radius); padding: 0; background: transparent; border: 0; cursor: pointer;
+}
 .book-card .cover {
   width: 100%; aspect-ratio: 2 / 3; display: block; object-fit: contain; border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.6); background: #e8eef5;
@@ -315,16 +337,24 @@ button:active { transform: translateY(1px) scale(0.985); }
   border: 1px dashed rgba(105, 130, 160, 0.34); border-radius: var(--radius); background: var(--card-bg-soft); padding: 24px;
 }
 
-/* Context menu */
+/* Context menu — width:max-content so button width:100% does not resolve against the viewport */
 .context-menu {
-  position: fixed; min-width: 210px; padding: 6px; border-radius: var(--radius);
+  position: fixed; width: max-content; max-width: min(280px, calc(100vw - 16px));
+  padding: 4px; border-radius: 8px;
   border: 1px solid var(--line); background: var(--control-bg); box-shadow: var(--shadow);
   backdrop-filter: blur(20px) saturate(1.2); z-index: 40; animation: fadeSlideDown 140ms ease;
 }
-.context-menu button { width: 100%; min-height: 34px; padding: 0 10px; text-align: left; border-radius: 6px; }
+.context-menu button {
+  display: block; width: 100%; box-sizing: border-box;
+  min-height: 30px; padding: 4px 12px; text-align: left; border-radius: 6px;
+  white-space: nowrap; font-weight: 500;
+}
 .context-menu button:hover { background: rgba(57, 119, 194, 0.14); }
-.context-menu .danger-btn { justify-content: flex-start; background: transparent; border-color: transparent; }
-.context-menu hr { border: none; border-top: 1px solid var(--line); margin: 4px 2px; }
+.context-menu .danger-btn {
+  display: block; justify-content: flex-start; font-weight: 500;
+  background: transparent; border-color: transparent;
+}
+.context-menu hr { border: none; border-top: 1px solid var(--line); margin: 3px 2px; }
 
 /* Toast */
 .toast-stack { position: fixed; right: 18px; bottom: 18px; display: flex; flex-direction: column; gap: 10px; z-index: 60; }

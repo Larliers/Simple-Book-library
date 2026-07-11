@@ -606,6 +606,8 @@
   "settings.comic_view_waterfall": "瀑布流",
   "settings.comic_view_pagination": "分页",
   "settings.comic_page_size": "漫画分页容量",
+  "settings.viewport_buffer_screens": "视口缓冲屏数",
+  "settings.grid_columns": "每行封面数",
   "settings.font_source.system": "系统",
   "settings.font_source.project": "项目字体",
   "settings.font_family.default": "（默认）",

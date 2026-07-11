@@ -282,6 +282,10 @@ class LibraryRepository:
             self.set_setting("comic_view_mode", "pagination")
         if self.get_setting("comic_page_size", None) is None:
             self.set_setting("comic_page_size", 48)
+        if self.get_setting("viewport_buffer_screens", None) is None:
+            self.set_setting("viewport_buffer_screens", 3)
+        if self.get_setting("grid_columns", None) is None:
+            self.set_setting("grid_columns", 6)
         if self.get_setting("comic_sort_order_main", None) is None:
             self.set_setting("comic_sort_order_main", "folder_mtime_desc")
         if self.get_setting("comic_sort_order_fav", None) is None:
@@ -560,6 +564,37 @@ class LibraryRepository:
 
     def set_comic_page_size(self, value: int | str) -> None:
         self.set_setting("comic_page_size", self._normalize_comic_page_size(value))
+
+    @staticmethod
+    def _normalize_viewport_buffer_screens(value: int | str | None) -> int:
+        try:
+            parsed = int(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return 3
+        if parsed in {3, 4, 5, 6}:
+            return parsed
+        return 3
+
+    def get_viewport_buffer_screens(self) -> int:
+        return self._normalize_viewport_buffer_screens(self.get_setting("viewport_buffer_screens", 3))
+
+    def set_viewport_buffer_screens(self, value: int | str) -> None:
+        self.set_setting("viewport_buffer_screens", self._normalize_viewport_buffer_screens(value))
+
+    @staticmethod
+    def _normalize_grid_columns(value: int | str | None) -> int:
+        try:
+            parsed = int(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return 6
+        allowed = {4, 5, 6, 7, 8, 10, 12}
+        return parsed if parsed in allowed else 6
+
+    def get_grid_columns(self) -> int:
+        return self._normalize_grid_columns(self.get_setting("grid_columns", 6))
+
+    def set_grid_columns(self, value: int | str) -> None:
+        self.set_setting("grid_columns", self._normalize_grid_columns(value))
 
     @staticmethod
     def _normalize_comic_sort_order(value: str | None) -> str:
