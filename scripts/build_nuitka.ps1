@@ -46,6 +46,8 @@ $ArgsList = @(
     "--output-dir=$OutputDir",
     "--include-data-dir=src\assets=assets",
     "--include-data-dir=src\bookhub\i18n\locales=bookhub\i18n\locales",
+    "--include-data-dir=src\bookhub\ui\web=bookhub\ui\web",
+    "--include-qt-plugins=all",
     "--include-raw-dir=$FitzPackage=fitz",
     "--include-raw-dir=$PyMuPDFPackage=pymupdf",
     "--nofollow-import-to=fitz",

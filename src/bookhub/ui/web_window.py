@@ -1,0 +1,334 @@
+from __future__ import annotations
+
+import json
+
+from PySide6.QtCore import QTimer, QUrl
+from PySide6.QtGui import QFont, QFontDatabase
+from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMainWindow, QMessageBox
+from PySide6.QtWebChannel import QWebChannel
+from PySide6.QtWebEngineCore import QWebEngineSettings
+from PySide6.QtWebEngineWidgets import QWebEngineView
+
+from bookhub.i18n import language_manager, tr
+from bookhub.library import LibraryRepository, ScanWorker, ThumbnailTaskWorker
+from bookhub.library.error_logs import append_conflict_if_new, read_latest_log_text
+from bookhub.ui.dialogs.text_rule_dialog import TextRuleDialog
+from bookhub.ui.resources.font_runtime import (
+    DEFAULT_PROJECT_FONTS_DIR,
+    resolve_effective_font,
+    scan_project_fonts_and_register,
+)
+from bookhub.ui.resources.layout_config import (
+    UI_LAYOUT,
+    normalize_card_spacing,
+    normalize_cover_selected_border_color,
+    normalize_cover_selected_border_width,
+    normalize_topbar_search_font_size,
+)
+from bookhub.ui.resources.styles import DEFAULT_FONT_STACK
+from bookhub.ui.web_bridge import UiBridge
+from bookhub.ui.web_scheme import AppSchemeHandler
+
+APP_INDEX_URL = "app://app/index.html"
+
+
+class WebAppWindow(QMainWindow):
+    def __init__(self) -> None:
+        super().__init__()
+        self._repository = LibraryRepository()
+        language_manager.set_language(self._repository.get_language_code())
+        self.setWindowTitle(tr("app.window_title", "Simple Book Library"))
+        self.resize(1400, 860)
+
+        UI_LAYOUT.set_card_spacing(self._repository.get_card_spacing())
+        UI_LAYOUT.set_topbar_search_font_size(self._repository.get_topbar_search_font_size())
+        UI_LAYOUT.set_cover_selected_border_width(self._repository.get_cover_selected_border_width())
+        UI_LAYOUT.set_cover_selected_border_color(self._repository.get_cover_selected_border_color())
+
+        self._allowed_images: set[str] = set()
+        self._project_font_families: list[str] = []
+        self._scan_worker: ScanWorker | None = None
+        self._thumbnail_worker: ThumbnailTaskWorker | None = None
+        self._active_thumbnail_task_kind: str | None = None
+        self._active_thumbnail_task_scope: str | None = None
+
+        self._view = QWebEngineView(self)
+        settings = self._view.settings()
+        settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
+        settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, False)
+        settings.setAttribute(QWebEngineSettings.JavascriptEnabled, True)
+        settings.setAttribute(QWebEngineSettings.ShowScrollBars, False)
+        self.setCentralWidget(self._view)
+
+        self._scheme_handler = AppSchemeHandler(self._allowed_images, self)
+        profile = self._view.page().profile()
+        profile.installUrlSchemeHandler(b"app", self._scheme_handler)
+
+        self._channel = QWebChannel(self)
+        self._bridge = UiBridge(self._repository, self._allowed_images, self)
+        self._bridge.set_host(self)
+        self._channel.registerObject("bridge", self._bridge)
+        self._view.page().setWebChannel(self._channel)
+
+        self._refresh_project_fonts(ensure_dir=False)
+        self._apply_font_to_app(self._repository.get_font_family())
+
+        self._view.load(QUrl(APP_INDEX_URL))
+
+        if self._repository.get_scan_on_startup():
+            QTimer.singleShot(400, lambda: self.start_scan("all"))
+
+    # ---- exposed to bridge (project fonts) -----------------------------
+    def project_fonts(self) -> list[str]:
+        return list(self._project_font_families)
+
+    def _refresh_project_fonts(self, *, ensure_dir: bool) -> None:
+        scan_result = scan_project_fonts_and_register(DEFAULT_PROJECT_FONTS_DIR, ensure_dir=ensure_dir)
+        self._project_font_families = list(scan_result.registered_families)
+
+    def _apply_font_to_app(self, family: str) -> None:
+        app = QApplication.instance()
+        selected = str(family or "").strip()
+        if app is not None and selected:
+            app.setFont(QFont(selected))
+
+    # ---- settings ------------------------------------------------------
+    def apply_setting(self, key: str, value: str) -> None:
+        repo = self._repository
+        reload_needed = False
+        if key == "language":
+            language_manager.set_language(value)
+            repo.set_language_code(value)
+            self._reload_ui_strings()
+            return
+        if key == "fontSource" or key == "fontFamily":
+            source = value if key == "fontSource" else repo.get_font_source()
+            family = value if key == "fontFamily" else repo.get_font_family()
+            self._apply_font_selection(source, family)
+            return
+        if key == "searchFontSize":
+            repo.set_topbar_search_font_size(normalize_topbar_search_font_size(value))
+        elif key == "scanDepth":
+            repo.set_scan_depth(int(value))
+        elif key == "hashStrategy":
+            repo.set_hash_strategy(value)
+        elif key == "cardSpacing":
+            repo.set_card_spacing(normalize_card_spacing(value))
+            UI_LAYOUT.set_card_spacing(repo.get_card_spacing())
+        elif key == "coverBorderWidth":
+            repo.set_cover_selected_border_width(normalize_cover_selected_border_width(value))
+        elif key == "coverBorderColor":
+            repo.set_cover_selected_border_color(normalize_cover_selected_border_color(value))
+        elif key == "scanOnStartup":
+            repo.set_scan_on_startup(self._as_bool(value))
+        elif key == "autoScanOnPathChange":
+            repo.set_auto_scan_on_path_change(self._as_bool(value))
+        elif key == "textPreviewChars":
+            repo.set_text_preview_chars(int(value))
+        elif key == "comicViewMode":
+            repo.set_comic_view_mode(value)
+            reload_needed = True
+        elif key == "comicPageSize":
+            repo.set_comic_page_size(int(value))
+            reload_needed = True
+        if reload_needed:
+            self._bridge.push_resources()
+
+    @staticmethod
+    def _as_bool(value: str) -> bool:
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+    def _apply_font_selection(self, source: str, family: str) -> None:
+        system_families = sorted({str(n).strip() for n in QFontDatabase.families() if str(n).strip()})
+        resolved = resolve_effective_font(source, family, system_families, self._project_font_families)
+        self._repository.set_font_source(resolved.source)
+        self._repository.set_font_family(resolved.family)
+        self._apply_font_to_app(resolved.family)
+
+    def reload_fonts(self) -> None:
+        self._refresh_project_fonts(ensure_dir=True)
+        self._apply_font_selection(self._repository.get_font_source(), self._repository.get_font_family())
+        self._bridge.push_settings()
+        self._bridge.emit_toast(tr("settings.font.reload", "Reload Fonts"), tr("settings.font.toast.success", "Fonts reloaded."), "info")
+
+    def _reload_ui_strings(self) -> None:
+        # Rebuild bootstrap-driven strings in the web layer.
+        self._view.page().runJavaScript("window.__reloadBootstrap && window.__reloadBootstrap();")
+
+    # ---- roots ---------------------------------------------------------
+    def add_root(self, kind: str) -> None:
+        directory = QFileDialog.getExistingDirectory(self, tr("import.pick_dir", "Select folder"))
+        if not directory:
+            return
+        repo = self._repository
+        if kind == "comic":
+            repo.add_comic_root(directory)
+            scope = "comic"
+        elif kind == "text":
+            repo.add_text_root(directory)
+            scope = "text"
+        else:
+            repo.add_root(directory)
+            scope = "library"
+        self._bridge.reload_data()
+        self._bridge.push_resources()
+        self._bridge.push_settings()
+        if repo.get_auto_scan_on_path_change():
+            self.start_scan(scope)
+
+    def remove_root(self, kind: str, path: str) -> None:
+        repo = self._repository
+        if kind == "comic":
+            repo.remove_comic_root(path)
+        elif kind == "text":
+            repo.remove_text_root(path)
+        else:
+            repo.remove_root(path)
+        self._bridge.reload_data()
+        self._bridge.push_resources()
+        self._bridge.push_settings()
+
+    def open_text_rules(self, root_path: str) -> None:
+        repo = self._repository
+        existing = repo.get_text_root_rules_json(root_path)
+        dialog = TextRuleDialog(
+            root_path,
+            existing,
+            self,
+            preview_chars=repo.get_text_preview_chars(),
+            preview_result_height=repo.get_text_rule_preview_result_height(),
+            preview_result_height_changed=repo.set_text_rule_preview_result_height,
+            dialog_size=repo.get_text_rule_dialog_size(),
+            dialog_size_changed=repo.set_text_rule_dialog_size,
+            rule_presets=repo.get_text_rule_presets(),
+            rule_presets_changed=repo.set_text_rule_presets,
+        )
+        if dialog.exec() != QDialog.Accepted:
+            return
+        repo.set_text_root_rules_json(root_path, dialog.rules_json())
+        self._bridge.push_settings()
+        if repo.get_auto_scan_on_path_change():
+            self.start_scan("text")
+
+    # ---- scan ----------------------------------------------------------
+    def start_scan(self, scope: str = "all") -> None:
+        if self._thumbnail_worker is not None and self._thumbnail_worker.isRunning():
+            return
+        if self._scan_worker is not None and self._scan_worker.isRunning():
+            return
+        repo = self._repository
+        roots = repo.list_roots() if scope in {"all", "library"} else []
+        comic_roots = repo.list_comic_roots() if scope in {"all", "comic"} else []
+        text_roots = repo.list_text_roots_with_rules() if scope in {"all", "text"} else []
+        if not roots and not comic_roots and not text_roots:
+            self._bridge.emit_toast(tr("scan.none_title", "Nothing to scan"), tr("scan.none_msg", "Add a folder first."), "warning")
+            return
+        self._emit_scan_state(scope, True)
+        worker = ScanWorker(
+            db_path=repo.db_path,
+            scan_report_path=repo.scan_report_path,
+            roots=roots,
+            comic_roots=comic_roots,
+            text_roots=text_roots,
+            text_preview_chars=repo.get_text_preview_chars(),
+            scan_depth=repo.get_scan_depth(),
+            hash_strategy=repo.get_hash_strategy(),
+            comic_placeholder_copy_enabled=repo.get_comic_placeholder_copy_enabled(),
+            comic_thumbnail_workers_used=repo.get_comic_thumbnail_workers(),
+            trigger="manual_" + scope,
+            scope=scope,
+        )
+        worker.scan_completed.connect(self._on_scan_completed)
+        worker.scan_failed.connect(self._on_scan_failed)
+        worker.progress.connect(self._on_scan_progress)
+        worker.finished.connect(self._on_scan_worker_finished)
+        self._scan_worker = worker
+        worker.start()
+
+    def _emit_scan_state(self, scope: str, running: bool) -> None:
+        self._bridge.scanState.emit(json.dumps({"scope": scope, "running": running}, ensure_ascii=False))
+
+    def _on_scan_progress(self, current: int, total: int, label: str, snapshot_obj: object) -> None:
+        payload = {"current": current, "total": total, "label": label}
+        self._bridge.scanProgress.emit(json.dumps(payload, ensure_ascii=False))
+
+    def _on_scan_completed(self, summary_obj: object) -> None:
+        summary = summary_obj if isinstance(summary_obj, dict) else {}
+        scope = str(summary.get("scope") or "all")
+        self._emit_scan_state(scope, False)
+        self._bridge.reload_data()
+        self._bridge.push_resources()
+        self._bridge.push_settings()
+        conflicts = summary.get("name_conflicts", [])
+        if isinstance(conflicts, list) and conflicts:
+            for item in conflicts:
+                if isinstance(item, dict):
+                    file_name = str(item.get("file_name") or "").strip()
+                    src = str(item.get("source_path") or item.get("path") or "").strip()
+                    existing = str(item.get("existing_path") or "").strip()
+                    append_conflict_if_new(f"conflict={file_name} | source={src} | existing={existing}")
+            self._bridge.errorLogsChanged.emit(read_latest_log_text())
+        added = int(summary.get("added_count", 0) or 0) + int(summary.get("text_added_count", 0) or 0)
+        self._bridge.emit_toast(
+            tr("scan.done_title", "Scan completed"),
+            tr("scan.done_msg", "Imported {count} new items.").format(count=added),
+            "info",
+        )
+
+    def _on_scan_failed(self, message: str) -> None:
+        self._emit_scan_state("all", False)
+        self._bridge.emit_toast(tr("scan.failed_title", "Scan failed"), message, "warning")
+
+    def _on_scan_worker_finished(self) -> None:
+        self._scan_worker = None
+
+    # ---- thumbnail tasks ----------------------------------------------
+    def start_thumbnail_task(self, task_kind: str, scope: str) -> None:
+        if self._scan_worker is not None and self._scan_worker.isRunning():
+            return
+        if self._thumbnail_worker is not None and self._thumbnail_worker.isRunning():
+            return
+        self._active_thumbnail_task_kind = task_kind
+        self._active_thumbnail_task_scope = scope
+        self._emit_scan_state(scope + ":thumb", True)
+        repo = self._repository
+        worker = ThumbnailTaskWorker(
+            db_path=repo.db_path,
+            scan_report_path=repo.scan_report_path,
+            task_kind=task_kind,
+            task_scope=scope,
+            comic_workers=repo.get_comic_thumbnail_workers() if scope == "comic" else None,
+        )
+        worker.progress.connect(self._on_thumbnail_progress)
+        worker.completed.connect(self._on_thumbnail_completed)
+        worker.failed.connect(self._on_thumbnail_failed)
+        worker.finished.connect(self._on_thumbnail_finished)
+        self._thumbnail_worker = worker
+        worker.start()
+
+    def _on_thumbnail_progress(self, current: int, total: int, _label: str) -> None:
+        self._bridge.scanProgress.emit(json.dumps({"current": current, "total": total, "label": "thumbnail"}, ensure_ascii=False))
+
+    def _on_thumbnail_completed(self, summary_obj: object) -> None:
+        summary = summary_obj if isinstance(summary_obj, dict) else {}
+        scope = str(summary.get("task_scope") or self._active_thumbnail_task_scope or "library")
+        self._emit_scan_state(scope + ":thumb", False)
+        self._bridge.reload_data()
+        self._bridge.push_resources()
+        succeeded = int(summary.get("succeeded", 0) or 0)
+        failed = int(summary.get("failed", 0) or 0)
+        self._bridge.emit_toast(
+            tr("settings.thumb.result_title", "Thumbnail task finished"),
+            tr("settings.thumb.brief", "Success: {s}, Failed: {f}").format(s=succeeded, f=failed),
+            "info",
+        )
+
+    def _on_thumbnail_failed(self, message: str) -> None:
+        scope = self._active_thumbnail_task_scope or "library"
+        self._emit_scan_state(scope + ":thumb", False)
+        self._bridge.emit_toast(tr("settings.thumb.failed_title", "Thumbnail task failed"), message, "warning")
+
+    def _on_thumbnail_finished(self) -> None:
+        self._thumbnail_worker = None
+        self._active_thumbnail_task_kind = None
+        self._active_thumbnail_task_scope = None

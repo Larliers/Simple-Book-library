@@ -1,0 +1,908 @@
+"use strict";
+
+const State = {
+  bridge: null,
+  strings: {},
+  nav: [],
+  pages: {},
+  settings: {},
+  currentPage: "library",
+  viewMode: "grid",
+  selected: {},
+  searchQuery: "",
+  suggestOpen: false,
+  theme: { mode: "auto", autoEnabled: true, nightStart: "22:00", dayResume: "07:00", checkFrequency: 5, transitionMinutes: 3 },
+  themeTimer: null,
+};
+
+const COMIC_PAGES = new Set(["comic", "comic_fav"]);
+const LIST_ONLY = new Set(["text_novel"]);
+
+function t(key, fallback) {
+  const value = State.strings[key];
+  return value !== undefined ? value : (fallback !== undefined ? fallback : key);
+}
+
+function fmt(str, params) {
+  return String(str).replace(/\{(\w+)\}/g, (m, k) => (params && params[k] !== undefined ? params[k] : m));
+}
+
+function $(id) { return document.getElementById(id); }
+
+function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+
+function elem(tag, cls, text) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined && text !== null) node.textContent = text;
+  return node;
+}
+
+/* ---------- bootstrap ---------- */
+function initChannel() {
+  new QWebChannel(qt.webChannelTransport, (channel) => {
+    State.bridge = channel.objects.bridge;
+    wireSignals();
+    loadBootstrap();
+  });
+}
+
+function wireSignals() {
+  const b = State.bridge;
+  b.resourcesChanged.connect((json) => {
+    const data = safeParse(json);
+    if (data && data.pages) {
+      State.pages = data.pages;
+      if (State.currentPage !== "settings") renderPage();
+      refreshDetailIfSelected();
+    }
+  });
+  b.toast.connect((json) => { const d = safeParse(json); if (d) showToast(d.title, d.message, d.kind); });
+  b.scanProgress.connect((json) => { const d = safeParse(json); if (d) updateScanProgress(d); });
+  b.scanState.connect((json) => { const d = safeParse(json); if (d) updateScanState(d); });
+  b.settingsChanged.connect((json) => { const d = safeParse(json); if (d) { State.settings = d; if (d.theme) applyThemeConfig(d.theme); if (State.currentPage === "settings") renderSettings(); } });
+  b.errorLogsChanged.connect((text) => { const box = document.getElementById("errorLogBox"); if (box) box.textContent = text; });
+}
+
+function safeParse(json) { try { return JSON.parse(json); } catch (e) { return null; } }
+
+function loadBootstrap() {
+  State.bridge.getBootstrap((json) => {
+    const data = safeParse(json);
+    if (!data) return;
+    State.strings = data.strings || {};
+    State.nav = data.nav || [];
+    State.pages = data.pages || {};
+    State.settings = data.settings || {};
+    State.errorLogs = data.errorLogs || "";
+    if (State.settings.theme) State.theme = Object.assign(State.theme, State.settings.theme);
+    applyStaticStrings();
+    applyFont();
+    renderNav();
+    applyThemeConfig(State.theme);
+    startThemeEngine();
+    selectPage("library");
+  });
+}
+
+window.__reloadBootstrap = loadBootstrap;
+
+function applyStaticStrings() {
+  document.querySelectorAll("[data-str]").forEach((node) => {
+    node.textContent = t(node.getAttribute("data-str"));
+  });
+  const search = $("searchInput");
+  search.setAttribute("placeholder", t("topbar.search_placeholder"));
+}
+
+function applyFont() {
+  const family = State.settings.fontFamily;
+  if (family) {
+    document.documentElement.style.setProperty(
+      "--font",
+      '"' + family + '", Inter, "Segoe UI", "Microsoft YaHei", Arial, sans-serif'
+    );
+  }
+  const size = State.settings.searchFontSize;
+  if (size) $("searchInput").style.fontSize = size + "px";
+}
+
+/* ---------- navigation ---------- */
+function renderNav() {
+  const list = $("navList");
+  clear(list);
+  State.nav.forEach((item) => {
+    const btn = elem("button", "nav-btn", item.label);
+    btn.dataset.page = item.page;
+    btn.addEventListener("click", () => selectPage(item.page));
+    list.appendChild(btn);
+  });
+}
+
+function selectPage(page) {
+  State.currentPage = page;
+  document.querySelectorAll(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.page === page));
+  $("settingsBtn").classList.toggle("active", page === "settings");
+  const detail = $("detailPanel");
+  if (page === "settings") {
+    detail.classList.add("hidden");
+    renderSettings();
+    return;
+  }
+  detail.classList.remove("hidden");
+  // sync search box to page context
+  const isText = page === "text_novel";
+  $("searchInput").setAttribute("placeholder", isText ? t("topbar.search_text_placeholder") : t("topbar.search_placeholder"));
+  renderPage();
+  renderDetailEmpty();
+}
+
+/* ---------- page rendering ---------- */
+function currentPageData() { return State.pages[State.currentPage] || { items: [], mode: "grid_or_list" }; }
+
+function renderPage() {
+  const page = State.currentPage;
+  const data = currentPageData();
+  const titleItem = State.nav.find((n) => n.page === page);
+  $("pageTitle").textContent = (data.mode === "collection_detail" && data.collectionName) ? data.collectionName : (titleItem ? titleItem.label : page);
+  const count = (data.items || []).length;
+  $("pageSubtitle").textContent = fmt(t("page.count", "{count} items"), { count });
+
+  renderPageTools(page, data);
+
+  const area = $("contentArea");
+  clear(area);
+  area.classList.remove("view-enter"); void area.offsetWidth; area.classList.add("view-enter");
+
+  const showViewToggle = !COMIC_PAGES.has(page) && !LIST_ONLY.has(page) && data.mode !== "collections";
+  $("viewModeToggle").style.display = showViewToggle ? "" : "none";
+
+  if (!count) {
+    area.appendChild(buildEmpty(t("empty.default", "Nothing here yet.")));
+    return;
+  }
+
+  if (page === "text_novel") { renderTable(area, data.items, page); return; }
+  if (data.mode === "collections") { renderCollections(area, data.items); return; }
+  if (COMIC_PAGES.has(page)) { renderComic(area, data); return; }
+  if (State.viewMode === "list") { renderTable(area, data.items, page); return; }
+  renderGrid(area, data.items, page, data.mode === "collection_detail");
+}
+
+function renderPageTools(page, data) {
+  const tools = $("pageHeadTools");
+  clear(tools);
+  if (data.mode === "collection_detail") {
+    const back = elem("button", "ghost-btn", t("common.back", "Back"));
+    back.addEventListener("click", () => {
+      State.bridge.closeCollection((json) => { const d = safeParse(json); if (d) { State.pages.collections = d; renderPage(); } });
+    });
+    tools.appendChild(back);
+    return;
+  }
+  if (data.mode === "collections") {
+    const add = elem("button", "primary-btn", t("common.new_list", "New List"));
+    add.addEventListener("click", openNewCollectionModal);
+    tools.appendChild(add);
+    return;
+  }
+}
+
+function renderGrid(area, items, page, isCollectionDetail) {
+  const grid = elem("div", "cover-grid");
+  items.forEach((item) => {
+    const card = elem("article", "book-card");
+    if (State.selected[page] === item.id) card.classList.add("selected");
+    card.appendChild(buildCover(item, "cover"));
+    card.addEventListener("click", () => selectResource(page, item.id, card));
+    card.addEventListener("dblclick", () => State.bridge.openResource(page, item.id));
+    card.addEventListener("contextmenu", (e) => { e.preventDefault(); openContextMenu(e, page, item, isCollectionDetail); });
+    grid.appendChild(card);
+  });
+  area.appendChild(grid);
+}
+
+function renderCollections(area, items) {
+  const grid = elem("div", "cover-grid with-meta");
+  items.forEach((item) => {
+    const card = elem("article", "book-card");
+    card.appendChild(buildCover(item, "cover"));
+    card.appendChild(elem("div", "card-title", item.title));
+    card.appendChild(elem("div", "card-meta", item.meta || ""));
+    card.addEventListener("click", () => {
+      State.bridge.openCollection(item.collectionId, (json) => {
+        const d = safeParse(json);
+        if (d) { State.pages.collections = d; renderPage(); }
+      });
+    });
+    grid.appendChild(card);
+  });
+  area.appendChild(grid);
+}
+
+function renderComic(area, data) {
+  let items = data.items || [];
+  const isPagination = data.viewMode === "pagination";
+  let pageSize = data.pageSize || 48;
+  if (!State._comicPage) State._comicPage = 1;
+  let totalPages = 1;
+  if (isPagination) {
+    totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+    if (State._comicPage > totalPages) State._comicPage = totalPages;
+    const start = (State._comicPage - 1) * pageSize;
+    items = items.slice(start, start + pageSize);
+  }
+  renderGrid(area, items, State.currentPage, false);
+  if (isPagination) {
+    const bar = elem("div", "detail-actions");
+    bar.style.justifyContent = "flex-end";
+    const prev = elem("button", "ghost-btn", t("comic.pagination.prev", "Prev"));
+    const label = elem("span", "small-note", fmt(t("comic.pagination.status", "Page {current}/{total}"), { current: State._comicPage, total: totalPages }));
+    const next = elem("button", "ghost-btn", t("comic.pagination.next", "Next"));
+    prev.disabled = State._comicPage <= 1;
+    next.disabled = State._comicPage >= totalPages;
+    prev.addEventListener("click", () => { State._comicPage--; renderPage(); });
+    next.addEventListener("click", () => { State._comicPage++; renderPage(); });
+    bar.appendChild(prev); bar.appendChild(label); bar.appendChild(next);
+    area.appendChild(bar);
+  }
+}
+
+function renderTable(area, items, page) {
+  const table = elem("table", "table");
+  const thead = elem("thead");
+  const htr = elem("tr");
+  [t("detail.cover", "Cover"), t("detail.title", "Title"), t("detail.author", "Author"), t("detail.tags", "Tags"), t("detail.path", "Path")]
+    .forEach((h) => htr.appendChild(elem("th", null, h)));
+  thead.appendChild(htr);
+  table.appendChild(thead);
+  const tbody = elem("tbody");
+  items.forEach((item) => {
+    const tr = elem("tr");
+    if (State.selected[page] === item.id) tr.classList.add("selected");
+    const coverTd = elem("td");
+    if (item.cover) { const img = elem("img", "mini-cover"); img.src = item.cover; coverTd.appendChild(img); }
+    tr.appendChild(coverTd);
+    tr.appendChild(elem("td", null, item.title));
+    tr.appendChild(elem("td", null, item.author || ""));
+    tr.appendChild(elem("td", null, (item.tags || []).join(", ")));
+    tr.appendChild(elem("td", null, item.path || ""));
+    tr.addEventListener("click", () => selectResource(page, item.id, tr));
+    tr.addEventListener("dblclick", () => State.bridge.openResource(page, item.id));
+    tr.addEventListener("contextmenu", (e) => { e.preventDefault(); openContextMenu(e, page, item, false); });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  area.appendChild(table);
+}
+
+function buildCover(item, cls) {
+  if (item.cover) {
+    const img = elem("img", cls);
+    img.src = item.cover;
+    img.alt = item.title || "";
+    img.loading = "lazy";
+    img.onerror = () => { img.replaceWith(buildCoverFallback(item, cls)); };
+    return img;
+  }
+  return buildCoverFallback(item, cls);
+}
+
+function buildCoverFallback(item, cls) {
+  const box = elem("div", cls === "cover" ? "cover-fallback" : "detail-cover-fallback");
+  box.appendChild(elem("span", null, item.title || ""));
+  return box;
+}
+
+function buildEmpty(text) { return elem("div", "empty-state", text); }
+
+/* ---------- selection & detail ---------- */
+function selectResource(page, id, node) {
+  State.selected[page] = id;
+  const container = node.parentElement;
+  if (container) container.querySelectorAll(".selected").forEach((n) => n.classList.remove("selected"));
+  node.classList.add("selected");
+  State.bridge.getDetail(page, id, (json) => { const d = safeParse(json); renderDetail(d); });
+}
+
+function refreshDetailIfSelected() {
+  const id = State.selected[State.currentPage];
+  if (id) State.bridge.getDetail(State.currentPage, id, (json) => renderDetail(safeParse(json)));
+}
+
+function renderDetailEmpty() {
+  $("detailEmpty").classList.remove("hidden");
+  $("detailContent").classList.add("hidden");
+}
+
+function renderDetail(d) {
+  if (!d || !d.id) { renderDetailEmpty(); return; }
+  const empty = $("detailEmpty");
+  const content = $("detailContent");
+  empty.classList.add("hidden");
+  content.classList.remove("hidden");
+  clear(content);
+  content.appendChild(buildCover(d, "detail-cover"));
+  content.appendChild(elem("h2", null, d.title));
+
+  const meta = elem("div", "detail-meta");
+  const isComic = COMIC_PAGES.has(State.currentPage);
+  if (d.author) meta.appendChild(buildDetailBlock(t("detail.author", "Author"), d.author));
+  if (d.publisher && d.publisher.toLowerCase() !== "unknown") meta.appendChild(buildDetailBlock(t("detail.publisher", "Publisher"), d.publisher));
+  if (isComic && d.imageCount) meta.appendChild(buildDetailBlock(t("detail.images", "Images"), String(d.imageCount)));
+  if (d.tags && d.tags.length) meta.appendChild(buildDetailBlock(t("detail.tags", "Tags"), d.tags.join("、")));
+  if (d.bookCollections && d.bookCollections.length) {
+    meta.appendChild(buildDetailBlock(t("detail.collections", "Collections"), d.bookCollections.map((c) => c.name).join("、")));
+  }
+  if (d.path) meta.appendChild(buildDetailBlock(t("detail.file", "File"), d.path));
+  if (d.info) meta.appendChild(buildDetailBlock(t("detail.preview", "Text Preview"), d.info));
+  content.appendChild(meta);
+
+  const actions = elem("div", "detail-actions");
+  const openBtn = elem("button", "primary-btn", t("detail.open", "Open"));
+  openBtn.addEventListener("click", () => State.bridge.openResource(State.currentPage, d.id));
+  actions.appendChild(openBtn);
+  const favBtn = elem("button", "ghost-btn", d.isFavorite ? t("detail.favorite_remove", "Remove from Favorites") : t("detail.favorite_add", "Add to Favorites"));
+  favBtn.addEventListener("click", () => State.bridge.toggleFavorite(State.currentPage, d.id, () => refreshDetailIfSelected()));
+  actions.appendChild(favBtn);
+  if (!isComic) {
+    const qa = elem("button", "ghost-btn", t("detail.quick_add", "Quick Add"));
+    qa.addEventListener("click", () => openQuickAddModal(d));
+    actions.appendChild(qa);
+  }
+  content.appendChild(actions);
+}
+
+function buildDetailBlock(label, value) {
+  const block = elem("div", "detail-block");
+  const strong = elem("strong", null, label + "：");
+  block.appendChild(strong);
+  block.appendChild(document.createTextNode(value));
+  return block;
+}
+
+/* ---------- context menu ---------- */
+function openContextMenu(event, page, item, isCollectionDetail) {
+  const menu = $("contextMenu");
+  clear(menu);
+  const isComic = COMIC_PAGES.has(page);
+  const add = (label, fn, danger) => {
+    const btn = elem("button", danger ? "danger-btn" : null, label);
+    btn.addEventListener("click", () => { hideContextMenu(); fn(); });
+    menu.appendChild(btn);
+  };
+  add(isComic ? t("menu.open_cover", "Open Cover") : t("menu.open_external", "Open External"), () => State.bridge.openResource(page, item.id));
+  if (isComic) {
+    const favLabel = page === "comic_fav" ? t("menu.comic_fav_remove", "Remove from Comic Fav") : t("menu.comic_fav_add", "Add to Comic Fav");
+    add(favLabel, () => State.bridge.toggleFavorite(page, item.id, () => {}));
+  } else {
+    add(t("menu.quick_add", "Quick Add Tag / Collection"), () => openQuickAddModal(item));
+    add(t("menu.favorite_add", "Add to Favorites"), () => State.bridge.toggleFavorite(page, item.id, () => {}));
+    if (isCollectionDetail) {
+      const cid = currentPageData().collectionId;
+      menu.appendChild(elem("hr"));
+      add(t("menu.collection_remove", "Remove from Collection"), () => State.bridge.removeFromCollection(item.id, cid), true);
+    }
+  }
+  menu.classList.remove("hidden");
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  let x = event.clientX, y = event.clientY;
+  if (x + mw > window.innerWidth) x = window.innerWidth - mw - 8;
+  if (y + mh > window.innerHeight) y = window.innerHeight - mh - 8;
+  menu.style.left = x + "px";
+  menu.style.top = y + "px";
+}
+
+function hideContextMenu() { $("contextMenu").classList.add("hidden"); }
+document.addEventListener("click", (e) => { if (!$("contextMenu").contains(e.target)) hideContextMenu(); });
+document.addEventListener("scroll", hideContextMenu, true);
+
+/* ---------- toasts ---------- */
+function showToast(title, message, kind) {
+  const stack = $("toastStack");
+  const toast = elem("div", "toast");
+  toast.appendChild(elem("span", "toast-dot"));
+  const body = elem("div", "toast-body");
+  body.appendChild(elem("strong", null, title || ""));
+  if (message) body.appendChild(elem("div", "toast-msg", message));
+  toast.appendChild(body);
+  stack.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add("leaving");
+    setTimeout(() => toast.remove(), 240);
+  }, 5200);
+}
+
+/* ---------- scan progress ---------- */
+function updateScanState(d) {
+  State._scanRunning = d.running;
+  const btn = $("scanBtn");
+  if (d.running) { btn.textContent = t("topbar.scanning", "Scanning..."); btn.disabled = true; }
+  else { btn.textContent = t("topbar.scan", "Scan"); btn.disabled = false; }
+  const bar = document.getElementById("scanProgressBar");
+  if (bar && !d.running) bar.style.width = "0%";
+}
+
+function updateScanProgress(d) {
+  const bar = document.getElementById("scanProgressBar");
+  if (!bar) return;
+  const pct = d.total > 0 ? Math.min(100, Math.round((d.current / d.total) * 100)) : 0;
+  bar.style.width = pct + "%";
+  const label = document.getElementById("scanProgressLabel");
+  if (label) label.textContent = fmt("{cur}/{tot} · {lbl}", { cur: d.current, tot: d.total, lbl: d.label || "" });
+}
+
+/* ---------- modals ---------- */
+function openModal(build) {
+  const overlay = $("overlay");
+  clear(overlay);
+  overlay.classList.remove("hidden");
+  const modal = elem("div", "modal");
+  build(modal, closeModal);
+  overlay.appendChild(modal);
+  overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
+}
+function closeModal() { const o = $("overlay"); o.classList.add("hidden"); clear(o); o.onclick = null; }
+
+function modalHeader(modal, title, onClose) {
+  const head = elem("div", "modal-title");
+  head.appendChild(elem("h3", null, title));
+  const x = elem("button", "close-x", "×");
+  x.addEventListener("click", onClose);
+  head.appendChild(x);
+  modal.appendChild(head);
+}
+
+function openNewCollectionModal() {
+  openModal((modal, close) => {
+    modalHeader(modal, t("common.new_list", "New List"), close);
+    const field = elem("div", "field");
+    const input = elem("input");
+    input.placeholder = t("quick_add.new_collection_placeholder", "New collection name...");
+    field.appendChild(input);
+    modal.appendChild(field);
+    const actions = elem("div", "modal-actions");
+    const cancel = elem("button", "ghost-btn", t("common.cancel", "Cancel"));
+    cancel.addEventListener("click", close);
+    const confirm = elem("button", "primary-btn", t("common.confirm", "Confirm"));
+    confirm.addEventListener("click", () => {
+      const name = input.value.trim();
+      if (!name) return;
+      State.bridge.createCollection(name, () => {
+        close();
+        State.bridge.openCollection(0, (json) => { const d = safeParse(json); if (d) { State.pages.collections = d; if (State.currentPage === "collections") renderPage(); } });
+      });
+    });
+    actions.appendChild(cancel); actions.appendChild(confirm);
+    modal.appendChild(actions);
+    input.focus();
+  });
+}
+
+function openQuickAddModal(item) {
+  openModal((modal, close) => {
+    modalHeader(modal, t("detail.quick_add", "Quick Add"), close);
+    modal.appendChild(elem("p", "small-note", item.title || ""));
+
+    // tags
+    const tagField = elem("div", "field");
+    tagField.appendChild(elem("label", null, t("detail.tags", "Tags")));
+    const tagInput = elem("input");
+    tagInput.placeholder = t("quick_add.tag_placeholder", "Type tag...");
+    tagField.appendChild(tagInput);
+    const chipRow = elem("div", "chip-row");
+    const renderChips = (tags) => {
+      clear(chipRow);
+      (tags || []).forEach((tag) => {
+        const chip = elem("span", "chip");
+        chip.appendChild(document.createTextNode(tag));
+        const x = elem("span", "chip-x", "×");
+        x.addEventListener("click", () => State.bridge.removeTag(item.id, tag));
+        chip.appendChild(x);
+        chipRow.appendChild(chip);
+      });
+    };
+    renderChips(item.tags);
+    tagField.appendChild(chipRow);
+    tagInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        const value = tagInput.value.trim();
+        if (value) { State.bridge.addTag(item.id, value); const nt = (item.tags || []).concat([value]); item.tags = nt; renderChips(nt); tagInput.value = ""; }
+      }
+    });
+    modal.appendChild(tagField);
+
+    // collections
+    const collField = elem("div", "field");
+    collField.appendChild(elem("label", null, t("detail.collections", "Collections")));
+    const list = elem("div", "list-stack");
+    collField.appendChild(list);
+    modal.appendChild(collField);
+
+    State.bridge.getCollections((cjson) => {
+      const collections = safeParse(cjson) || [];
+      State.bridge.getDetail(State.currentPage, item.id, (djson) => {
+        const detail = safeParse(djson) || {};
+        const memberIds = new Set((detail.bookCollections || []).map((c) => c.id));
+        clear(list);
+        collections.forEach((coll) => {
+          const row = elem("div", "list-item");
+          row.appendChild(elem("span", null, coll.name));
+          const cb = elem("input");
+          cb.type = "checkbox";
+          cb.checked = memberIds.has(coll.id);
+          cb.addEventListener("change", () => State.bridge.setCollectionMembership(item.id, coll.id, cb.checked));
+          row.appendChild(cb);
+          list.appendChild(row);
+        });
+      });
+    });
+
+    const actions = elem("div", "modal-actions");
+    const done = elem("button", "primary-btn", t("common.close", "Close"));
+    done.addEventListener("click", () => { close(); refreshDetailIfSelected(); });
+    actions.appendChild(done);
+    modal.appendChild(actions);
+  });
+}
+
+/* ---------- settings ---------- */
+const SETTINGS_SECTIONS = [
+  ["general", "settings.nav.general"],
+  ["appearance", "settings.nav.appearance"],
+  ["paths", "settings.nav.paths"],
+  ["tasks", "settings.nav.tasks"],
+  ["errors", "settings.nav.errors"],
+];
+
+function renderSettings() {
+  $("pageTitle").textContent = t("settings.title", "Settings");
+  $("pageSubtitle").textContent = "";
+  clear($("pageHeadTools"));
+  $("viewModeToggle").style.display = "none";
+  const area = $("contentArea");
+  clear(area);
+  area.classList.remove("view-enter"); void area.offsetWidth; area.classList.add("view-enter");
+
+  const grid = elem("div", "settings-grid");
+  const nav = elem("div", "settings-nav");
+  const panel = elem("div");
+  panel.style.minWidth = "0";
+  if (!State._settingsSection) State._settingsSection = "general";
+  SETTINGS_SECTIONS.forEach(([id, key]) => {
+    const btn = elem("button", State._settingsSection === id ? "active" : null, t(key));
+    btn.addEventListener("click", () => { State._settingsSection = id; renderSettings(); });
+    nav.appendChild(btn);
+  });
+  grid.appendChild(nav);
+  grid.appendChild(panel);
+  area.appendChild(grid);
+
+  const section = State._settingsSection;
+  if (section === "general") renderSettingsGeneral(panel);
+  else if (section === "appearance") renderSettingsAppearance(panel);
+  else if (section === "paths") renderSettingsPaths(panel);
+  else if (section === "tasks") renderSettingsTasks(panel);
+  else renderSettingsErrors(panel);
+}
+
+function settingCard(title) {
+  const card = elem("div", "settings-card");
+  if (title) card.appendChild(elem("h3", null, title));
+  return card;
+}
+
+function selectField(labelKey, key, options, current) {
+  const field = elem("div", "field");
+  field.appendChild(elem("label", null, t(labelKey)));
+  const sel = elem("select");
+  options.forEach(([value, label]) => {
+    const opt = elem("option", null, label);
+    opt.value = value;
+    if (String(value) === String(current)) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  sel.addEventListener("change", () => State.bridge.setSetting(key, String(sel.value)));
+  field.appendChild(sel);
+  return field;
+}
+
+function switchField(labelKey, key, checked) {
+  const field = elem("div", "field field-inline");
+  const label = elem("label", null, t(labelKey));
+  label.style.marginBottom = "0";
+  const sw = elem("label", "switch");
+  const input = elem("input"); input.type = "checkbox"; input.checked = !!checked;
+  input.addEventListener("change", () => State.bridge.setSetting(key, input.checked ? "true" : "false"));
+  sw.appendChild(input);
+  sw.appendChild(elem("span", "track"));
+  field.appendChild(label);
+  field.appendChild(sw);
+  return field;
+}
+
+function textField(labelKey, key, value, type) {
+  const field = elem("div", "field");
+  field.appendChild(elem("label", null, t(labelKey)));
+  const input = elem("input");
+  input.type = type || "text";
+  input.value = value || "";
+  input.addEventListener("change", () => State.bridge.setSetting(key, String(input.value)));
+  field.appendChild(input);
+  return field;
+}
+
+function renderSettingsGeneral(panel) {
+  const s = State.settings;
+  const card = settingCard(t("settings.nav.general", "General"));
+  const grid = elem("div", "form-grid");
+  grid.appendChild(selectField("settings.language", "language", [["en", "English"], ["zh-cn", "简体中文"]], s.language));
+  grid.appendChild(selectField("settings.search_font", "searchFontSize", [[12,"12"],[15,"15"],[18,"18"],[20,"20"]], s.searchFontSize));
+  grid.appendChild(selectField("settings.scan_depth", "scanDepth", [[1,"1"],[2,"2"],[3,"3"]], s.scanDepth));
+  grid.appendChild(selectField("settings.hash", "hashStrategy", [["size_mtime","Fast"],["sha1","Strict"]], s.hashStrategy));
+  grid.appendChild(selectField("settings.card_spacing", "cardSpacing", [[10,"10"],[14,"14"],[18,"18"],[22,"22"]], s.cardSpacing));
+  grid.appendChild(selectField("settings.text_preview_chars", "textPreviewChars", [[500,"500"],[1000,"1000"],[2000,"2000"]], s.textPreviewChars));
+  grid.appendChild(selectField("settings.comic_view_mode", "comicViewMode", [["waterfall","Waterfall"],["pagination","Pagination"]], s.comicViewMode));
+  grid.appendChild(selectField("settings.comic_page_size", "comicPageSize", [[24,"24"],[48,"48"],[72,"72"],[96,"96"]], s.comicPageSize));
+  card.appendChild(grid);
+  const toggles = elem("div", "form-grid");
+  toggles.appendChild(switchField("settings.scan_startup", "scanOnStartup", s.scanOnStartup));
+  toggles.appendChild(switchField("settings.auto_scan", "autoScanOnPathChange", s.autoScanOnPathChange));
+  card.appendChild(toggles);
+  panel.appendChild(card);
+}
+
+function renderSettingsAppearance(panel) {
+  const s = State.settings;
+  const fontCard = settingCard(t("settings.nav.appearance", "Appearance & Theme"));
+  const grid = elem("div", "form-grid");
+  grid.appendChild(selectField("settings.font_source", "fontSource", [["system","System"],["project","Project fonts"]], s.fontSource));
+  const fontOptions = [["", "(default)"]].concat((s.projectFonts || []).map((f) => [f, f]));
+  grid.appendChild(selectField("settings.font_family", "fontFamily", fontOptions, s.fontFamily));
+  grid.appendChild(selectField("settings.cover_border_width", "coverBorderWidth", [[1,"1"],[2,"2"],[3,"3"],[4,"4"]], s.coverBorderWidth));
+  grid.appendChild(textField("settings.cover_border_color", "coverBorderColor", s.coverBorderColor, "text"));
+  fontCard.appendChild(grid);
+  panel.appendChild(fontCard);
+
+  const themeCard = settingCard(t("settings.night.title", "Night mode"));
+  themeCard.appendChild(elem("p", "small-note", t("settings.night.desc", "Read local time periodically and transition between day and night UI.")));
+  const seg = elem("div", "segmented");
+  [["auto","theme.auto"],["day","theme.day"],["night","theme.night"]].forEach(([mode, key]) => {
+    const btn = elem("button", State.theme.mode === mode ? "active" : null, t(key));
+    btn.addEventListener("click", () => { setThemeMode(mode); renderSettings(); });
+    seg.appendChild(btn);
+  });
+  const segWrap = elem("div", "field");
+  segWrap.appendChild(elem("label", null, t("settings.night.mode", "Theme mode")));
+  segWrap.appendChild(seg);
+  themeCard.appendChild(segWrap);
+
+  const tgrid = elem("div", "form-grid");
+  tgrid.appendChild(switchField("settings.night.auto", "__themeAuto", State.theme.autoEnabled));
+  tgrid.querySelector("input").addEventListener("change", (e) => { State.theme.autoEnabled = e.target.checked; persistTheme(); startThemeEngine(); });
+  tgrid.appendChild(themeTimeField("settings.night.start", "nightStart", State.theme.nightStart));
+  tgrid.appendChild(themeTimeField("settings.night.resume", "dayResume", State.theme.dayResume));
+  tgrid.appendChild(themeSelectField("settings.night.frequency", "checkFrequency", [[1,"1"],[5,"5"],[15,"15"],[30,"30"]], State.theme.checkFrequency));
+  tgrid.appendChild(themeSelectField("settings.night.transition", "transitionMinutes", [[1,"1"],[3,"3"],[5,"5"],[10,"10"]], State.theme.transitionMinutes));
+  themeCard.appendChild(tgrid);
+  panel.appendChild(themeCard);
+}
+
+function themeTimeField(labelKey, prop, value) {
+  const field = elem("div", "field");
+  field.appendChild(elem("label", null, t(labelKey)));
+  const input = elem("input"); input.type = "time"; input.value = value;
+  input.addEventListener("change", () => { State.theme[prop] = input.value; persistTheme(); startThemeEngine(); });
+  field.appendChild(input);
+  return field;
+}
+
+function themeSelectField(labelKey, prop, options, current) {
+  const field = elem("div", "field");
+  field.appendChild(elem("label", null, t(labelKey)));
+  const sel = elem("select");
+  options.forEach(([value, label]) => { const opt = elem("option", null, label); opt.value = value; if (String(value) === String(current)) opt.selected = true; sel.appendChild(opt); });
+  sel.addEventListener("change", () => { State.theme[prop] = Number(sel.value); persistTheme(); startThemeEngine(); });
+  field.appendChild(sel);
+  return field;
+}
+
+function renderSettingsPaths(panel) {
+  const s = State.settings;
+  panel.appendChild(buildRootCard(t("settings.roots.library", "Library roots"), "library", (s.libraryRoots || []).map((p) => ({ path: p }))));
+  panel.appendChild(buildRootCard(t("settings.roots.comic", "Comic roots"), "comic", (s.comicRoots || []).map((p) => ({ path: p }))));
+  panel.appendChild(buildRootCard(t("settings.roots.text", "Text novel roots"), "text", (s.textRoots || []).map((r) => ({ path: r.path || r })), true));
+}
+
+function buildRootCard(title, kind, roots, withRules) {
+  const card = settingCard(title);
+  const add = elem("button", "ghost-btn", t("settings.roots.add", "Add folder"));
+  add.addEventListener("click", () => State.bridge.addRoot(kind));
+  card.appendChild(add);
+  const list = elem("div", "path-list");
+  roots.forEach((root) => {
+    const row = elem("div", "path-row");
+    const del = elem("button", "danger-btn", t("settings.roots.delete", "Delete"));
+    del.addEventListener("click", () => State.bridge.removeRoot(kind, root.path));
+    row.appendChild(del);
+    if (withRules) {
+      const rules = elem("button", "ghost-btn", t("settings.roots.rules", "Rules"));
+      rules.addEventListener("click", () => State.bridge.openTextRules(root.path));
+      row.appendChild(rules);
+    }
+    row.appendChild(elem("span", "path-text", root.path));
+    list.appendChild(row);
+  });
+  card.appendChild(list);
+  return card;
+}
+
+function renderSettingsTasks(panel) {
+  const card = settingCard(t("settings.nav.tasks", "Scan & Tasks"));
+  const progressWrap = elem("div", "settings-card");
+  const bar = elem("div", "progress");
+  const span = elem("span"); span.id = "scanProgressBar";
+  bar.appendChild(span);
+  progressWrap.appendChild(bar);
+  const label = elem("p", "small-note"); label.id = "scanProgressLabel";
+  progressWrap.appendChild(label);
+  const scanRow = elem("div", "detail-actions");
+  [["library","settings.tasks.scan_library"],["comic","settings.tasks.scan_comic"],["text","settings.tasks.scan_text"]].forEach(([scope, key]) => {
+    const btn = elem("button", "primary-btn", t(key));
+    btn.addEventListener("click", () => State.bridge.startScan(scope));
+    scanRow.appendChild(btn);
+  });
+  card.appendChild(scanRow);
+
+  const thumbRow = elem("div", "detail-actions");
+  [["cleanup","library","settings.tasks.cleanup_library"],["regenerate","library","settings.tasks.regen_library"],
+   ["cleanup","comic","settings.tasks.cleanup_comic"],["regenerate","comic","settings.tasks.regen_comic"]].forEach(([kind, scope, key]) => {
+    const btn = elem("button", "ghost-btn", t(key));
+    btn.addEventListener("click", () => State.bridge.startThumbnailTask(kind, scope));
+    thumbRow.appendChild(btn);
+  });
+  card.appendChild(thumbRow);
+
+  const fonts = elem("button", "ghost-btn", t("settings.tasks.reload_fonts", "Reload Fonts"));
+  fonts.addEventListener("click", () => State.bridge.reloadFonts());
+  card.appendChild(fonts);
+
+  panel.appendChild(card);
+  panel.appendChild(progressWrap);
+}
+
+function renderSettingsErrors(panel) {
+  const card = settingCard(t("settings.nav.errors", "Error logs"));
+  const refresh = elem("button", "ghost-btn", t("settings.errors.refresh", "Refresh"));
+  refresh.addEventListener("click", () => State.bridge.getErrorLogs((text) => { box.textContent = text; }));
+  card.appendChild(refresh);
+  const box = elem("pre", "log-box"); box.id = "errorLogBox";
+  box.textContent = State.errorLogs || "";
+  card.appendChild(box);
+  panel.appendChild(card);
+}
+
+/* ---------- theme engine ---------- */
+function persistTheme() {
+  State.bridge.setThemeSettings(JSON.stringify(State.theme));
+}
+
+function applyThemeConfig(theme) {
+  if (theme) State.theme = Object.assign(State.theme, theme);
+}
+
+function parseTimeToMinutes(value, fallback) {
+  const m = String(value || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return fallback;
+  return Math.max(0, Math.min(23, +m[1])) * 60 + Math.max(0, Math.min(59, +m[2]));
+}
+
+function isNightNow(start, end, now) {
+  if (start === end) return false;
+  if (start < end) return now >= start && now < end;
+  return now >= start || now < end;
+}
+
+function computedTheme() {
+  const start = parseTimeToMinutes(State.theme.nightStart, 22 * 60);
+  const end = parseTimeToMinutes(State.theme.dayResume, 7 * 60);
+  const d = new Date();
+  return isNightNow(start, end, d.getHours() * 60 + d.getMinutes()) ? "night" : "day";
+}
+
+function applyTheme(theme, transitionMs) {
+  document.documentElement.style.setProperty("--active-theme-transition-duration", transitionMs + "ms");
+  document.body.dataset.theme = theme === "night" ? "night" : "day";
+}
+
+function setThemeMode(mode) {
+  State.theme.mode = (mode === "day" || mode === "night") ? mode : "auto";
+  if (State.theme.mode === "auto") { State.theme.autoEnabled = true; applyTheme(computedTheme(), 420); }
+  else applyTheme(State.theme.mode, 420);
+  persistTheme();
+  startThemeEngine();
+}
+
+function startThemeEngine() {
+  if (State.themeTimer) { clearInterval(State.themeTimer); State.themeTimer = null; }
+  const mode = State.theme.mode || "auto";
+  if (mode === "auto") applyTheme(computedTheme(), 420);
+  else applyTheme(mode, 420);
+  if (mode === "auto" && State.theme.autoEnabled) {
+    const freq = Math.max(1, Number(State.theme.checkFrequency) || 5);
+    State.themeTimer = setInterval(() => {
+      applyTheme(computedTheme(), Math.max(1, Number(State.theme.transitionMinutes) || 3) * 60000);
+    }, freq * 60000);
+  }
+}
+
+/* ---------- top bar interactions ---------- */
+function initTopbar() {
+  const input = $("searchInput");
+  let debounce = null;
+  input.addEventListener("input", () => {
+    if (State.currentPage === "settings") return;
+    State.searchQuery = input.value;
+    if (debounce) clearTimeout(debounce);
+    debounce = setTimeout(commitSearch, 160);
+    updateSuggestions();
+  });
+  input.addEventListener("focus", updateSuggestions);
+  document.addEventListener("click", (e) => {
+    if (!$("suggestions").contains(e.target) && e.target !== input) closeSuggestions();
+  });
+  $("scanBtn").addEventListener("click", () => State.bridge.startScan("all"));
+  $("settingsBtn").addEventListener("click", () => selectPage("settings"));
+  document.querySelectorAll("#viewModeToggle button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#viewModeToggle button").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      State.viewMode = btn.dataset.mode;
+      if (State.currentPage !== "settings") renderPage();
+    });
+  });
+}
+
+function searchContext() { return State.currentPage === "text_novel" ? "text_novel" : "library"; }
+
+function commitSearch() {
+  const ctx = searchContext();
+  State.bridge.search(ctx, State.searchQuery, (json) => {
+    const data = safeParse(json);
+    if (!data) return;
+    State.pages[ctx] = data;
+    if (State.currentPage === ctx) renderPage();
+  });
+}
+
+function updateSuggestions() {
+  const query = $("searchInput").value;
+  if (State.currentPage === "settings" || COMIC_PAGES.has(State.currentPage) || State.currentPage === "collections") { closeSuggestions(); return; }
+  State.bridge.getSuggestions(searchContext(), query, (json) => {
+    const items = safeParse(json) || [];
+    const box = $("suggestions");
+    clear(box);
+    if (!items.length) { closeSuggestions(); return; }
+    items.forEach((s) => {
+      const row = elem("div", "suggestion-row");
+      row.appendChild(elem("span", "suggestion-kind", s.group));
+      row.appendChild(elem("span", "suggestion-text", s.label + (s.description ? " — " + s.description : "")));
+      row.addEventListener("click", () => {
+        $("searchInput").value = s.query_value;
+        State.searchQuery = s.query_value;
+        commitSearch();
+        closeSuggestions();
+      });
+      box.appendChild(row);
+    });
+    box.classList.add("open");
+  });
+}
+
+function closeSuggestions() { $("suggestions").classList.remove("open"); }
+
+/* ---------- boot ---------- */
+document.addEventListener("DOMContentLoaded", () => {
+  initTopbar();
+  initChannel();
+});

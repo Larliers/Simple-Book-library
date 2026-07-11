@@ -1,6 +1,6 @@
 ﻿# src 结构说明书（精简且完整）
 
-更新时间：2026-06-12
+更新时间：2026-07-11
 
 ## 1. 文档目标
 - 保留字符串式文件路径结构。
@@ -64,6 +64,16 @@ src/
    └─ ui/
       ├─ __init__.py
       ├─ app_window.py
+      ├─ web_window.py
+      ├─ web_bridge.py
+      ├─ web_scheme.py
+      ├─ web/
+      │  ├─ index.html
+      │  ├─ css/
+      │  │  └─ app.css
+      │  └─ js/
+      │     ├─ app.js
+      │     └─ qwebchannel.js
       ├─ dialogs/
       │  ├─ __init__.py
       │  ├─ add_tag_dialog.py
@@ -104,7 +114,7 @@ src/
 ## 3. 每个代码组件的用处介绍
 
 ### 3.1 入口与运行目录
-- `src/main.py`：应用入口；设置应用图标，创建 Qt 应用并启动主窗口。
+- `src/main.py`：应用入口；在创建 `QApplication` 前设置 `AA_ShareOpenGLContexts` 并注册 `app://` 自定义 scheme，随后创建 Qt 应用并启动 WebEngine 主窗口 `WebAppWindow`（`--check-pymupdf` 自检分支保留）。
 - `src/tests/test_rule_engine.py`：Text 规则引擎回归测试（步骤提取、行范围 warning、回退链、非法正则容错）。
 - `src/tests/test_rule_preview.py`：Text 规则预览回归测试（自动样本、规则链回退、非法正则失败、空目录无样本）。
 - `src/tests/test_text_rule_dialog.py`：Text 规则弹窗 smoke 测试（旧 JSON 加载、字段切换、上下文参数、预览状态、格式诊断、多样本预览、窗口尺寸记忆、帮助文档布局）。
@@ -143,7 +153,14 @@ src/
 
 ### 3.5 UI 主组件（bookhub/ui）
 - `src/bookhub/ui/__init__.py`：UI 包导出入口。
-- `src/bookhub/ui/app_window.py`：主窗口装配；连接 sidebar、topbar、pages 与后端任务；把扫描线程进度转发给 SettingsPage；按当前页面将顶部搜索路由到 Library 或 Text Novel 资源集。
+- `src/bookhub/ui/web_window.py`：当前主窗口 `WebAppWindow`；承载 `QWebEngineView` + `QWebChannel`，注册 `app://` scheme handler，装配 `UiBridge`；负责后端编排——扫描/缩略图 worker（进度与状态经 Bridge 信号推给前端）、原生 `QFileDialog` 添加根目录、原生 `TextRuleDialog` 编辑文本规则、字体解析与应用、设置项写库（`apply_setting`）。
+- `src/bookhub/ui/web_bridge.py`：`UiBridge(QObject)` 前后端桥；`@Slot` 暴露 `getBootstrap/search/getSuggestions/getDetail/openResource/toggleFavorite/openCollection/closeCollection/getTags/getCollections/addTag/removeTag/createCollection/setCollectionMembership/removeFromCollection/setSetting/setThemeSettings/addRoot/removeRoot/openTextRules/startScan/startThumbnailTask/reloadFonts/getErrorLogs`；`Signal` 推送 `resourcesChanged/toast/scanProgress/scanState/settingsChanged/errorLogsChanged/languageChanged`；内部持有 `LibraryViewModel`（库/文本双上下文）并把书籍/文本/漫画/收藏/合集统一构造为前端资源载荷；封面路径写入 scheme 白名单集合。
+- `src/bookhub/ui/web_scheme.py`：`app://` 自定义 URL scheme；`register_app_scheme()`（须在 QApplication 前调用）、`to_local_path()`（`file://`/裸路径归一化）、`AppSchemeHandler`（`app://app/*` 服务 `web/` 静态资源；`app://img/x?p=` 仅服务白名单封面图，越权拒绝）。
+- `src/bookhub/ui/web/index.html`：玻璃拟态 UI 骨架（侧栏/顶栏/主区/详情栏/遮罩/toast/右键菜单挂载点），通过 `app://` 加载 css 与 js。
+- `src/bookhub/ui/web/css/app.css`：玻璃拟态样式与全部动效（hover 上浮、视图淡入、模态/toast 动画、日/夜主题变量与跨帧过渡、开关/进度条等）。
+- `src/bookhub/ui/web/js/app.js`：前端控制器；QWebChannel 初始化、bootstrap 渲染、页面路由与网格/列表/漫画/合集渲染、详情栏、搜索与建议、右键菜单、toast、扫描进度、设置页两向绑定、Add Tag/Quick Add/New Collection 模态、日/夜主题引擎（Auto/Day/Night + 定时检查 + 缓慢过渡）。
+- `src/bookhub/ui/web/js/qwebchannel.js`：Qt 官方 `qwebchannel.js` 原样内置（从 Qt 资源导出）。
+- `src/bookhub/ui/app_window.py`：旧版纯 QSS 主窗口装配（Sidebar+TopBar+QStackedWidget pages）；WebEngine 重写后不再作为入口，保留其页面/对话框供 `web_window.py` 复用与回退参考。
 
 ### 3.6 对话框组件（bookhub/ui/dialogs）
 - `src/bookhub/ui/dialogs/__init__.py`：对话框包入口。
@@ -189,6 +206,7 @@ src/
 - `src/bookhub/ui/widgets/slide_toast.py`：右下角滑入提示组件。
 
 ## 4. 当前关键实现（简要）
+- 2026-07-11 UI 重写（WebEngine 玻璃拟态）：UI 层从纯 QSS 迁移为 `QWebEngineView` 加载 `src/bookhub/ui/web/` 前端，`QWebChannel` 经 `UiBridge` 与后端双向通信；`app://` 自定义 scheme 服务前端资源并以白名单方式代理封面图；内建完整日/夜主题引擎（Auto/Day/Night + 本地时间自动切换 + 缓慢过渡）与 Web 化设置页（两向绑定到 `LibraryRepository`）。`main.py` 入口切换为 `WebAppWindow`；复杂 Text Rules 仍复用原生 `TextRuleDialog`。`library/` 后端与数据结构未改动；`build_nuitka.ps1` 增加 `web/` 数据目录与 `--include-qt-plugins=all` 以携带 QtWebEngine 运行时；新增 `src/tests/test_web_bridge_smoke.py` 覆盖桥接与 scheme。`PySide6==6.6.1` 已内含 QtWebEngine，未新增 pip 依赖。旧 `app_window.py`/`pages/`/`widgets/`/`styles.py` 保留供复用与回退。
 - 运行依赖：`requirements.txt` 采用固定版本策略；在 Python 3.10.6 环境锁定 `PySide6==6.6.1` 以规避 `libshiboken/signature` 初始化崩溃。
 - 打包准备：新增书柜主题应用图标，`scripts/build_nuitka.ps1` 使用 `Nuitka==4.1.2` 构建 exe，并显式打包 `src/assets`、i18n locales、`fitz` 与 `pymupdf` 原始包目录；PyMuPDF 采用预编译 `.pyd/.dll` 随包携带并关闭 Nuitka excluded-module 运行时阻断；`scripts/`、`src/tests/`、运行数据库、扫描日志、缩略图缓存不进入发行包。
 - 2026-05-29 外部工具链注释：本次仅完成 Hue 离线落地与本地 MCP 集成（`F:\Coding_Dev\UI\hue*`、全局 `mcp.json`），`src/` 代码与目录结构未发生变更。

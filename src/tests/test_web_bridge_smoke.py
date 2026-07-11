@@ -1,0 +1,75 @@
+from __future__ import annotations
+
+import json
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SRC_ROOT = PROJECT_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+try:
+    from PySide6.QtWidgets import QApplication
+
+    from bookhub.library import LibraryRepository
+    from bookhub.ui.web_bridge import UiBridge, NAV_ITEMS
+    from bookhub.ui.web_scheme import WEB_ROOT, to_local_path
+
+    QT_AVAILABLE = True
+except Exception:  # pragma: no cover - optional UI dependency
+    QApplication = None  # type: ignore[assignment]
+    QT_AVAILABLE = False
+
+
+@unittest.skipUnless(QT_AVAILABLE, "PySide6/WebEngine is not available")
+class WebBridgeSmokeTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._app = QApplication.instance() or QApplication([])
+
+    def _make_bridge(self) -> UiBridge:
+        tmp = tempfile.mkdtemp(prefix="bookhub_web_")
+        repo = LibraryRepository(db_path=str(Path(tmp) / "library.db"))
+        return UiBridge(repo, set())
+
+    def test_bootstrap_has_all_pages(self) -> None:
+        bridge = self._make_bridge()
+        payload = json.loads(bridge.getBootstrap())
+        self.assertIn("strings", payload)
+        self.assertIn("settings", payload)
+        self.assertIn("theme", payload["settings"])
+        page_keys = {page for page, _, _ in NAV_ITEMS}
+        self.assertEqual(set(payload["pages"].keys()), page_keys)
+
+    def test_search_returns_json_payload(self) -> None:
+        bridge = self._make_bridge()
+        result = json.loads(bridge.search("library", "nonexistent-query-xyz"))
+        self.assertIn("items", result)
+        self.assertIsInstance(result["items"], list)
+
+    def test_theme_settings_persist(self) -> None:
+        bridge = self._make_bridge()
+        bridge.setThemeSettings(json.dumps({"mode": "night", "nightStart": "21:30"}))
+        theme = json.loads(bridge.getBootstrap())["settings"]["theme"]
+        self.assertEqual(theme["mode"], "night")
+        self.assertEqual(theme["nightStart"], "21:30")
+
+    def test_web_assets_present(self) -> None:
+        for rel in ("index.html", "css/app.css", "js/app.js", "js/qwebchannel.js"):
+            self.assertTrue((WEB_ROOT / rel).is_file(), f"missing web asset: {rel}")
+
+    def test_to_local_path_handles_file_url(self) -> None:
+        self.assertIsNone(to_local_path(""))
+        converted = to_local_path("file:///C:/tmp/cover.webp")
+        self.assertIsNotNone(converted)
+        self.assertTrue(converted.lower().endswith("cover.webp"))
+
+
+if __name__ == "__main__":
+    unittest.main()

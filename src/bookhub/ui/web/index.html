@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Simple Book Library</title>
+  <link rel="stylesheet" href="app://app/css/app.css">
+</head>
+<body data-theme="day">
+  <main class="app-shell">
+    <aside class="sidebar glass">
+      <div class="brand">
+        <div class="brand-title" data-str="sidebar.title">Bookshelf</div>
+        <div class="brand-subtitle" data-str="sidebar.subtitle">Local Database</div>
+      </div>
+      <nav class="side-list" id="navList" aria-label="Primary"></nav>
+      <div class="side-actions">
+        <button class="ghost-btn" id="settingsBtn" data-str="sidebar.settings">Settings</button>
+      </div>
+    </aside>
+
+    <header class="topbar glass">
+      <div class="search-box" role="search">
+        <span class="search-symbol" aria-hidden="true"></span>
+        <input id="searchInput" autocomplete="off" aria-label="Search" placeholder="Search...">
+      </div>
+      <div class="top-tools">
+        <div class="segmented" id="viewModeToggle" aria-label="View mode">
+          <button class="active" data-mode="grid" data-str="view.grid">Grid</button>
+          <button data-mode="list" data-str="view.list">List</button>
+        </div>
+        <button class="primary-btn" id="scanBtn" data-str="topbar.scan">Scan</button>
+      </div>
+      <div id="suggestions" class="suggestions glass"></div>
+    </header>
+
+    <section class="main-stage glass" id="mainStage">
+      <div class="page-head">
+        <div class="title-stack">
+          <h1 id="pageTitle">Library</h1>
+          <div class="subtitle" id="pageSubtitle"></div>
+        </div>
+        <div class="page-head-tools" id="pageHeadTools"></div>
+      </div>
+      <div class="content-split" id="contentArea"></div>
+    </section>
+
+    <aside class="detail-panel glass" id="detailPanel">
+      <div class="detail-empty" id="detailEmpty" data-str="detail.empty">Select an item to see its details.</div>
+      <div class="detail-content hidden" id="detailContent"></div>
+    </aside>
+  </main>
+
+  <div class="overlay hidden" id="overlay"></div>
+  <div class="toast-stack" id="toastStack"></div>
+  <div class="context-menu hidden" id="contextMenu"></div>
+
+  <script src="app://app/js/qwebchannel.js"></script>
+  <script src="app://app/js/app.js"></script>
+</body>
+</html>
