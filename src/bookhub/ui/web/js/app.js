@@ -207,6 +207,49 @@ function renderPageTools(page, data) {
     tools.appendChild(add);
     return;
   }
+  if (page === "favorites") {
+    const wrap = elem("div", "page-sort");
+    wrap.appendChild(elem("span", "small-note", t("favorites.sort.label", "Sort")));
+    const seg = elem("div", "segmented");
+    [["desc", "favorites.sort.added_desc", "Added Time: Newest First"],
+     ["asc", "favorites.sort.added_asc", "Added Time: Oldest First"]].forEach(([value, key, fb]) => {
+      const btn = elem("button", (data.sort || "desc") === value ? "active" : null, t(key, fb));
+      btn.addEventListener("click", () => {
+        State.bridge.setPageSort("favorites", value, (json) => {
+          const d = safeParse(json);
+          if (d) { State.pages.favorites = d; scheduleRenderPage(); }
+        });
+      });
+      seg.appendChild(btn);
+    });
+    wrap.appendChild(seg);
+    tools.appendChild(wrap);
+    return;
+  }
+  if (page === "comic" || page === "comic_fav") {
+    const wrap = elem("div", "page-sort");
+    wrap.appendChild(elem("span", "small-note", t("comic.sort.label", "Sort")));
+    const sel = elem("select", "sort-select");
+    [
+      ["folder_mtime_desc", "comic.sort.folder_mtime_desc", "Folder Date: Newest First"],
+      ["folder_mtime_asc", "comic.sort.folder_mtime_asc", "Folder Date: Oldest First"],
+      ["folder_name_asc", "comic.sort.folder_name_asc", "Folder Name: A-Z"],
+      ["folder_name_desc", "comic.sort.folder_name_desc", "Folder Name: Z-A"],
+    ].forEach(([value, key, fb]) => {
+      const opt = elem("option", null, t(key, fb));
+      opt.value = value;
+      if ((data.sort || "folder_mtime_desc") === value) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener("change", () => {
+      State.bridge.setPageSort(page, sel.value, (json) => {
+        const d = safeParse(json);
+        if (d) { State.pages[page] = d; State._comicPage = 1; scheduleRenderPage(); }
+      });
+    });
+    wrap.appendChild(sel);
+    tools.appendChild(wrap);
+  }
 }
 
 function renderGrid(area, items, page, isCollectionDetail, gen) {
@@ -392,9 +435,14 @@ function renderDetail(d) {
     const qa = elem("button", "ghost-btn", t("detail.quick_add", "Quick Add"));
     qa.addEventListener("click", () => openQuickAddModal(d));
     actions.appendChild(qa);
-    const coverBtn = elem("button", "ghost-btn", t("detail.edit_cover", "Edit Cover"));
-    coverBtn.addEventListener("click", () => State.bridge.editCover(d.id));
-    actions.appendChild(coverBtn);
+  }
+  const coverBtn = elem("button", "ghost-btn", t("detail.edit_cover", "Edit Cover"));
+  coverBtn.addEventListener("click", () => State.bridge.editCover(d.id));
+  actions.appendChild(coverBtn);
+  if (State.currentPage === "library" || State.currentPage === "text_novel" || isComic) {
+    const removeBtn = elem("button", "danger-btn", t("menu.remove_library", "Remove from Library"));
+    removeBtn.addEventListener("click", () => confirmRemoveFromLibrary(State.currentPage, d));
+    actions.appendChild(removeBtn);
   }
   content.appendChild(actions);
 }
@@ -453,6 +501,13 @@ function openContextMenu(event, page, item, isCollectionDetail) {
       ? t("menu.comic_fav_remove", "Remove from Comic Fav")
       : t("menu.comic_fav_add", "Add to Comic Fav");
     menuAction(favLabel, () => State.bridge.toggleFavorite(page, item.id, () => {}));
+    menuAction(t("menu.edit_cover", "Edit Cover..."), () => State.bridge.editCover(item.id));
+    menu.appendChild(elem("hr"));
+    menuAction(
+      t("menu.remove_library", "Remove from Library"),
+      () => confirmRemoveFromLibrary(page, item),
+      true
+    );
   } else {
     menuAction(t("menu.quick_add", "Quick Add Tag / Collection"), () => openQuickAddModal(item));
     menuAction(t("menu.edit_cover", "Edit Cover..."), () => State.bridge.editCover(item.id));
@@ -469,8 +524,45 @@ function openContextMenu(event, page, item, isCollectionDetail) {
         true
       );
     }
+    if (page === "library" || page === "text_novel" || page === "favorites") {
+      menu.appendChild(elem("hr"));
+      menuAction(
+        t("menu.remove_library", "Remove from Library"),
+        () => confirmRemoveFromLibrary(page, item),
+        true
+      );
+    }
   }
   positionContextMenu(event);
+}
+
+function confirmRemoveFromLibrary(page, item) {
+  openModal((modal, close) => {
+    modalHeader(modal, t("library.remove.confirm_title", "Remove from Library"), close);
+    modal.appendChild(elem("p", "small-note", fmt(
+      t("library.remove.confirm_text", "Remove “{title}” from the library database?\nFiles on disk will not be deleted."),
+      { title: item.title || item.id || "" }
+    )));
+    const actions = elem("div", "modal-actions");
+    const cancel = elem("button", "ghost-btn", t("common.cancel", "Cancel"));
+    cancel.addEventListener("click", close);
+    const confirm = elem("button", "danger-btn", t("menu.remove_library", "Remove from Library"));
+    confirm.addEventListener("click", () => {
+      State.bridge.removeFromLibrary(page, item.id, (ok) => {
+        close();
+        if (ok) {
+          if (State.selected[page] === item.id) {
+            delete State.selected[page];
+            renderDetailEmpty();
+          }
+          scheduleRenderPage();
+        }
+      });
+    });
+    actions.appendChild(cancel);
+    actions.appendChild(confirm);
+    modal.appendChild(actions);
+  });
 }
 
 function hideContextMenu() { $("contextMenu").classList.add("hidden"); }
@@ -866,10 +958,16 @@ function renderSettingsGeneral(panel) {
   grid.appendChild(selectField("settings.text_preview_chars", "textPreviewChars", [[500,"500"],[1000,"1000"],[2000,"2000"]], s.textPreviewChars));
   grid.appendChild(selectField("settings.comic_view_mode", "comicViewMode", [["waterfall", t("settings.comic_view_waterfall", "Waterfall")],["pagination", t("settings.comic_view_pagination", "Pagination")]], s.comicViewMode));
   grid.appendChild(selectField("settings.comic_page_size", "comicPageSize", [[24,"24"],[48,"48"],[72,"72"],[96,"96"]], s.comicPageSize));
+  grid.appendChild(selectField("settings.comic.thumbnail_workers", "comicThumbnailWorkers", [
+    ["auto", t("settings.comic.workers.auto", "Auto")],
+    ["2", "2"], ["4", "4"], ["6", "6"], ["8", "8"], ["12", "12"], ["16", "16"],
+  ], s.comicThumbnailWorkers || "auto"));
   card.appendChild(grid);
   const toggles = elem("div", "form-grid");
   toggles.appendChild(switchField("settings.scan_startup", "scanOnStartup", s.scanOnStartup));
   toggles.appendChild(switchField("settings.auto_scan", "autoScanOnPathChange", s.autoScanOnPathChange));
+  toggles.appendChild(switchField("settings.comic.placeholder_copy", "comicPlaceholderCopy", s.comicPlaceholderCopy));
+  toggles.appendChild(switchField("settings.comic.auto_thumb_after_scan", "autoGenerateComicThumbs", s.autoGenerateComicThumbs));
   card.appendChild(toggles);
   panel.appendChild(card);
 }
@@ -945,10 +1043,11 @@ function buildRootCard(title, kind, roots, withRules) {
   roots.forEach((root) => {
     const row = elem("div", "path-row");
     const del = elem("button", "danger-btn", t("settings.roots.delete", "Delete"));
-    del.addEventListener("click", () => State.bridge.removeRoot(kind, root.path));
+    del.addEventListener("click", () => confirmRemoveRoot(kind, root.path));
     row.appendChild(del);
     if (withRules) {
       const rules = elem("button", "ghost-btn", t("settings.roots.rules", "Rules"));
+      rules.title = t("settings.roots.rules_hint", "Opens the native Text Rules editor for this folder");
       rules.addEventListener("click", () => State.bridge.openTextRules(root.path));
       row.appendChild(rules);
     }
@@ -959,7 +1058,55 @@ function buildRootCard(title, kind, roots, withRules) {
   return card;
 }
 
+function confirmRemoveRoot(kind, path) {
+  openModal((modal, close) => {
+    modalHeader(modal, t("settings.delete_confirm_title", "Confirm Delete"), close);
+    modal.appendChild(elem("p", "small-note", fmt(
+      t("settings.delete_confirm_text", "Remove this folder from the library?\n{path}\nBooks under it will be removed from the database (files on disk are not deleted)."),
+      { path }
+    )));
+    const actions = elem("div", "modal-actions");
+    const cancel = elem("button", "ghost-btn", t("common.cancel", "Cancel"));
+    cancel.addEventListener("click", close);
+    const confirm = elem("button", "danger-btn", t("settings.roots.delete", "Delete"));
+    confirm.addEventListener("click", () => {
+      State.bridge.removeRoot(kind, path);
+      close();
+    });
+    actions.appendChild(cancel);
+    actions.appendChild(confirm);
+    modal.appendChild(actions);
+  });
+}
+
+function formatScanSummary(report) {
+  if (!report || typeof report !== "object") return "";
+  let text = fmt(t("settings.scan_summary_template", "Last scan: {updated_at}\nScope: {scope} | Added: {added} | Ignored unsupported: {ignored} | Name conflicts: {conflicts}\nRemoved missing: {removed_total} (library/text: {removed_books}, comic: {removed_comics})"), {
+    updated_at: report.updated_at || report.finished_at || "—",
+    scope: report.scope || report.trigger || "—",
+    added: Number(report.added_count || 0) + Number(report.text_added_count || 0),
+    ignored: report.ignored_unsupported_count || 0,
+    conflicts: Array.isArray(report.name_conflicts) ? report.name_conflicts.length : (report.name_conflict_count || 0),
+    removed_total: report.removed_missing_count || 0,
+    removed_books: report.removed_missing_book_count || 0,
+    removed_comics: report.removed_missing_comic_count || 0,
+  });
+  text += fmt(t("settings.text.scan_summary", "\nText Novel - scanned:{scanned} added:{added} updated:{updated}"), {
+    scanned: report.text_scanned_count || 0,
+    added: report.text_added_count || 0,
+    updated: report.text_updated_count || 0,
+  });
+  text += fmt(t("settings.comic.scan_perf_summary", "\nComic - placeholders:{copied} thumbs queued:{queued} workers:{workers} downscaled:{downscaled}"), {
+    copied: report.comic_placeholder_copied_count || 0,
+    queued: report.comic_thumbnail_enqueued_count || 0,
+    workers: report.comic_thumbnail_workers_used || "—",
+    downscaled: report.comic_thumbnail_downscaled_count || 0,
+  });
+  return text;
+}
+
 function renderSettingsTasks(panel) {
+  const s = State.settings;
   const card = settingCard(t("settings.nav.tasks", "Scan & Tasks"));
   const progressWrap = elem("div", "settings-card");
   const bar = elem("div", "progress");
@@ -989,8 +1136,15 @@ function renderSettingsTasks(panel) {
   fonts.addEventListener("click", () => State.bridge.reloadFonts());
   card.appendChild(fonts);
 
+  const summaryCard = settingCard(t("settings.scan_summary_title", "Last scan summary"));
+  const summaryBox = elem("pre", "log-box");
+  summaryBox.id = "scanSummaryBox";
+  summaryBox.textContent = formatScanSummary(s.scanReport) || "—";
+  summaryCard.appendChild(summaryBox);
+
   panel.appendChild(card);
   panel.appendChild(progressWrap);
+  panel.appendChild(summaryCard);
 }
 
 function renderSettingsErrors(panel) {
@@ -1081,6 +1235,10 @@ function initTopbar() {
   });
   $("scanBtn").addEventListener("click", () => State.bridge.startScan("all"));
   $("settingsBtn").addEventListener("click", () => selectPage("settings"));
+  const importBtn = $("importBtn");
+  if (importBtn) {
+    importBtn.addEventListener("click", () => State.bridge.addRoot("library"));
+  }
   document.querySelectorAll("#viewModeToggle button").forEach((btn) => {
     btn.addEventListener("click", () => {
       document.querySelectorAll("#viewModeToggle button").forEach((b) => b.classList.remove("active"));

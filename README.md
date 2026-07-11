@@ -55,12 +55,21 @@ python -m venv .venv
 
 # 2. 安装依赖
 pip install -r requirements.txt
+# 开发/测试额外依赖
+pip install -r requirements-dev.txt
 
 # 3. 启动应用
 .\.venv\Scripts\pythonw.exe src\main.py
 ```
 
 可选：在项目根目录放置 `启动 简易图书馆.lnk`，指向上述 `pythonw.exe` 与 `src\main.py`（该文件已被 `.gitignore` 忽略）。
+
+### 运行测试
+
+```powershell
+$env:PYTHONPATH="src"
+.\.venv\Scripts\python.exe -m pytest src/tests -q
+```
 
 ### 验证 PyMuPDF
 
@@ -81,7 +90,8 @@ pip install -r requirements.txt
 ## 测试
 
 ```powershell
-pip install pytest
+pip install -r requirements-dev.txt
+$env:PYTHONPATH="src"
 .\.venv\Scripts\python.exe -m pytest src/tests/ -q
 ```
 

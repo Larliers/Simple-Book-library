@@ -87,17 +87,49 @@ class LibraryRepository:
         self.preview_dir.mkdir(parents=True, exist_ok=True)
         ensure_preview_structure(self.preview_dir)
         self._init_db()
+        self._init_collections_tables()
         self._ensure_defaults()
 
     @contextmanager
     def _connection(self):
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA busy_timeout = 5000")
         try:
             yield conn
             conn.commit()
         finally:
             conn.close()
+
+    @staticmethod
+    def _purge_book_links(conn: sqlite3.Connection, book_ids: list[int]) -> None:
+        ids = [int(item) for item in book_ids if int(item) > 0]
+        if not ids:
+            return
+        placeholders = ",".join(["?"] * len(ids))
+        conn.execute(f"DELETE FROM favorite_books WHERE book_id IN ({placeholders})", tuple(ids))  # noqa: S608
+        conn.execute(f"DELETE FROM collection_books WHERE book_id IN ({placeholders})", tuple(ids))  # noqa: S608
+
+    @staticmethod
+    def _purge_comic_links(conn: sqlite3.Connection, comic_ids: list[int]) -> None:
+        ids = [int(item) for item in comic_ids if int(item) > 0]
+        if not ids:
+            return
+        placeholders = ",".join(["?"] * len(ids))
+        conn.execute(f"DELETE FROM favorite_comics WHERE comic_id IN ({placeholders})", tuple(ids))  # noqa: S608
+
+    def _cleanup_orphan_links(self, conn: sqlite3.Connection) -> None:
+        tables = {
+            str(row[0])
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
+        if "favorite_books" in tables and "books" in tables:
+            conn.execute("DELETE FROM favorite_books WHERE book_id NOT IN (SELECT id FROM books)")
+        if "collection_books" in tables and "books" in tables:
+            conn.execute("DELETE FROM collection_books WHERE book_id NOT IN (SELECT id FROM books)")
+        if "favorite_comics" in tables and "comics" in tables:
+            conn.execute("DELETE FROM favorite_comics WHERE comic_id NOT IN (SELECT id FROM comics)")
 
     def _init_db(self) -> None:
         with self._connection() as conn:
@@ -247,13 +279,15 @@ class LibraryRepository:
         if self.get_setting("comic_thumbnail_workers", None) is None:
             self.set_setting("comic_thumbnail_workers", "auto")
         if self.get_setting("comic_view_mode", None) is None:
-            self.set_setting("comic_view_mode", "waterfall")
+            self.set_setting("comic_view_mode", "pagination")
         if self.get_setting("comic_page_size", None) is None:
             self.set_setting("comic_page_size", 48)
         if self.get_setting("comic_sort_order_main", None) is None:
             self.set_setting("comic_sort_order_main", "folder_mtime_desc")
         if self.get_setting("comic_sort_order_fav", None) is None:
             self.set_setting("comic_sort_order_fav", "folder_mtime_desc")
+        with self._connection() as conn:
+            self._cleanup_orphan_links(conn)
 
     @staticmethod
     def normalize_path(path: str | Path) -> str:
@@ -507,7 +541,7 @@ class LibraryRepository:
         return "pagination" if str(value or "").strip().lower() == "pagination" else "waterfall"
 
     def get_comic_view_mode(self) -> str:
-        return self._normalize_comic_view_mode(self.get_setting("comic_view_mode", "waterfall"))
+        return self._normalize_comic_view_mode(self.get_setting("comic_view_mode", "pagination"))
 
     def set_comic_view_mode(self, value: str) -> None:
         self.set_setting("comic_view_mode", self._normalize_comic_view_mode(value))
@@ -569,6 +603,17 @@ class LibraryRepository:
         root_prefix = normalized.rstrip("\\/") + os.sep + "%"
         with self._connection() as conn:
             conn.execute("DELETE FROM library_roots WHERE path = ?", (normalized,))
+            rows = conn.execute(
+                """
+                SELECT id FROM books
+                WHERE 1=1
+                AND resource_type != 'text_novel'
+                AND (path = ? OR path LIKE ?)
+                """,
+                (normalized, root_prefix),
+            ).fetchall()
+            book_ids = [int(row["id"]) for row in rows]
+            self._purge_book_links(conn, book_ids)
             cursor = conn.execute(
                 """
                 DELETE FROM books
@@ -605,6 +650,16 @@ class LibraryRepository:
         root_prefix = normalized.rstrip("\\/") + os.sep + "%"
         with self._connection() as conn:
             conn.execute("DELETE FROM comic_roots WHERE path = ?", (normalized,))
+            rows = conn.execute(
+                """
+                SELECT id FROM comics
+                WHERE 1=1
+                AND (path = ? OR path LIKE ?)
+                """,
+                (normalized, root_prefix),
+            ).fetchall()
+            comic_ids = [int(row["id"]) for row in rows]
+            self._purge_comic_links(conn, comic_ids)
             cursor = conn.execute(
                 """
                 DELETE FROM comics
@@ -645,6 +700,17 @@ class LibraryRepository:
         root_prefix = normalized.rstrip("\\/") + os.sep + "%"
         with self._connection() as conn:
             conn.execute("DELETE FROM text_roots WHERE path = ?", (normalized,))
+            rows = conn.execute(
+                """
+                SELECT id FROM books
+                WHERE 1=1
+                AND resource_type = 'text_novel'
+                AND (path = ? OR path LIKE ?)
+                """,
+                (normalized, root_prefix),
+            ).fetchall()
+            book_ids = [int(row["id"]) for row in rows]
+            self._purge_book_links(conn, book_ids)
             cursor = conn.execute(
                 """
                 DELETE FROM books
@@ -712,6 +778,7 @@ class LibraryRepository:
 
     def delete_book_by_id(self, book_id: int) -> None:
         with self._connection() as conn:
+            self._purge_book_links(conn, [int(book_id)])
             conn.execute("DELETE FROM books WHERE id = ?", (int(book_id),))
 
     def delete_books_by_ids(self, book_ids: list[int]) -> int:
@@ -720,6 +787,7 @@ class LibraryRepository:
             return 0
         placeholders = ",".join(["?"] * len(ids))
         with self._connection() as conn:
+            self._purge_book_links(conn, ids)
             cursor = conn.execute(f"DELETE FROM books WHERE id IN ({placeholders})", tuple(ids))  # noqa: S608
             deleted = cursor.rowcount if cursor.rowcount is not None else 0
         return max(0, int(deleted))
@@ -730,6 +798,7 @@ class LibraryRepository:
             return 0
         placeholders = ",".join(["?"] * len(ids))
         with self._connection() as conn:
+            self._purge_comic_links(conn, ids)
             cursor = conn.execute(f"DELETE FROM comics WHERE id IN ({placeholders})", tuple(ids))  # noqa: S608
             deleted = cursor.rowcount if cursor.rowcount is not None else 0
         return max(0, int(deleted))

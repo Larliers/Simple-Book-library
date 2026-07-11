@@ -251,6 +251,8 @@ def _should_regenerate_comic_record(record: dict[str, object], *, only_missing: 
         return True
 
     stored_fingerprint = str(record.get("cover_fingerprint") or "")
+    if stored_fingerprint.startswith("manual:"):
+        return False
     try:
         current_fingerprint = _cover_fingerprint(source)
     except OSError:

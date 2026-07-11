@@ -10,7 +10,7 @@
 
 ## 高优先级
 
-### [ ] ISSUE-001：SQLite 外键未启用，漫画收藏孤儿行
+### [x] ISSUE-001：SQLite 外键未启用，漫画收藏孤儿行
 
 **位置**：`src/bookhub/library/repository.py`  
 **现象**：
@@ -29,9 +29,11 @@
 - 删除 comic 后 `favorite_comics` 无对应 `comic_id`
 - 现有收藏列表行为不变
 
+**状态（2026-07-11）**：已修 — `PRAGMA foreign_keys=ON` + `busy_timeout`；删除路径显式清 `favorite_comics`；启动 `_cleanup_orphan_links`。
+
 ---
 
-### [ ] ISSUE-002：书籍删除未清理收藏 / 书单关联
+### [x] ISSUE-002：书籍删除未清理收藏 / 书单关联
 
 **位置**：`src/bookhub/library/repository.py`  
 **涉及方法**：`delete_books_by_ids`、`remove_root`（及扫描侧 `_remove_missing_books_in_scope` 间接调用）
@@ -50,6 +52,7 @@
 **验收**：
 - 删书 / 移除 Library 根 / 扫描缺失清理后，关联表无悬空 `book_id`
 
+**状态（2026-07-11）**：已修 — `_purge_book_links` 用于 delete/remove 路径；启动 orphan 清理。
 ---
 
 ## 中优先级
@@ -123,13 +126,15 @@
 
 ---
 
-### [ ] ISSUE-008：开发环境 pytest 未入 requirements
+### [x] ISSUE-008：开发环境 pytest 未入 requirements
 
 **位置**：`requirements.txt`
 
 **说明**：README 写 `pip install pytest` 单独装；CI/本地回归易遗漏。
 
 **可选**：增加 `requirements-dev.txt` 或 `[dev]` 可选依赖。
+
+**状态（2026-07-11）**：已增加 `requirements-dev.txt`（`pytest==8.3.5`），README 补充安装与测试命令。
 
 ---
 

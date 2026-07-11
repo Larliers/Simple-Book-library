@@ -6,3 +6,4 @@ python-dotenv==1.0.1
 PyMuPDF==1.24.10
 charset-normalizer==3.4.0
 Nuitka==4.1.2
+# Dev / tests: see requirements-dev.txt (pytest)

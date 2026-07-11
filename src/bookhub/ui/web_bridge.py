@@ -36,6 +36,7 @@ def _web_strings() -> dict[str, str]:
         ("sidebar.title", "Bookshelf"),
         ("sidebar.subtitle", "Local Database"),
         ("sidebar.settings", "Settings"),
+        ("sidebar.import_books", "Import Books"),
         ("sidebar.library", "Library"),
         ("sidebar.text_novel", "Text Novel"),
         ("sidebar.collections", "Collections"),
@@ -64,6 +65,13 @@ def _web_strings() -> dict[str, str]:
         ("menu.open_cover", "Open Cover"),
         ("menu.quick_add", "Quick Add Tag / Collection"),
         ("menu.edit_cover", "Edit Cover..."),
+        ("menu.remove_library", "Remove from Library"),
+        ("library.remove.confirm_title", "Remove from Library"),
+        ("library.remove.confirm_text", "Remove “{title}” from the library database?\nFiles on disk will not be deleted."),
+        ("library.remove.done_title", "Removed"),
+        ("library.remove.done_msg", "Item removed from the library database."),
+        ("library.remove.failed_title", "Remove failed"),
+        ("library.remove.failed_msg", "Record not found."),
         ("menu.favorite_add", "Add to Favorites"),
         ("menu.favorite_remove", "Remove from Favorites"),
         ("menu.comic_fav_add", "Add to Comic Fav"),
@@ -89,6 +97,10 @@ def _web_strings() -> dict[str, str]:
         ("comic.sort.folder_mtime_asc", "Folder Date: Oldest First"),
         ("comic.sort.folder_name_asc", "Folder Name: A-Z"),
         ("comic.sort.folder_name_desc", "Folder Name: Z-A"),
+        ("favorites.sort.label", "Sort"),
+        ("favorites.sort.added_desc", "Added Time: Newest First"),
+        ("favorites.sort.added_asc", "Added Time: Oldest First"),
+        ("comic.sort.label", "Sort"),
         ("comic.pagination.prev", "Prev"),
         ("comic.pagination.next", "Next"),
         ("comic.pagination.status", "Page {current}/{total}"),
@@ -129,6 +141,10 @@ def _web_strings() -> dict[str, str]:
         ("settings.comic_view_waterfall", "Waterfall"),
         ("settings.comic_view_pagination", "Pagination"),
         ("settings.comic_page_size", "Comic page size"),
+        ("settings.comic.placeholder_copy", "Comic scan: copy first image as placeholder"),
+        ("settings.comic.auto_thumb_after_scan", "Auto-complete comic thumbnails after scan"),
+        ("settings.comic.thumbnail_workers", "Comic thumbnail workers"),
+        ("settings.comic.workers.auto", "Auto"),
         ("settings.font_source.system", "System"),
         ("settings.font_source.project", "Project fonts"),
         ("settings.font_family.default", "(default)"),
@@ -148,7 +164,16 @@ def _web_strings() -> dict[str, str]:
         ("settings.roots.text", "Text novel roots"),
         ("settings.roots.add", "Add folder"),
         ("settings.roots.rules", "Rules"),
+        ("settings.roots.rules_hint", "Opens the native Text Rules editor for this folder"),
         ("settings.roots.delete", "Delete"),
+        ("settings.delete_confirm_title", "Confirm Delete"),
+        ("settings.delete_confirm_text", "Remove this folder from the library?\n{path}\nBooks under it will be removed from the database (files on disk are not deleted)."),
+        ("settings.scan_summary_title", "Last scan summary"),
+        ("settings.scan_summary_template", "Last scan: {updated_at}\nScope: {scope} | Added: {added} | Ignored unsupported: {ignored} | Name conflicts: {conflicts}\nRemoved missing: {removed_total} (library/text: {removed_books}, comic: {removed_comics})"),
+        ("settings.text.scan_summary", "\nText Novel - scanned:{scanned} added:{added} updated:{updated}"),
+        ("settings.comic.scan_perf_summary", "\nComic - placeholders:{copied} thumbs queued:{queued} workers:{workers} downscaled:{downscaled}"),
+        ("settings.thumb.auto.title", "Comic thumbnails queued"),
+        ("settings.thumb.auto.msg", "Comic scan finished. Queued {count} thumbnails for background generation ({workers} workers)."),
         ("settings.tasks.scan_library", "Scan Library"),
         ("settings.tasks.scan_comic", "Scan Comic"),
         ("settings.tasks.scan_text", "Scan Text Novel"),
@@ -305,8 +330,11 @@ class UiBridge(QObject):
             items = self._text_vm.filtered_resources(include_missing=False)
             return {"mode": "list", "items": [self._item_payload(i) for i in items]}
         if page == PAGE_FAVORITES:
-            rows = self._repo.get_favorite_books(order="desc")
-            return {"mode": "grid_or_list", "items": [self._book_payload(r) for r in rows]}
+            order = str(self._repo.get_setting("favorites_sort_order", "desc") or "desc").strip().lower()
+            if order not in {"asc", "desc"}:
+                order = "desc"
+            rows = self._repo.get_favorite_books(order=order)
+            return {"mode": "grid_or_list", "sort": order, "items": [self._book_payload(r) for r in rows]}
         if page == PAGE_COMIC:
             order = self._repo.get_comic_sort_order_main()
             rows = self._repo.list_comics(include_missing=False, order_by=order)
@@ -385,6 +413,9 @@ class UiBridge(QObject):
             "textPreviewChars": repo.get_text_preview_chars(),
             "comicViewMode": repo.get_comic_view_mode(),
             "comicPageSize": repo.get_comic_page_size(),
+            "comicPlaceholderCopy": repo.get_comic_placeholder_copy_enabled(),
+            "autoGenerateComicThumbs": repo.get_auto_generate_comic_thumbnails_after_scan(),
+            "comicThumbnailWorkers": repo.get_comic_thumbnail_workers_raw(),
             "libraryRoots": repo.list_roots(),
             "comicRoots": repo.list_comic_roots(),
             "textRoots": repo.list_text_roots_with_rules(),
@@ -453,6 +484,20 @@ class UiBridge(QObject):
     def closeCollection(self) -> str:
         self._current_collection_id = None
         return json.dumps(self._page_resources(PAGE_COLLECTIONS), ensure_ascii=False)
+
+    @Slot(str, str, result=str)
+    def setPageSort(self, page: str, order: str) -> str:
+        value = str(order or "").strip().lower()
+        if page == PAGE_FAVORITES:
+            self._repo.set_setting("favorites_sort_order", "asc" if value == "asc" else "desc")
+        elif page == PAGE_COMIC:
+            self._repo.set_comic_sort_order_main(value)
+        elif page == PAGE_COMIC_FAV:
+            self._repo.set_comic_sort_order_fav(value)
+        else:
+            return json.dumps(self._page_resources(page), ensure_ascii=False)
+        self.push_resources()
+        return json.dumps(self._page_resources(page), ensure_ascii=False)
 
     # ---- detail --------------------------------------------------------
     @Slot(str, str, result=str)
@@ -619,6 +664,12 @@ class UiBridge(QObject):
     def editCover(self, resource_id: str) -> None:
         if self._host is not None and hasattr(self._host, "edit_cover"):
             self._host.edit_cover(resource_id)
+
+    @Slot(str, str, result=bool)
+    def removeFromLibrary(self, page: str, resource_id: str) -> bool:
+        if self._host is not None and hasattr(self._host, "remove_from_library"):
+            return bool(self._host.remove_from_library(page, resource_id))
+        return False
 
     @Slot(str, int, bool)
     def setCollectionMembership(self, resource_id: str, collection_id: int, member: bool) -> None:

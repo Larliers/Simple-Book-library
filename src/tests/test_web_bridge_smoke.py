@@ -89,12 +89,38 @@ class WebBridgeSmokeTests(unittest.TestCase):
             "quick_add.added",
             "quick_add.confirm",
             "quick_add.recent_tags",
+            "favorites.sort.added_desc",
+            "settings.comic.placeholder_copy",
+            "settings.delete_confirm_title",
+            "settings.scan_summary_title",
         ):
             self.assertIn(key, strings)
+
+    def test_set_page_sort_favorites(self) -> None:
+        bridge = self._make_bridge()
+        payload = json.loads(bridge.setPageSort("favorites", "asc"))
+        self.assertEqual(payload.get("sort"), "asc")
+        self.assertEqual(bridge._repo.get_setting("favorites_sort_order", "desc"), "asc")
+
+    def test_settings_payload_includes_comic_perf(self) -> None:
+        bridge = self._make_bridge()
+        settings = json.loads(bridge.getBootstrap())["settings"]
+        self.assertIn("comicPlaceholderCopy", settings)
+        self.assertIn("autoGenerateComicThumbs", settings)
+        self.assertIn("comicThumbnailWorkers", settings)
+        self.assertIn("scanReport", settings)
 
     def test_edit_cover_slot_exists(self) -> None:
         bridge = self._make_bridge()
         self.assertTrue(callable(getattr(bridge, "editCover", None)))
+
+    def test_remove_from_library_slot_exists(self) -> None:
+        bridge = self._make_bridge()
+        self.assertTrue(callable(getattr(bridge, "removeFromLibrary", None)))
+
+    def test_comic_view_default_is_pagination(self) -> None:
+        bridge = self._make_bridge()
+        self.assertEqual(bridge._repo.get_comic_view_mode(), "pagination")
 
     def test_to_local_path_handles_file_url(self) -> None:
         self.assertIsNone(to_local_path(""))

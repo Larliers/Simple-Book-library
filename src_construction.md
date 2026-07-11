@@ -147,20 +147,21 @@ src/
 - `src/bookhub/library/text_rules/rule_preview.py`：Text 规则预览辅助；查找首个 TXT 样本、读取首行/开头文本并复用规则链执行预览。
 - `src/bookhub/library/text_rules/rule_examples.py`：默认规则链示例。
 - `src/bookhub/library/worker.py`：扫描任务线程包装；透传 Library/Comic/Text 扫描进度信号；汇总多 scope 统计与 warning。
-- `src/bookhub/library/thumbnail_tasks.py`：缩略图清理与重建任务实现。
+- `src/bookhub/library/thumbnail_tasks.py`：缩略图清理与重建任务实现；漫画 `cover_fingerprint` 以 `manual:` 开头时跳过 regenerate，保留用户手选封面。
 - `src/bookhub/library/thumbnail_worker.py`：缩略图任务线程包装。
 - `src/bookhub/library/error_logs.py`：扫描/冲突日志读写；日志目录固定解析为项目根下 `src/Scan_error_logs`（避免相对路径导致 `src/src/Scan_error_logs`）。
 
 ### 3.5 UI 主组件（bookhub/ui）
 - `src/bookhub/ui/__init__.py`：UI 包导出入口。
-- `src/bookhub/ui/web_window.py`：当前主窗口 `WebAppWindow`；承载 `QWebEngineView` + `QWebChannel`，注册 `app://` scheme handler，装配 `UiBridge`；`page.setBackgroundColor` 与主题日/夜底色同步，减轻 Windows 焦点切回时 Chromium 清屏闪白；`web_zoom_factor` 启动 `setZoomFactor` 恢复并以轮询+debounce 写回 `app_settings`；负责后端编排——扫描/缩略图 worker、原生 `QFileDialog` 添加根目录与编辑封面、原生 `TextRuleDialog`、字体与设置写库。
-- `src/bookhub/ui/web/js/app.js`：单一 SPA 壳（侧栏/顶栏/详情常驻）；切页只重建 `#contentArea`；`scheduleRenderPage` + `renderGen` 可取消过期渲染，封面网格按 36 张分片 `rAF` 追加，避免瀑布流数百卡同步堵死主线程导致壳层空白。
-- `src/bookhub/ui/web_bridge.py`：`UiBridge(QObject)` 前后端桥；`@Slot` 暴露 `getBootstrap/search/getSuggestions/getDetail/openResource/toggleFavorite/openCollection/closeCollection/getTags/getCollections/addTag/removeTag/createCollection/setCollectionMembership/removeFromCollection/editCover/openFolder/setSetting/setThemeSettings/addRoot/removeRoot/openTextRules/startScan/startThumbnailTask/reloadFonts/getErrorLogs`；`Signal` 推送 `resourcesChanged/toast/scanProgress/scanState/settingsChanged/errorLogsChanged/languageChanged`；内部持有 `LibraryViewModel`（库/文本双上下文）并把书籍/文本/漫画/收藏/合集统一构造为前端资源载荷；封面路径写入 scheme 白名单集合。
+- `src/bookhub/ui/web_window.py`：当前主窗口 `WebAppWindow`；承载 `QWebEngineView` + `QWebChannel`，注册 `app://` scheme handler，装配 `UiBridge`；`page.setBackgroundColor` 与主题日/夜底色同步，减轻 Windows 焦点切回时 Chromium 清屏闪白；`web_zoom_factor` 启动 `setZoomFactor` 恢复并以轮询+debounce 写回 `app_settings`；负责后端编排——扫描/缩略图 worker、原生 `QFileDialog` 添加根目录与编辑封面（书籍+漫画；漫画写 `manual:` fingerprint 防自动缩略图覆盖）、`remove_from_library`（仅删库记录不删磁盘）、原生 `TextRuleDialog`、字体与设置写库。
+- `src/bookhub/ui/web/js/app.js`：单一 SPA 壳（侧栏/顶栏/详情常驻）；`#importBtn` → `addRoot("library")`；切页只重建 `#contentArea`；`scheduleRenderPage` + `renderGen` 可取消过期渲染，封面网格按 36 张分片 `rAF` 追加；收藏/漫画 `pageHeadTools` 排序控件；设置删路径确认模态；Tasks 扫描摘要；漫画性能三项开关；右键/详情支持漫画编辑封面与「从书库移除」；页面路由与网格/列表/漫画/合集渲染、详情栏、搜索建议、设置页、Quick Add/合集模态、日/夜主题引擎；全局拦截 Chromium 默认右键。
+- `src/bookhub/ui/web_bridge.py`：`UiBridge(QObject)` 前后端桥；`setPageSort`；`editCover` / `removeFromLibrary`；settings 含 `comicPlaceholderCopy` / `autoGenerateComicThumbs` / `comicThumbnailWorkers` / `scanReport`；`@Slot` 暴露 `getBootstrap/search/getSuggestions/getDetail/openResource/toggleFavorite/openCollection/closeCollection/getTags/getCollections/addTag/removeTag/createCollection/setCollectionMembership/removeFromCollection/editCover/removeFromLibrary/openFolder/setSetting/setThemeSettings/addRoot/removeRoot/openTextRules/startScan/startThumbnailTask/reloadFonts/getErrorLogs`；`Signal` 推送 `resourcesChanged/toast/scanProgress/scanState/settingsChanged/errorLogsChanged/languageChanged`；内部持有 `LibraryViewModel`（库/文本双上下文）并把书籍/文本/漫画/收藏/合集统一构造为前端资源载荷；封面路径写入 scheme 白名单集合。
+- `src/bookhub/library/repository.py`：`PRAGMA foreign_keys` + `busy_timeout`；删书/漫画与移根时清关联表；启动 orphan 清理；`comic_view_mode` 缺省为 `pagination`（减轻大库瀑布流一次铺开）。
 - `src/bookhub/ui/web_scheme.py`：`app://` 自定义 URL scheme；`register_app_scheme()`（须在 QApplication 前调用）、`to_local_path()`（`file://`/裸路径归一化）、`AppSchemeHandler`（`app://app/*` 服务 `web/` 静态资源；`app://img/x?p=` 仅服务白名单封面图，越权拒绝）。
-- `src/bookhub/ui/web/index.html`：玻璃拟态 UI 骨架（侧栏/顶栏/主区/详情栏/遮罩/toast/右键菜单挂载点），通过 `app://` 加载 css 与 js。
-- `src/bookhub/ui/web/css/app.css`：玻璃拟态样式与动效；详情封面 `.detail-cover-slot` + `object-fit: contain`（兼容非 2:3）；快添列表「添加/已添加」与 `.path-add-btn` 半透明 hover。
-- `src/bookhub/ui/web/js/app.js`：前端控制器；页面路由与网格/列表/漫画/合集渲染、详情栏（封面槽位 contain、非漫画编辑封面）、搜索建议、右键菜单、设置页、Quick Add（最近标签 + 书单搜索 + staging 确认提交）/合集模态、日/夜主题引擎；全局拦截 Chromium 默认右键。
+- `src/bookhub/ui/web/index.html`：玻璃拟态 UI 骨架（侧栏含 Import Books、顶栏/主区/详情栏/遮罩/toast/右键菜单挂载点），通过 `app://` 加载 css 与 js。
+- `src/bookhub/ui/web/css/app.css`：玻璃拟态样式与动效；网格 `.book-card .cover` / `.mini-cover` 与详情 `.detail-cover-slot` 均 `object-fit: contain`（兼容非 2:3）；快添列表「添加/已添加」与 `.path-add-btn` 半透明 hover。
 - `src/bookhub/ui/web/js/qwebchannel.js`：Qt 官方 `qwebchannel.js` 原样内置（从 Qt 资源导出）。
+- `requirements-dev.txt`：开发/测试依赖（`pytest==8.3.5`）；运行依赖仍见根目录 `requirements.txt`。
 - `src/bookhub/ui/app_window.py`：旧版纯 QSS 主窗口装配（Sidebar+TopBar+QStackedWidget pages）；WebEngine 重写后不再作为入口，保留其页面/对话框供 `web_window.py` 复用与回退参考。
 
 ### 3.6 对话框组件（bookhub/ui/dialogs）

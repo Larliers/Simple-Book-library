@@ -55,6 +55,7 @@ class WebAppWindow(QMainWindow):
         self._thumbnail_worker: ThumbnailTaskWorker | None = None
         self._active_thumbnail_task_kind: str | None = None
         self._active_thumbnail_task_scope: str | None = None
+        self._pending_auto_comic_thumbnail = False
 
         self._view = QWebEngineView(self)
         # Suppress Chromium's default English context menu; JS owns all menus.
@@ -185,6 +186,12 @@ class WebAppWindow(QMainWindow):
         elif key == "comicPageSize":
             repo.set_comic_page_size(int(value))
             reload_needed = True
+        elif key == "comicPlaceholderCopy":
+            repo.set_comic_placeholder_copy_enabled(self._as_bool(value))
+        elif key == "autoGenerateComicThumbs":
+            repo.set_auto_generate_comic_thumbnails_after_scan(self._as_bool(value))
+        elif key == "comicThumbnailWorkers":
+            repo.set_comic_thumbnail_workers(value)
         if reload_needed:
             self._bridge.push_resources()
 
@@ -233,22 +240,41 @@ class WebAppWindow(QMainWindow):
     def remove_root(self, kind: str, path: str) -> None:
         repo = self._repository
         if kind == "comic":
-            repo.remove_comic_root(path)
+            removed_count = repo.remove_comic_root(path)
+            summary = repo.read_scan_report()
+            summary["removed_missing_comic_count"] = removed_count
+            summary["removed_missing_count"] = int(summary.get("removed_missing_count", 0) or 0) + removed_count
+            summary["trigger"] = "remove_comic_root"
+            repo.write_scan_report(summary)
+            repo.record_scan_event("remove_comic_root", summary)
         elif kind == "text":
-            repo.remove_text_root(path)
+            removed_count = repo.remove_text_root(path)
+            summary = repo.read_scan_report()
+            summary["removed_missing_book_count"] = int(summary.get("removed_missing_book_count", 0) or 0) + removed_count
+            summary["removed_missing_count"] = int(summary.get("removed_missing_count", 0) or 0) + removed_count
+            summary["trigger"] = "remove_text_root"
+            repo.write_scan_report(summary)
+            repo.record_scan_event("remove_text_root", summary)
         else:
-            repo.remove_root(path)
+            removed_count = repo.remove_root(path)
+            summary = repo.read_scan_report()
+            summary["removed_missing_book_count"] = int(summary.get("removed_missing_book_count", 0) or 0) + removed_count
+            summary["removed_missing_count"] = int(summary.get("removed_missing_count", 0) or 0) + removed_count
+            summary["trigger"] = "remove_root"
+            repo.write_scan_report(summary)
+            repo.record_scan_event("remove_root", summary)
         self._bridge.reload_data()
         self._bridge.push_resources()
         self._bridge.push_settings()
 
     def edit_cover(self, resource_id: str) -> None:
-        """Native file pick + write thumbnail; mirrors library_page._edit_cover."""
+        """Native file pick + write thumbnail for books or comics."""
         from pathlib import Path as _Path
 
         repo = self._repository
         book_id = repo.get_book_int_id(resource_id)
-        if book_id is None:
+        comic_id = None if book_id is not None else repo.get_comic_int_id(resource_id)
+        if book_id is None and comic_id is None:
             QMessageBox.warning(
                 self,
                 tr("cover.error_title", "Error"),
@@ -313,7 +339,15 @@ class WebAppWindow(QMainWindow):
 
         file_url = out_path.as_uri()
         try:
-            repo.update_book_thumbnail_path(book_id, file_url)
+            if book_id is not None:
+                repo.update_book_thumbnail_path(book_id, file_url)
+            else:
+                # Fingerprint prefix marks a manual cover so regenerate tasks can skip overwrite.
+                repo.update_comic_thumbnail_state(
+                    int(comic_id),
+                    thumbnail_path=file_url,
+                    cover_fingerprint=f"manual:{name_hash}",
+                )
         except Exception as exc:
             QMessageBox.critical(
                 self,
@@ -329,6 +363,34 @@ class WebAppWindow(QMainWindow):
             tr("cover.updated_msg", "Thumbnail saved."),
             "info",
         )
+
+    def remove_from_library(self, page: str, resource_id: str) -> bool:
+        """Delete DB record only; files on disk are kept."""
+        repo = self._repository
+        removed = False
+        if page in {"comic", "comic_fav"}:
+            comic_id = repo.get_comic_int_id(resource_id)
+            if comic_id is not None:
+                removed = repo.delete_comics_by_ids([int(comic_id)]) > 0
+        else:
+            book_id = repo.get_book_int_id(resource_id)
+            if book_id is not None:
+                removed = repo.delete_books_by_ids([int(book_id)]) > 0
+        if not removed:
+            self._bridge.emit_toast(
+                tr("library.remove.failed_title", "Remove failed"),
+                tr("library.remove.failed_msg", "Record not found."),
+                "warning",
+            )
+            return False
+        self._bridge.reload_data()
+        self._bridge.push_resources()
+        self._bridge.emit_toast(
+            tr("library.remove.done_title", "Removed"),
+            tr("library.remove.done_msg", "Item removed from the library database."),
+            "info",
+        )
+        return True
 
     def open_text_rules(self, root_path: str) -> None:
         repo = self._repository
@@ -416,6 +478,23 @@ class WebAppWindow(QMainWindow):
             tr("scan.done_msg", "Imported {count} new items.").format(count=added),
             "info",
         )
+        should_auto_queue = (
+            self._repository.get_auto_generate_comic_thumbnails_after_scan()
+            and scope in {"comic", "all"}
+            and int(summary.get("comic_thumbnail_enqueued_count", 0) or 0) > 0
+        )
+        self._pending_auto_comic_thumbnail = should_auto_queue
+        if should_auto_queue:
+            queued = int(summary.get("comic_thumbnail_enqueued_count", 0) or 0)
+            workers = int(summary.get("comic_thumbnail_workers_used", self._repository.get_comic_thumbnail_workers()) or 0)
+            self._bridge.emit_toast(
+                tr("settings.thumb.auto.title", "Comic thumbnails queued"),
+                tr(
+                    "settings.thumb.auto.msg",
+                    "Comic scan finished. Queued {count} thumbnails for background generation ({workers} workers).",
+                ).format(count=queued, workers=workers),
+                "info",
+            )
 
     def _on_scan_failed(self, message: str) -> None:
         self._emit_scan_state("all", False)
@@ -423,6 +502,10 @@ class WebAppWindow(QMainWindow):
 
     def _on_scan_worker_finished(self) -> None:
         self._scan_worker = None
+        if self._pending_auto_comic_thumbnail:
+            self._pending_auto_comic_thumbnail = False
+            if self._thumbnail_worker is None or not self._thumbnail_worker.isRunning():
+                self.start_thumbnail_task("regenerate_missing", "comic")
 
     # ---- thumbnail tasks ----------------------------------------------
     def start_thumbnail_task(self, task_kind: str, scope: str) -> None:
