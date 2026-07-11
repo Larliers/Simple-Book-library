@@ -6,13 +6,15 @@ const State = {
   nav: [],
   pages: {},
   settings: {},
-  currentPage: "library",
+  currentPage: "",
   viewMode: "grid",
   selected: {},
   searchQuery: "",
   suggestOpen: false,
   theme: { mode: "auto", autoEnabled: true, nightStart: "22:00", dayResume: "07:00", checkFrequency: 5, transitionMinutes: 3 },
   themeTimer: null,
+  renderGen: 0,
+  renderTimer: null,
 };
 
 const COMIC_PAGES = new Set(["comic", "comic_fav"]);
@@ -53,7 +55,7 @@ function wireSignals() {
     const data = safeParse(json);
     if (data && data.pages) {
       State.pages = data.pages;
-      if (State.currentPage !== "settings") renderPage();
+      if (State.currentPage !== "settings") scheduleRenderPage();
       refreshDetailIfSelected();
     }
   });
@@ -120,6 +122,8 @@ function renderNav() {
 }
 
 function selectPage(page) {
+  // Same-page nav click: avoid wiping/rebuilding hundreds of cards.
+  if (page === State.currentPage && page !== "settings") return;
   State.currentPage = page;
   document.querySelectorAll(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.page === page));
   $("settingsBtn").classList.toggle("active", page === "settings");
@@ -133,14 +137,30 @@ function selectPage(page) {
   // sync search box to page context
   const isText = page === "text_novel";
   $("searchInput").setAttribute("placeholder", isText ? t("topbar.search_text_placeholder") : t("topbar.search_placeholder"));
-  renderPage();
+  scheduleRenderPage();
   renderDetailEmpty();
+}
+
+function scheduleRenderPage() {
+  State.renderGen += 1;
+  const gen = State.renderGen;
+  if (State.renderTimer) {
+    clearTimeout(State.renderTimer);
+    State.renderTimer = null;
+  }
+  // Yield so nav/topbar paint before heavy content rebuild (esp. comic waterfall).
+  State.renderTimer = setTimeout(() => {
+    State.renderTimer = null;
+    if (gen !== State.renderGen) return;
+    renderPage(gen);
+  }, 0);
 }
 
 /* ---------- page rendering ---------- */
 function currentPageData() { return State.pages[State.currentPage] || { items: [], mode: "grid_or_list" }; }
 
-function renderPage() {
+function renderPage(expectedGen) {
+  const gen = expectedGen != null ? expectedGen : State.renderGen;
   const page = State.currentPage;
   const data = currentPageData();
   const titleItem = State.nav.find((n) => n.page === page);
@@ -151,6 +171,7 @@ function renderPage() {
   renderPageTools(page, data);
 
   const area = $("contentArea");
+  if (gen !== State.renderGen) return;
   clear(area);
   area.classList.remove("view-enter"); void area.offsetWidth; area.classList.add("view-enter");
 
@@ -164,9 +185,9 @@ function renderPage() {
 
   if (page === "text_novel") { renderTable(area, data.items, page); return; }
   if (data.mode === "collections") { renderCollections(area, data.items); return; }
-  if (COMIC_PAGES.has(page)) { renderComic(area, data); return; }
+  if (COMIC_PAGES.has(page)) { renderComic(area, data, gen); return; }
   if (State.viewMode === "list") { renderTable(area, data.items, page); return; }
-  renderGrid(area, data.items, page, data.mode === "collection_detail");
+  renderGrid(area, data.items, page, data.mode === "collection_detail", gen);
 }
 
 function renderPageTools(page, data) {
@@ -175,7 +196,7 @@ function renderPageTools(page, data) {
   if (data.mode === "collection_detail") {
     const back = elem("button", "ghost-btn", t("common.back", "Back"));
     back.addEventListener("click", () => {
-      State.bridge.closeCollection((json) => { const d = safeParse(json); if (d) { State.pages.collections = d; renderPage(); } });
+      State.bridge.closeCollection((json) => { const d = safeParse(json); if (d) { State.pages.collections = d; scheduleRenderPage(); } });
     });
     tools.appendChild(back);
     return;
@@ -188,18 +209,29 @@ function renderPageTools(page, data) {
   }
 }
 
-function renderGrid(area, items, page, isCollectionDetail) {
+function renderGrid(area, items, page, isCollectionDetail, gen) {
   const grid = elem("div", "cover-grid");
-  items.forEach((item) => {
-    const card = elem("article", "book-card");
-    if (State.selected[page] === item.id) card.classList.add("selected");
-    card.appendChild(buildCover(item, "cover"));
-    card.addEventListener("click", () => selectResource(page, item.id, card));
-    card.addEventListener("dblclick", () => State.bridge.openResource(page, item.id));
-    card.addEventListener("contextmenu", (e) => { e.preventDefault(); openContextMenu(e, page, item, isCollectionDetail); });
-    grid.appendChild(card);
-  });
   area.appendChild(grid);
+  const CHUNK = 36;
+  let index = 0;
+  const appendChunk = () => {
+    if (gen != null && gen !== State.renderGen) return;
+    const end = Math.min(index + CHUNK, items.length);
+    const frag = document.createDocumentFragment();
+    for (; index < end; index++) {
+      const item = items[index];
+      const card = elem("article", "book-card");
+      if (State.selected[page] === item.id) card.classList.add("selected");
+      card.appendChild(buildCover(item, "cover"));
+      card.addEventListener("click", () => selectResource(page, item.id, card));
+      card.addEventListener("dblclick", () => State.bridge.openResource(page, item.id));
+      card.addEventListener("contextmenu", (e) => { e.preventDefault(); openContextMenu(e, page, item, isCollectionDetail); });
+      frag.appendChild(card);
+    }
+    grid.appendChild(frag);
+    if (index < items.length) requestAnimationFrame(appendChunk);
+  };
+  appendChunk();
 }
 
 function renderCollections(area, items) {
@@ -209,18 +241,23 @@ function renderCollections(area, items) {
     card.appendChild(buildCover(item, "cover"));
     card.appendChild(elem("div", "card-title", item.title));
     card.appendChild(elem("div", "card-meta", item.meta || ""));
-    card.addEventListener("click", () => {
+    const openCol = () => {
       State.bridge.openCollection(item.collectionId, (json) => {
         const d = safeParse(json);
-        if (d) { State.pages.collections = d; renderPage(); }
+        if (d) { State.pages.collections = d; scheduleRenderPage(); }
       });
+    };
+    card.addEventListener("click", openCol);
+    card.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      openCollectionCardMenu(e, item, openCol);
     });
     grid.appendChild(card);
   });
   area.appendChild(grid);
 }
 
-function renderComic(area, data) {
+function renderComic(area, data, gen) {
   let items = data.items || [];
   const isPagination = data.viewMode === "pagination";
   let pageSize = data.pageSize || 48;
@@ -232,7 +269,7 @@ function renderComic(area, data) {
     const start = (State._comicPage - 1) * pageSize;
     items = items.slice(start, start + pageSize);
   }
-  renderGrid(area, items, State.currentPage, false);
+  renderGrid(area, items, State.currentPage, false, gen);
   if (isPagination) {
     const bar = elem("div", "detail-actions");
     bar.style.justifyContent = "flex-end";
@@ -241,8 +278,8 @@ function renderComic(area, data) {
     const next = elem("button", "ghost-btn", t("comic.pagination.next", "Next"));
     prev.disabled = State._comicPage <= 1;
     next.disabled = State._comicPage >= totalPages;
-    prev.addEventListener("click", () => { State._comicPage--; renderPage(); });
-    next.addEventListener("click", () => { State._comicPage++; renderPage(); });
+    prev.addEventListener("click", () => { State._comicPage--; scheduleRenderPage(); });
+    next.addEventListener("click", () => { State._comicPage++; scheduleRenderPage(); });
     bar.appendChild(prev); bar.appendChild(label); bar.appendChild(next);
     area.appendChild(bar);
   }
@@ -294,6 +331,12 @@ function buildCoverFallback(item, cls) {
   return box;
 }
 
+function wrapDetailCover(item) {
+  const slot = elem("div", "detail-cover-slot");
+  slot.appendChild(buildCover(item, "detail-cover"));
+  return slot;
+}
+
 function buildEmpty(text) { return elem("div", "empty-state", text); }
 
 /* ---------- selection & detail ---------- */
@@ -322,7 +365,7 @@ function renderDetail(d) {
   empty.classList.add("hidden");
   content.classList.remove("hidden");
   clear(content);
-  content.appendChild(buildCover(d, "detail-cover"));
+  content.appendChild(wrapDetailCover(d));
   content.appendChild(elem("h2", null, d.title));
 
   const meta = elem("div", "detail-meta");
@@ -349,6 +392,9 @@ function renderDetail(d) {
     const qa = elem("button", "ghost-btn", t("detail.quick_add", "Quick Add"));
     qa.addEventListener("click", () => openQuickAddModal(d));
     actions.appendChild(qa);
+    const coverBtn = elem("button", "ghost-btn", t("detail.edit_cover", "Edit Cover"));
+    coverBtn.addEventListener("click", () => State.bridge.editCover(d.id));
+    actions.appendChild(coverBtn);
   }
   content.appendChild(actions);
 }
@@ -362,28 +408,8 @@ function buildDetailBlock(label, value) {
 }
 
 /* ---------- context menu ---------- */
-function openContextMenu(event, page, item, isCollectionDetail) {
+function positionContextMenu(event) {
   const menu = $("contextMenu");
-  clear(menu);
-  const isComic = COMIC_PAGES.has(page);
-  const add = (label, fn, danger) => {
-    const btn = elem("button", danger ? "danger-btn" : null, label);
-    btn.addEventListener("click", () => { hideContextMenu(); fn(); });
-    menu.appendChild(btn);
-  };
-  add(isComic ? t("menu.open_cover", "Open Cover") : t("menu.open_external", "Open External"), () => State.bridge.openResource(page, item.id));
-  if (isComic) {
-    const favLabel = page === "comic_fav" ? t("menu.comic_fav_remove", "Remove from Comic Fav") : t("menu.comic_fav_add", "Add to Comic Fav");
-    add(favLabel, () => State.bridge.toggleFavorite(page, item.id, () => {}));
-  } else {
-    add(t("menu.quick_add", "Quick Add Tag / Collection"), () => openQuickAddModal(item));
-    add(t("menu.favorite_add", "Add to Favorites"), () => State.bridge.toggleFavorite(page, item.id, () => {}));
-    if (isCollectionDetail) {
-      const cid = currentPageData().collectionId;
-      menu.appendChild(elem("hr"));
-      add(t("menu.collection_remove", "Remove from Collection"), () => State.bridge.removeFromCollection(item.id, cid), true);
-    }
-  }
   menu.classList.remove("hidden");
   const mw = menu.offsetWidth, mh = menu.offsetHeight;
   let x = event.clientX, y = event.clientY;
@@ -393,9 +419,70 @@ function openContextMenu(event, page, item, isCollectionDetail) {
   menu.style.top = y + "px";
 }
 
+function menuAction(label, fn, danger) {
+  const btn = elem("button", danger ? "danger-btn" : null, label);
+  btn.addEventListener("click", () => { hideContextMenu(); fn(); });
+  $("contextMenu").appendChild(btn);
+  return btn;
+}
+
+function openCollectionCardMenu(event, item, openCol) {
+  const menu = $("contextMenu");
+  clear(menu);
+  menuAction(t("menu.collection_open", "Open"), openCol);
+  menu.appendChild(elem("hr"));
+  menuAction(t("menu.collection_rename", "Rename"), () => openRenameCollectionModal(item));
+  menuAction(t("menu.collection_delete", "Delete"), () => openDeleteCollectionModal(item), true);
+  positionContextMenu(event);
+}
+
+function openContextMenu(event, page, item, isCollectionDetail) {
+  const menu = $("contextMenu");
+  clear(menu);
+  const isComic = COMIC_PAGES.has(page);
+  const isFavorites = page === "favorites";
+  menuAction(
+    isComic ? t("menu.open_cover", "Open Cover") : t("menu.open_external", "Open External"),
+    () => State.bridge.openResource(page, item.id)
+  );
+  if (!isComic) {
+    menuAction(t("menu.open_folder", "Open Folder"), () => State.bridge.openFolder(item.id));
+  }
+  if (isComic) {
+    const favLabel = page === "comic_fav"
+      ? t("menu.comic_fav_remove", "Remove from Comic Fav")
+      : t("menu.comic_fav_add", "Add to Comic Fav");
+    menuAction(favLabel, () => State.bridge.toggleFavorite(page, item.id, () => {}));
+  } else {
+    menuAction(t("menu.quick_add", "Quick Add Tag / Collection"), () => openQuickAddModal(item));
+    menuAction(t("menu.edit_cover", "Edit Cover..."), () => State.bridge.editCover(item.id));
+    const favLabel = isFavorites
+      ? t("menu.favorite_remove", "Remove from Favorites")
+      : t("menu.favorite_add", "Add to Favorites");
+    menuAction(favLabel, () => State.bridge.toggleFavorite(page, item.id, () => {}));
+    if (isCollectionDetail) {
+      const cid = currentPageData().collectionId;
+      menu.appendChild(elem("hr"));
+      menuAction(
+        t("menu.collection_remove", "Remove from Collection"),
+        () => State.bridge.removeFromCollection(item.id, cid),
+        true
+      );
+    }
+  }
+  positionContextMenu(event);
+}
+
 function hideContextMenu() { $("contextMenu").classList.add("hidden"); }
 document.addEventListener("click", (e) => { if (!$("contextMenu").contains(e.target)) hideContextMenu(); });
 document.addEventListener("scroll", hideContextMenu, true);
+// Block Chromium default menu globally; card handlers still call preventDefault + custom menu.
+document.addEventListener("contextmenu", (e) => {
+  if ($("contextMenu").contains(e.target)) return;
+  if (e.target.closest && e.target.closest(".book-card, .table tbody tr, .context-menu")) return;
+  e.preventDefault();
+  hideContextMenu();
+}, true);
 
 /* ---------- toasts ---------- */
 function showToast(title, message, kind) {
@@ -470,7 +557,10 @@ function openNewCollectionModal() {
       if (!name) return;
       State.bridge.createCollection(name, () => {
         close();
-        State.bridge.openCollection(0, (json) => { const d = safeParse(json); if (d) { State.pages.collections = d; if (State.currentPage === "collections") renderPage(); } });
+        State.bridge.closeCollection((json) => {
+          const d = safeParse(json);
+          if (d) { State.pages.collections = d; if (State.currentPage === "collections") scheduleRenderPage(); }
+        });
       });
     });
     actions.appendChild(cancel); actions.appendChild(confirm);
@@ -479,70 +569,202 @@ function openNewCollectionModal() {
   });
 }
 
+function openRenameCollectionModal(item) {
+  openModal((modal, close) => {
+    modalHeader(modal, t("collections.rename_title", "Rename Collection"), close);
+    const field = elem("div", "field");
+    const input = elem("input");
+    input.value = item.title || "";
+    input.placeholder = t("collections.rename_placeholder", "New name...");
+    field.appendChild(input);
+    modal.appendChild(field);
+    const actions = elem("div", "modal-actions");
+    const cancel = elem("button", "ghost-btn", t("common.cancel", "Cancel"));
+    cancel.addEventListener("click", close);
+    const confirm = elem("button", "primary-btn", t("common.confirm", "Confirm"));
+    confirm.addEventListener("click", () => {
+      const name = input.value.trim();
+      if (!name) return;
+      State.bridge.renameCollection(item.collectionId, name, () => {
+        close();
+        State.bridge.closeCollection((json) => {
+          const d = safeParse(json);
+          if (d) { State.pages.collections = d; if (State.currentPage === "collections") scheduleRenderPage(); }
+        });
+      });
+    });
+    actions.appendChild(cancel); actions.appendChild(confirm);
+    modal.appendChild(actions);
+    input.focus();
+    input.select();
+  });
+}
+
+function openDeleteCollectionModal(item) {
+  openModal((modal, close) => {
+    modalHeader(modal, t("collections.delete_title", "Delete Collection"), close);
+    modal.appendChild(elem("p", "small-note", t("collections.delete_msg", "Delete this collection? Books will not be removed from the library.")));
+    modal.appendChild(elem("p", "small-note", item.title || ""));
+    const actions = elem("div", "modal-actions");
+    const cancel = elem("button", "ghost-btn", t("common.cancel", "Cancel"));
+    cancel.addEventListener("click", close);
+    const confirm = elem("button", "danger-btn", t("menu.collection_delete", "Delete"));
+    confirm.addEventListener("click", () => {
+      State.bridge.deleteCollection(item.collectionId, () => {
+        close();
+        State.bridge.closeCollection((json) => {
+          const d = safeParse(json);
+          if (d) { State.pages.collections = d; if (State.currentPage === "collections") scheduleRenderPage(); }
+        });
+      });
+    });
+    actions.appendChild(cancel); actions.appendChild(confirm);
+    modal.appendChild(actions);
+  });
+}
+
 function openQuickAddModal(item) {
   openModal((modal, close) => {
     modalHeader(modal, t("detail.quick_add", "Quick Add"), close);
     modal.appendChild(elem("p", "small-note", item.title || ""));
 
-    // tags
+    if (!Array.isArray(item.tags)) item.tags = [];
+    const workingTags = item.tags.slice();
+
     const tagField = elem("div", "field");
     tagField.appendChild(elem("label", null, t("detail.tags", "Tags")));
     const tagInput = elem("input");
     tagInput.placeholder = t("quick_add.tag_placeholder", "Type tag...");
     tagField.appendChild(tagInput);
-    const chipRow = elem("div", "chip-row");
-    const renderChips = (tags) => {
-      clear(chipRow);
-      (tags || []).forEach((tag) => {
+
+    const currentChips = elem("div", "chip-row");
+    const recentWrap = elem("div", "chip-row");
+    recentWrap.classList.add("recent-tags");
+
+    const renderCurrentChips = () => {
+      clear(currentChips);
+      workingTags.forEach((tag) => {
         const chip = elem("span", "chip");
         chip.appendChild(document.createTextNode(tag));
         const x = elem("span", "chip-x", "×");
-        x.addEventListener("click", () => State.bridge.removeTag(item.id, tag));
+        x.addEventListener("click", () => {
+          State.bridge.removeTag(item.id, tag);
+          const idx = workingTags.indexOf(tag);
+          if (idx >= 0) workingTags.splice(idx, 1);
+          item.tags = workingTags.slice();
+          renderCurrentChips();
+        });
         chip.appendChild(x);
-        chipRow.appendChild(chip);
+        currentChips.appendChild(chip);
       });
     };
-    renderChips(item.tags);
-    tagField.appendChild(chipRow);
+
+    const addTagValue = (value) => {
+      const tag = String(value || "").trim();
+      if (!tag || workingTags.includes(tag)) return;
+      State.bridge.addTag(item.id, tag);
+      workingTags.push(tag);
+      item.tags = workingTags.slice();
+      renderCurrentChips();
+    };
+
     tagInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
-        const value = tagInput.value.trim();
-        if (value) { State.bridge.addTag(item.id, value); const nt = (item.tags || []).concat([value]); item.tags = nt; renderChips(nt); tagInput.value = ""; }
+        e.preventDefault();
+        addTagValue(tagInput.value);
+        tagInput.value = "";
       }
     });
+    tagField.appendChild(currentChips);
+    tagField.appendChild(elem("div", "kicker mt", t("quick_add.recent_tags", "Recent tags")));
+    tagField.appendChild(recentWrap);
     modal.appendChild(tagField);
 
-    // collections
+    State.bridge.getTags((tjson) => {
+      const allTags = safeParse(tjson) || [];
+      clear(recentWrap);
+      allTags.slice(0, 12).forEach((tag) => {
+        const chip = elem("button", "chip chip-btn", tag);
+        chip.type = "button";
+        chip.addEventListener("click", () => addTagValue(tag));
+        recentWrap.appendChild(chip);
+      });
+    });
+
+    modal.appendChild(elem("hr", "modal-divider"));
+
     const collField = elem("div", "field");
     collField.appendChild(elem("label", null, t("detail.collections", "Collections")));
-    const list = elem("div", "list-stack");
+    const searchInput = elem("input");
+    searchInput.placeholder = t("quick_add.collection_placeholder", "Search collections...");
+    collField.appendChild(searchInput);
+    const list = elem("div", "list-stack mt");
     collField.appendChild(list);
     modal.appendChild(collField);
 
-    State.bridge.getCollections((cjson) => {
-      const collections = safeParse(cjson) || [];
-      State.bridge.getDetail(State.currentPage, item.id, (djson) => {
-        const detail = safeParse(djson) || {};
-        const memberIds = new Set((detail.bookCollections || []).map((c) => c.id));
-        clear(list);
-        collections.forEach((coll) => {
-          const row = elem("div", "list-item");
+    const initialMembers = new Set();
+    const pendingMembers = new Set();
+    let allCollections = [];
+
+    const renderCollectionRows = () => {
+      const q = searchInput.value.trim().toLowerCase();
+      clear(list);
+      allCollections
+        .filter((coll) => !q || String(coll.name || "").toLowerCase().includes(q))
+        .forEach((coll) => {
+          const row = elem("div", "list-item list-item-action");
           row.appendChild(elem("span", null, coll.name));
-          const cb = elem("input");
-          cb.type = "checkbox";
-          cb.checked = memberIds.has(coll.id);
-          cb.addEventListener("change", () => State.bridge.setCollectionMembership(item.id, coll.id, cb.checked));
-          row.appendChild(cb);
+          const isMember = pendingMembers.has(coll.id);
+          const btn = elem(
+            "button",
+            isMember ? "ghost-btn list-action-btn is-added" : "ghost-btn list-action-btn is-add",
+            isMember ? t("quick_add.added", "Added") : t("quick_add.add", "Add")
+          );
+          btn.type = "button";
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (pendingMembers.has(coll.id)) pendingMembers.delete(coll.id);
+            else pendingMembers.add(coll.id);
+            renderCollectionRows();
+          });
+          row.appendChild(btn);
           list.appendChild(row);
         });
+    };
+
+    searchInput.addEventListener("input", renderCollectionRows);
+
+    State.bridge.getCollections((cjson) => {
+      allCollections = safeParse(cjson) || [];
+      State.bridge.getDetail(State.currentPage, item.id, (djson) => {
+        const detail = safeParse(djson) || {};
+        (detail.bookCollections || []).forEach((c) => {
+          initialMembers.add(c.id);
+          pendingMembers.add(c.id);
+        });
+        renderCollectionRows();
       });
     });
 
     const actions = elem("div", "modal-actions");
-    const done = elem("button", "primary-btn", t("common.close", "Close"));
-    done.addEventListener("click", () => { close(); refreshDetailIfSelected(); });
-    actions.appendChild(done);
+    const cancel = elem("button", "ghost-btn", t("common.cancel", "Cancel"));
+    cancel.addEventListener("click", () => { close(); refreshDetailIfSelected(); });
+    const confirm = elem("button", "primary-btn", t("quick_add.confirm", "Confirm add"));
+    confirm.addEventListener("click", () => {
+      const ids = new Set([...initialMembers, ...pendingMembers]);
+      ids.forEach((cid) => {
+        const want = pendingMembers.has(cid);
+        const was = initialMembers.has(cid);
+        if (want !== was) State.bridge.setCollectionMembership(item.id, cid, want);
+      });
+      close();
+      refreshDetailIfSelected();
+    });
+    actions.appendChild(cancel);
+    actions.appendChild(confirm);
     modal.appendChild(actions);
+    renderCurrentChips();
+    tagInput.focus();
   });
 }
 
@@ -639,10 +861,10 @@ function renderSettingsGeneral(panel) {
   grid.appendChild(selectField("settings.language", "language", [["en", "English"], ["zh-cn", "简体中文"]], s.language));
   grid.appendChild(selectField("settings.search_font", "searchFontSize", [[12,"12"],[15,"15"],[18,"18"],[20,"20"]], s.searchFontSize));
   grid.appendChild(selectField("settings.scan_depth", "scanDepth", [[1,"1"],[2,"2"],[3,"3"]], s.scanDepth));
-  grid.appendChild(selectField("settings.hash", "hashStrategy", [["size_mtime","Fast"],["sha1","Strict"]], s.hashStrategy));
+  grid.appendChild(selectField("settings.hash", "hashStrategy", [["size_mtime", t("settings.hash.fast", "Fast")], ["sha256", t("settings.hash.strict", "Strict")], ["quick", t("settings.hash.quick", "Quick")]], s.hashStrategy));
   grid.appendChild(selectField("settings.card_spacing", "cardSpacing", [[10,"10"],[14,"14"],[18,"18"],[22,"22"]], s.cardSpacing));
   grid.appendChild(selectField("settings.text_preview_chars", "textPreviewChars", [[500,"500"],[1000,"1000"],[2000,"2000"]], s.textPreviewChars));
-  grid.appendChild(selectField("settings.comic_view_mode", "comicViewMode", [["waterfall","Waterfall"],["pagination","Pagination"]], s.comicViewMode));
+  grid.appendChild(selectField("settings.comic_view_mode", "comicViewMode", [["waterfall", t("settings.comic_view_waterfall", "Waterfall")],["pagination", t("settings.comic_view_pagination", "Pagination")]], s.comicViewMode));
   grid.appendChild(selectField("settings.comic_page_size", "comicPageSize", [[24,"24"],[48,"48"],[72,"72"],[96,"96"]], s.comicPageSize));
   card.appendChild(grid);
   const toggles = elem("div", "form-grid");
@@ -656,8 +878,8 @@ function renderSettingsAppearance(panel) {
   const s = State.settings;
   const fontCard = settingCard(t("settings.nav.appearance", "Appearance & Theme"));
   const grid = elem("div", "form-grid");
-  grid.appendChild(selectField("settings.font_source", "fontSource", [["system","System"],["project","Project fonts"]], s.fontSource));
-  const fontOptions = [["", "(default)"]].concat((s.projectFonts || []).map((f) => [f, f]));
+  grid.appendChild(selectField("settings.font_source", "fontSource", [["system", t("settings.font_source.system", "System")],["project", t("settings.font_source.project", "Project fonts")]], s.fontSource));
+  const fontOptions = [["", t("settings.font_family.default", "(default)")]].concat((s.projectFonts || []).map((f) => [f, f]));
   grid.appendChild(selectField("settings.font_family", "fontFamily", fontOptions, s.fontFamily));
   grid.appendChild(selectField("settings.cover_border_width", "coverBorderWidth", [[1,"1"],[2,"2"],[3,"3"],[4,"4"]], s.coverBorderWidth));
   grid.appendChild(textField("settings.cover_border_color", "coverBorderColor", s.coverBorderColor, "text"));
@@ -716,7 +938,7 @@ function renderSettingsPaths(panel) {
 
 function buildRootCard(title, kind, roots, withRules) {
   const card = settingCard(title);
-  const add = elem("button", "ghost-btn", t("settings.roots.add", "Add folder"));
+  const add = elem("button", "ghost-btn path-add-btn", t("settings.roots.add", "Add folder"));
   add.addEventListener("click", () => State.bridge.addRoot(kind));
   card.appendChild(add);
   const list = elem("div", "path-list");
@@ -813,6 +1035,12 @@ function computedTheme() {
 function applyTheme(theme, transitionMs) {
   document.documentElement.style.setProperty("--active-theme-transition-duration", transitionMs + "ms");
   document.body.dataset.theme = theme === "night" ? "night" : "day";
+  // Keep Qt WebEngine clear color in sync (avoids white flash on window activate).
+  try {
+    if (State.bridge && State.bridge.setPageBackgroundTheme) {
+      State.bridge.setPageBackgroundTheme(theme === "night" ? "night" : "day");
+    }
+  } catch (e) {}
 }
 
 function setThemeMode(mode) {
@@ -858,7 +1086,7 @@ function initTopbar() {
       document.querySelectorAll("#viewModeToggle button").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       State.viewMode = btn.dataset.mode;
-      if (State.currentPage !== "settings") renderPage();
+      if (State.currentPage !== "settings") scheduleRenderPage();
     });
   });
 }
@@ -871,7 +1099,7 @@ function commitSearch() {
     const data = safeParse(json);
     if (!data) return;
     State.pages[ctx] = data;
-    if (State.currentPage === ctx) renderPage();
+    if (State.currentPage === ctx) scheduleRenderPage();
   });
 }
 

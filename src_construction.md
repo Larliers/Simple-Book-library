@@ -153,12 +153,13 @@ src/
 
 ### 3.5 UI 主组件（bookhub/ui）
 - `src/bookhub/ui/__init__.py`：UI 包导出入口。
-- `src/bookhub/ui/web_window.py`：当前主窗口 `WebAppWindow`；承载 `QWebEngineView` + `QWebChannel`，注册 `app://` scheme handler，装配 `UiBridge`；负责后端编排——扫描/缩略图 worker（进度与状态经 Bridge 信号推给前端）、原生 `QFileDialog` 添加根目录、原生 `TextRuleDialog` 编辑文本规则、字体解析与应用、设置项写库（`apply_setting`）。
-- `src/bookhub/ui/web_bridge.py`：`UiBridge(QObject)` 前后端桥；`@Slot` 暴露 `getBootstrap/search/getSuggestions/getDetail/openResource/toggleFavorite/openCollection/closeCollection/getTags/getCollections/addTag/removeTag/createCollection/setCollectionMembership/removeFromCollection/setSetting/setThemeSettings/addRoot/removeRoot/openTextRules/startScan/startThumbnailTask/reloadFonts/getErrorLogs`；`Signal` 推送 `resourcesChanged/toast/scanProgress/scanState/settingsChanged/errorLogsChanged/languageChanged`；内部持有 `LibraryViewModel`（库/文本双上下文）并把书籍/文本/漫画/收藏/合集统一构造为前端资源载荷；封面路径写入 scheme 白名单集合。
+- `src/bookhub/ui/web_window.py`：当前主窗口 `WebAppWindow`；承载 `QWebEngineView` + `QWebChannel`，注册 `app://` scheme handler，装配 `UiBridge`；`page.setBackgroundColor` 与主题日/夜底色同步，减轻 Windows 焦点切回时 Chromium 清屏闪白；`web_zoom_factor` 启动 `setZoomFactor` 恢复并以轮询+debounce 写回 `app_settings`；负责后端编排——扫描/缩略图 worker、原生 `QFileDialog` 添加根目录与编辑封面、原生 `TextRuleDialog`、字体与设置写库。
+- `src/bookhub/ui/web/js/app.js`：单一 SPA 壳（侧栏/顶栏/详情常驻）；切页只重建 `#contentArea`；`scheduleRenderPage` + `renderGen` 可取消过期渲染，封面网格按 36 张分片 `rAF` 追加，避免瀑布流数百卡同步堵死主线程导致壳层空白。
+- `src/bookhub/ui/web_bridge.py`：`UiBridge(QObject)` 前后端桥；`@Slot` 暴露 `getBootstrap/search/getSuggestions/getDetail/openResource/toggleFavorite/openCollection/closeCollection/getTags/getCollections/addTag/removeTag/createCollection/setCollectionMembership/removeFromCollection/editCover/openFolder/setSetting/setThemeSettings/addRoot/removeRoot/openTextRules/startScan/startThumbnailTask/reloadFonts/getErrorLogs`；`Signal` 推送 `resourcesChanged/toast/scanProgress/scanState/settingsChanged/errorLogsChanged/languageChanged`；内部持有 `LibraryViewModel`（库/文本双上下文）并把书籍/文本/漫画/收藏/合集统一构造为前端资源载荷；封面路径写入 scheme 白名单集合。
 - `src/bookhub/ui/web_scheme.py`：`app://` 自定义 URL scheme；`register_app_scheme()`（须在 QApplication 前调用）、`to_local_path()`（`file://`/裸路径归一化）、`AppSchemeHandler`（`app://app/*` 服务 `web/` 静态资源；`app://img/x?p=` 仅服务白名单封面图，越权拒绝）。
 - `src/bookhub/ui/web/index.html`：玻璃拟态 UI 骨架（侧栏/顶栏/主区/详情栏/遮罩/toast/右键菜单挂载点），通过 `app://` 加载 css 与 js。
-- `src/bookhub/ui/web/css/app.css`：玻璃拟态样式与全部动效（hover 上浮、视图淡入、模态/toast 动画、日/夜主题变量与跨帧过渡、开关/进度条等）。
-- `src/bookhub/ui/web/js/app.js`：前端控制器；QWebChannel 初始化、bootstrap 渲染、页面路由与网格/列表/漫画/合集渲染、详情栏、搜索与建议、右键菜单、toast、扫描进度、设置页两向绑定、Add Tag/Quick Add/New Collection 模态、日/夜主题引擎（Auto/Day/Night + 定时检查 + 缓慢过渡）。
+- `src/bookhub/ui/web/css/app.css`：玻璃拟态样式与动效；详情封面 `.detail-cover-slot` + `object-fit: contain`（兼容非 2:3）；快添列表「添加/已添加」与 `.path-add-btn` 半透明 hover。
+- `src/bookhub/ui/web/js/app.js`：前端控制器；页面路由与网格/列表/漫画/合集渲染、详情栏（封面槽位 contain、非漫画编辑封面）、搜索建议、右键菜单、设置页、Quick Add（最近标签 + 书单搜索 + staging 确认提交）/合集模态、日/夜主题引擎；全局拦截 Chromium 默认右键。
 - `src/bookhub/ui/web/js/qwebchannel.js`：Qt 官方 `qwebchannel.js` 原样内置（从 Qt 资源导出）。
 - `src/bookhub/ui/app_window.py`：旧版纯 QSS 主窗口装配（Sidebar+TopBar+QStackedWidget pages）；WebEngine 重写后不再作为入口，保留其页面/对话框供 `web_window.py` 复用与回退参考。
 

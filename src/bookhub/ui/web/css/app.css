@@ -59,6 +59,8 @@ body[data-theme="night"] {
 ::selection { background: rgba(57, 119, 194, 0.28); }
 
 html, body { height: 100%; }
+/* Opaque base under gradients: WebEngine activate clear shows this, not #fff */
+html { background-color: var(--bg-0); }
 
 body {
   margin: 0;
@@ -271,13 +273,19 @@ button:active { transform: translateY(1px) scale(0.985); }
 }
 .detail-empty { color: var(--muted); font-size: 13px; }
 .detail-content { display: flex; flex-direction: column; min-height: 0; overflow: auto; animation: fadeSlideDown 220ms ease; }
+.detail-cover-slot {
+  width: 190px; max-width: 82%; max-height: 285px;
+  align-self: center; display: grid; place-items: center;
+  border-radius: 8px; background: rgba(232, 238, 245, 0.45);
+}
 .detail-cover {
-  width: 190px; max-width: 82%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 8px;
-  border: 1px solid var(--line); align-self: center; box-shadow: 0 16px 34px rgba(36, 55, 78, 0.18);
+  width: auto; max-width: 100%; max-height: 285px; height: auto;
+  object-fit: contain; border-radius: 8px;
+  border: 1px solid var(--line); box-shadow: 0 16px 34px rgba(36, 55, 78, 0.18);
 }
 .detail-cover-fallback {
-  width: 190px; max-width: 82%; aspect-ratio: 2 / 3; border-radius: 8px; border: 1px solid var(--line);
-  align-self: center; display: grid; place-items: center; color: var(--muted); text-align: center; padding: 12px;
+  width: 190px; max-width: 100%; aspect-ratio: 2 / 3; max-height: 285px; border-radius: 8px; border: 1px solid var(--line);
+  display: grid; place-items: center; color: var(--muted); text-align: center; padding: 12px;
   background: linear-gradient(135deg, rgba(120,150,185,0.25), rgba(120,150,185,0.05));
 }
 .detail-panel h2 { margin: 14px 0 8px; font-size: 19px; line-height: 1.2; overflow-wrap: anywhere; }
@@ -293,6 +301,9 @@ button:active { transform: translateY(1px) scale(0.985); }
 }
 .chip .chip-x { cursor: pointer; opacity: 0.6; font-weight: 800; }
 .chip .chip-x:hover { opacity: 1; color: var(--danger); }
+.chip.chip-btn { cursor: pointer; background: var(--card-bg-soft); }
+.chip.chip-btn:hover { background: var(--hover-bg); border-color: rgba(57, 119, 194, 0.35); }
+.modal-divider { border: none; border-top: 1px solid var(--line); margin: 14px 0; }
 
 .empty-state {
   min-height: 220px; display: grid; place-items: center; text-align: center; color: var(--muted);
@@ -382,9 +393,30 @@ button:active { transform: translateY(1px) scale(0.985); }
 .list-stack { display: grid; gap: 8px; }
 .list-item {
   display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 10px;
-  border-radius: var(--radius); background: var(--card-bg); border: 1px solid var(--line); color: var(--ink); cursor: pointer;
+  border-radius: var(--radius); background: transparent; border: 1px solid var(--line); color: var(--ink);
 }
 .list-item:hover { background: var(--hover-bg); }
+.list-item-action { cursor: default; }
+.list-action-btn {
+  min-height: 28px; padding: 0 10px; flex: 0 0 auto; font-weight: 650;
+  background: transparent; border-color: transparent;
+}
+.list-action-btn.is-add { color: var(--accent); }
+.list-action-btn.is-add:hover { background: rgba(57, 119, 194, 0.12); border-color: rgba(57, 119, 194, 0.22); }
+.list-action-btn.is-added { color: var(--muted); }
+.list-action-btn.is-added:hover { background: var(--hover-bg); }
+
+.path-add-btn {
+  background: transparent; border-color: transparent; color: var(--ink); font-weight: 650;
+  justify-content: flex-start; padding: 0 8px; min-height: 32px;
+}
+.path-add-btn:hover {
+  background: rgba(255, 255, 255, 0.42); border-color: var(--line);
+  box-shadow: none; transform: none;
+}
+body[data-theme="night"] .path-add-btn:hover {
+  background: rgba(255, 231, 190, 0.1);
+}
 
 /* Scrollbars */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -393,7 +425,8 @@ button:active { transform: translateY(1px) scale(0.985); }
 ::-webkit-scrollbar-track { background: transparent; }
 
 @keyframes fadeSlideDown { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes viewEnter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+/* No opacity:0 — clearing contentArea already blanks; opacity restart looked like white flash */
+@keyframes viewEnter { from { transform: translateY(6px); } to { transform: translateY(0); } }
 @keyframes overlayIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes modalIn { from { opacity: 0; transform: translateY(14px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes toastIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }

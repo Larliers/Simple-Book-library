@@ -57,16 +57,22 @@ def _web_strings() -> dict[str, str]:
         ("detail.preview", "Text Preview"),
         ("detail.open", "Open"),
         ("detail.quick_add", "Quick Add"),
+        ("detail.edit_cover", "Edit Cover"),
         ("detail.favorite_add", "Add to Favorites"),
         ("detail.favorite_remove", "Remove from Favorites"),
         ("menu.open_external", "Open External"),
         ("menu.open_cover", "Open Cover"),
         ("menu.quick_add", "Quick Add Tag / Collection"),
+        ("menu.edit_cover", "Edit Cover..."),
         ("menu.favorite_add", "Add to Favorites"),
         ("menu.favorite_remove", "Remove from Favorites"),
         ("menu.comic_fav_add", "Add to Comic Fav"),
         ("menu.comic_fav_remove", "Remove from Comic Fav"),
         ("menu.collection_remove", "Remove from Collection"),
+        ("menu.collection_open", "Open"),
+        ("menu.collection_rename", "Rename"),
+        ("menu.collection_delete", "Delete"),
+        ("menu.open_folder", "Open Folder"),
         ("common.cancel", "Cancel"),
         ("common.confirm", "Confirm"),
         ("common.save", "Save"),
@@ -75,6 +81,10 @@ def _web_strings() -> dict[str, str]:
         ("common.back", "Back"),
         ("collections.count", "{count} books"),
         ("collections.empty", "No collections yet."),
+        ("collections.rename_title", "Rename Collection"),
+        ("collections.rename_placeholder", "New name..."),
+        ("collections.delete_title", "Delete Collection"),
+        ("collections.delete_msg", "Delete this collection? Books will not be removed from the library."),
         ("comic.sort.folder_mtime_desc", "Folder Date: Newest First"),
         ("comic.sort.folder_mtime_asc", "Folder Date: Oldest First"),
         ("comic.sort.folder_name_asc", "Folder Name: A-Z"),
@@ -82,9 +92,18 @@ def _web_strings() -> dict[str, str]:
         ("comic.pagination.prev", "Prev"),
         ("comic.pagination.next", "Next"),
         ("comic.pagination.status", "Page {current}/{total}"),
+        ("page.count", "{count} items"),
+        ("topbar.scanning", "Scanning..."),
+        ("detail.cover", "Cover"),
+        ("detail.title", "Title"),
+        ("detail.path", "Path"),
         ("quick_add.tag_placeholder", "Type tag..."),
         ("quick_add.collection_placeholder", "Search collections..."),
         ("quick_add.new_collection_placeholder", "New collection name..."),
+        ("quick_add.recent_tags", "Recent tags"),
+        ("quick_add.add", "Add"),
+        ("quick_add.added", "Added"),
+        ("quick_add.confirm", "Confirm add"),
         ("settings.title", "Settings"),
         ("settings.nav.general", "General"),
         ("settings.nav.paths", "Paths"),
@@ -97,6 +116,9 @@ def _web_strings() -> dict[str, str]:
         ("settings.search_font", "Search font size"),
         ("settings.scan_depth", "Scan depth"),
         ("settings.hash", "Missed hash matching"),
+        ("settings.hash.fast", "Fast"),
+        ("settings.hash.strict", "Strict"),
+        ("settings.hash.quick", "Quick"),
         ("settings.card_spacing", "Card spacing"),
         ("settings.cover_border_width", "Cover selected border width"),
         ("settings.cover_border_color", "Cover selected border color"),
@@ -104,7 +126,12 @@ def _web_strings() -> dict[str, str]:
         ("settings.auto_scan", "Auto scan on path change"),
         ("settings.text_preview_chars", "Text preview length"),
         ("settings.comic_view_mode", "Comic view mode"),
+        ("settings.comic_view_waterfall", "Waterfall"),
+        ("settings.comic_view_pagination", "Pagination"),
         ("settings.comic_page_size", "Comic page size"),
+        ("settings.font_source.system", "System"),
+        ("settings.font_source.project", "Project fonts"),
+        ("settings.font_family.default", "(default)"),
         ("settings.night.title", "Night mode"),
         ("settings.night.desc", "Read local time periodically and transition between day and night UI."),
         ("settings.night.auto", "Auto by local time"),
@@ -389,6 +416,12 @@ class UiBridge(QObject):
         }
         return json.dumps(payload, ensure_ascii=False)
 
+    @Slot(str)
+    def setPageBackgroundTheme(self, theme: str) -> None:
+        host = getattr(self, "_host", None)
+        if host is not None and hasattr(host, "set_web_page_background"):
+            host.set_web_page_background("night" if theme == "night" else "day")
+
     def push_resources(self) -> None:
         self.resourcesChanged.emit(json.dumps({"pages": self._pages_payload()}, ensure_ascii=False))
 
@@ -549,6 +582,43 @@ class UiBridge(QObject):
         cid = self._repo.create_collection(name.strip())
         self.push_resources()
         return int(cid)
+
+    @Slot(int, str, result=bool)
+    def renameCollection(self, collection_id: int, name: str) -> bool:
+        if not name.strip():
+            return False
+        self._repo.rename_collection(int(collection_id), name.strip())
+        self.push_resources()
+        return True
+
+    @Slot(int, result=bool)
+    def deleteCollection(self, collection_id: int) -> bool:
+        self._repo.delete_collection(int(collection_id))
+        if self._current_collection_id == int(collection_id):
+            self._current_collection_id = None
+        self.push_resources()
+        return True
+
+    @Slot(str)
+    def openFolder(self, resource_id: str) -> None:
+        row = self._find_book_row(resource_id)
+        if not row:
+            detail = self._detail_for(PAGE_COMIC, resource_id) or self._detail_for(PAGE_COMIC_FAV, resource_id)
+            path = str((detail or {}).get("path") or "")
+        else:
+            path = str(row.get("path") or "")
+        if not path:
+            self.emit_toast(tr("open.failed_title", "Cannot open"), tr("open.failed_msg", "File or folder not found."), "warning")
+            return
+        folder = Path(path).expanduser()
+        if folder.is_file():
+            folder = folder.parent
+        self._open_external(str(folder))
+
+    @Slot(str)
+    def editCover(self, resource_id: str) -> None:
+        if self._host is not None and hasattr(self._host, "edit_cover"):
+            self._host.edit_cover(resource_id)
 
     @Slot(str, int, bool)
     def setCollectionMembership(self, resource_id: str, collection_id: int, member: bool) -> None:

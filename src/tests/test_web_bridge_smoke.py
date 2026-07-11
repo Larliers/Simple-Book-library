@@ -64,6 +64,38 @@ class WebBridgeSmokeTests(unittest.TestCase):
         for rel in ("index.html", "css/app.css", "js/app.js", "js/qwebchannel.js"):
             self.assertTrue((WEB_ROOT / rel).is_file(), f"missing web asset: {rel}")
 
+    def test_collection_rename_delete_roundtrip(self) -> None:
+        bridge = self._make_bridge()
+        cid = bridge.createCollection("Temp List")
+        self.assertGreater(cid, 0)
+        self.assertTrue(bridge.renameCollection(cid, "Renamed List"))
+        collections = json.loads(bridge.getCollections())
+        self.assertTrue(any(c["id"] == cid and c["name"] == "Renamed List" for c in collections))
+        self.assertTrue(bridge.deleteCollection(cid))
+        collections = json.loads(bridge.getCollections())
+        self.assertFalse(any(c["id"] == cid for c in collections))
+
+    def test_bootstrap_includes_menu_i18n_keys(self) -> None:
+        bridge = self._make_bridge()
+        strings = json.loads(bridge.getBootstrap())["strings"]
+        for key in (
+            "page.count",
+            "menu.open_folder",
+            "menu.collection_rename",
+            "menu.favorite_remove",
+            "menu.edit_cover",
+            "detail.edit_cover",
+            "quick_add.add",
+            "quick_add.added",
+            "quick_add.confirm",
+            "quick_add.recent_tags",
+        ):
+            self.assertIn(key, strings)
+
+    def test_edit_cover_slot_exists(self) -> None:
+        bridge = self._make_bridge()
+        self.assertTrue(callable(getattr(bridge, "editCover", None)))
+
     def test_to_local_path_handles_file_url(self) -> None:
         self.assertIsNone(to_local_path(""))
         converted = to_local_path("file:///C:/tmp/cover.webp")
