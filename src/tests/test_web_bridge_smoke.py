@@ -141,6 +141,55 @@ class WebBridgeSmokeTests(unittest.TestCase):
         self.assertEqual(bridge._repo.get_grid_columns(), 6)
         self.assertEqual(bridge._settings_payload().get("gridColumns"), 6)
 
+    def test_text_rules_get_save_preview_roundtrip(self) -> None:
+        bridge = self._make_bridge()
+        tmp = tempfile.mkdtemp(prefix="bookhub_text_root_")
+        root = Path(tmp)
+        sample = root / "demo.txt"
+        sample.write_text("T书名\n作者：测试\n", encoding="utf-8")
+        bridge._repo.add_text_root(str(root))
+
+        opened = json.loads(bridge.getTextRules(str(root)))
+        self.assertTrue(opened.get("ok"), opened)
+        self.assertIn("catalog", opened)
+        self.assertTrue(opened["catalog"].get("steps"))
+        self.assertTrue(any(s["name"] == "demo.txt" for s in opened.get("samples") or []))
+
+        rules = {
+            "title": [
+                {
+                    "field": "title",
+                    "source": "txt_first_line",
+                    "steps": [{"type": "take_after_text", "value": "T"}, {"type": "trim"}],
+                }
+            ]
+        }
+        saved = json.loads(bridge.saveTextRules(str(root), json.dumps(rules, ensure_ascii=False)))
+        self.assertTrue(saved.get("ok"), saved)
+        stored = json.loads(bridge._repo.get_text_root_rules_json(str(root)))
+        self.assertEqual(stored["title"][0]["source"], "txt_first_line")
+
+        preview = json.loads(
+            bridge.previewTextRule(
+                str(root),
+                json.dumps(rules["title"], ensure_ascii=False),
+                str(sample),
+            )
+        )
+        self.assertTrue(preview.get("ok"), preview)
+        self.assertTrue(preview.get("success"), preview)
+        self.assertEqual(preview.get("value"), "书名")
+
+        multi = json.loads(bridge.previewTextRulesMulti(str(root), json.dumps(rules["title"], ensure_ascii=False)))
+        self.assertTrue(multi.get("ok"), multi)
+        self.assertGreaterEqual(len(multi.get("items") or []), 1)
+
+        outside = json.loads(bridge.previewTextRule(str(root), json.dumps(rules["title"]), r"C:\Windows\win.ini"))
+        self.assertFalse(outside.get("ok"))
+
+    def test_text_rules_js_asset_present(self) -> None:
+        self.assertTrue((WEB_ROOT / "js" / "text_rules.js").is_file())
+
     def test_to_local_path_handles_file_url(self) -> None:
         self.assertIsNone(to_local_path(""))
         converted = to_local_path("file:///C:/tmp/cover.webp")

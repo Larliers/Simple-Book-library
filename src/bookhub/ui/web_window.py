@@ -4,7 +4,7 @@ import json
 
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QColor, QFont, QFontDatabase
-from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMainWindow, QMessageBox
+from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineCore import QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
@@ -16,7 +16,6 @@ _WEB_BG_NIGHT = QColor("#101925")
 from bookhub.i18n import language_manager, tr
 from bookhub.library import LibraryRepository, ScanWorker, ThumbnailTaskWorker
 from bookhub.library.error_logs import append_conflict_if_new, read_latest_log_text
-from bookhub.ui.dialogs.text_rule_dialog import TextRuleDialog
 from bookhub.ui.resources.font_runtime import (
     DEFAULT_PROJECT_FONTS_DIR,
     resolve_effective_font,
@@ -397,26 +396,8 @@ class WebAppWindow(QMainWindow):
         return True
 
     def open_text_rules(self, root_path: str) -> None:
-        repo = self._repository
-        existing = repo.get_text_root_rules_json(root_path)
-        dialog = TextRuleDialog(
-            root_path,
-            existing,
-            self,
-            preview_chars=repo.get_text_preview_chars(),
-            preview_result_height=repo.get_text_rule_preview_result_height(),
-            preview_result_height_changed=repo.set_text_rule_preview_result_height,
-            dialog_size=repo.get_text_rule_dialog_size(),
-            dialog_size_changed=repo.set_text_rule_dialog_size,
-            rule_presets=repo.get_text_rule_presets(),
-            rule_presets_changed=repo.set_text_rule_presets,
-        )
-        if dialog.exec() != QDialog.Accepted:
-            return
-        repo.set_text_root_rules_json(root_path, dialog.rules_json())
-        self._bridge.push_settings()
-        if repo.get_auto_scan_on_path_change():
-            self.start_scan("text")
+        """Legacy host hook — Web UI opens via UiBridge.openTextRules / textRulesOpen."""
+        self._bridge.openTextRules(root_path)
 
     # ---- scan ----------------------------------------------------------
     def start_scan(self, scope: str = "all") -> None:

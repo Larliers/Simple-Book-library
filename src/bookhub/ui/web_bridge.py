@@ -166,8 +166,45 @@ def _web_strings() -> dict[str, str]:
         ("settings.roots.text", "Text novel roots"),
         ("settings.roots.add", "Add folder"),
         ("settings.roots.rules", "Rules"),
-        ("settings.roots.rules_hint", "Opens the native Text Rules editor for this folder"),
+        ("settings.roots.rules_hint", "Open Text Rules editor for this folder"),
         ("settings.roots.delete", "Delete"),
+        ("text.rules.title", "Text Rules"),
+        ("text.rules.root", "Path: {path}"),
+        ("text.rules.fields", "Fields"),
+        ("text.rules.chain", "Rule Chain"),
+        ("text.rules.add_rule", "Add Rule"),
+        ("text.rules.delete_rule", "Delete Rule"),
+        ("text.rules.move_up", "Move up"),
+        ("text.rules.move_down", "Move down"),
+        ("text.rules.source", "Source"),
+        ("text.rules.steps", "Steps"),
+        ("text.rules.add_step", "Add Step"),
+        ("text.rules.templates", "Templates"),
+        ("text.rules.presets", "My Presets"),
+        ("text.rules.preset.save", "Save as preset"),
+        ("text.rules.preset.delete", "Delete preset"),
+        ("text.rules.preset.name_prompt", "Preset name"),
+        ("text.rules.preview", "Preview"),
+        ("text.rules.sample", "Sample TXT"),
+        ("text.rules.sample.empty", "(no TXT found)"),
+        ("text.rules.multi", "Multi-sample"),
+        ("text.rules.multi.run", "Run 20"),
+        ("text.rules.preview.running", "Running…"),
+        ("text.rules.save", "Save"),
+        ("text.rules.cancel", "Cancel"),
+        ("text.rules.save_failed", "Save failed"),
+        ("text.rules.saved_title", "Text Rules saved"),
+        ("text.rules.saved_msg", "Rules updated for this folder."),
+        ("text.rules.open_failed", "Cannot open Text Rules"),
+        ("text.rules.regex.button", "Common Regex"),
+        ("text.rules.regex.title", "Common Regex"),
+        ("text.rules.regex.copy", "Copy"),
+        ("text.rules.help.button", "Usage Guide"),
+        ("text.rules.help.title", "Text Rules Guide"),
+        ("text.rules.field.title", "Title"),
+        ("text.rules.field.author", "Author"),
+        ("text.rules.field.series", "Series"),
+        ("text.rules.field.tag", "Tag"),
         ("settings.delete_confirm_title", "Confirm Delete"),
         ("settings.delete_confirm_text", "Remove this folder from the library?\n{path}\nBooks under it will be removed from the database (files on disk are not deleted)."),
         ("settings.scan_summary_title", "Last scan summary"),
@@ -199,6 +236,7 @@ class UiBridge(QObject):
     settingsChanged = Signal(str)
     errorLogsChanged = Signal(str)
     languageChanged = Signal(str)
+    textRulesOpen = Signal(str)
 
     def __init__(self, repository, allowed_images: set[str], parent=None) -> None:
         super().__init__(parent)
@@ -734,8 +772,215 @@ class UiBridge(QObject):
 
     @Slot(str)
     def openTextRules(self, root_path: str) -> None:
-        if self._host is not None:
-            self._host.open_text_rules(root_path)
+        payload = self.getTextRules(root_path)
+        data = json.loads(payload)
+        if data.get("ok"):
+            self.textRulesOpen.emit(payload)
+        else:
+            self.emit_toast(
+                tr("text.rules.open_failed", "Cannot open Text Rules"),
+                str(data.get("error") or ""),
+                "warning",
+            )
+
+    @Slot(str, result=str)
+    def getTextRules(self, root_path: str) -> str:
+        from bookhub.library.text_rules.rule_catalog import describe_step_catalog
+        from bookhub.library.text_rules.rule_models import load_rules_from_json, dump_rules_to_json
+
+        root = self._resolve_text_root(root_path)
+        if root is None:
+            return json.dumps({"ok": False, "error": "Unknown text root"}, ensure_ascii=False)
+        raw = self._repo.get_text_root_rules_json(root)
+        try:
+            parsed = json.loads(raw) if isinstance(raw, str) else raw
+            rule_map = load_rules_from_json(parsed)
+            rules = dump_rules_to_json(rule_map)
+        except Exception as exc:  # noqa: BLE001
+            return json.dumps({"ok": False, "error": f"Invalid rules JSON: {exc}"}, ensure_ascii=False)
+        catalog = describe_step_catalog()
+        samples = self._list_txt_samples(root, limit=40)
+        sample_path = samples[0]["path"] if samples else None
+        return json.dumps(
+            {
+                "ok": True,
+                "path": root,
+                "rules": rules,
+                "catalog": catalog,
+                "samples": samples,
+                "samplePath": sample_path,
+                "presets": self._repo.get_text_rule_presets(),
+                "previewChars": self._repo.get_text_preview_chars(),
+            },
+            ensure_ascii=False,
+        )
+
+    @Slot(str, str, str, result=str)
+    def previewTextRule(self, root_path: str, field_rules_json: str, sample_path: str = "") -> str:
+        from bookhub.library.text_rules.rule_models import ImportRule, load_rules_from_json
+        from bookhub.library.text_rules.rule_preview import (
+            build_preview_context,
+            find_first_txt_file,
+            preview_rule_chain,
+            read_txt_preview_sample,
+        )
+
+        root = self._resolve_text_root(root_path)
+        if root is None:
+            return json.dumps({"ok": False, "error": "Unknown text root"}, ensure_ascii=False)
+        try:
+            parsed = json.loads(field_rules_json or "[]")
+        except (TypeError, ValueError) as exc:
+            return json.dumps({"ok": False, "error": f"Invalid rule JSON: {exc}"}, ensure_ascii=False)
+        if isinstance(parsed, dict):
+            # Accept either a single rule or {field:[rules]} for one field.
+            if "source" in parsed:
+                rules = [ImportRule.from_dict(parsed)]
+            else:
+                nested = load_rules_from_json(parsed)
+                rules = next(iter(nested.values()), []) if nested else []
+        elif isinstance(parsed, list):
+            rules = [ImportRule.from_dict(item) for item in parsed]
+        else:
+            return json.dumps({"ok": False, "error": "Rules must be a list or object"}, ensure_ascii=False)
+
+        chosen = str(sample_path or "").strip()
+        if chosen:
+            safe = self._safe_sample_under_root(root, chosen)
+            if safe is None:
+                return json.dumps({"ok": False, "error": "Sample path outside text root"}, ensure_ascii=False)
+            file_path = safe
+        else:
+            file_path = find_first_txt_file(root)
+        if not file_path:
+            return json.dumps(
+                {"ok": True, "success": False, "value": "", "error": "No TXT sample found", "warning": None, "samplePath": None},
+                ensure_ascii=False,
+            )
+        sample = read_txt_preview_sample(file_path, self._repo.get_text_preview_chars())
+        if sample is None:
+            return json.dumps(
+                {"ok": True, "success": False, "value": "", "error": "Cannot read sample", "warning": None, "samplePath": file_path},
+                ensure_ascii=False,
+            )
+        context = build_preview_context(sample.file_path, sample.txt_first_line, sample.txt_head_text)
+        result = preview_rule_chain(rules, context)
+        return json.dumps(
+            {
+                "ok": True,
+                "success": bool(result.success),
+                "value": result.value or "",
+                "error": result.error_message,
+                "warning": result.warning_message,
+                "failedStep": result.failed_step,
+                "samplePath": sample.file_path,
+                "txtFirstLine": sample.txt_first_line,
+                "txtHeadText": sample.txt_head_text,
+            },
+            ensure_ascii=False,
+        )
+
+    @Slot(str, str, result=str)
+    def previewTextRulesMulti(self, root_path: str, field_rules_json: str) -> str:
+        samples = []
+        root = self._resolve_text_root(root_path)
+        if root is None:
+            return json.dumps({"ok": False, "error": "Unknown text root", "items": []}, ensure_ascii=False)
+        for row in self._list_txt_samples(root, limit=20):
+            one = json.loads(self.previewTextRule(root_path, field_rules_json, row["path"]))
+            samples.append(
+                {
+                    "path": row["path"],
+                    "name": row["name"],
+                    "success": bool(one.get("success")),
+                    "value": one.get("value") or "",
+                    "error": one.get("error"),
+                }
+            )
+        return json.dumps({"ok": True, "items": samples}, ensure_ascii=False)
+
+    @Slot(str, str, result=str)
+    def saveTextRules(self, root_path: str, rules_json: str) -> str:
+        from bookhub.library.text_rules.rule_models import dump_rules_to_json, load_rules_from_json
+
+        root = self._resolve_text_root(root_path)
+        if root is None:
+            return json.dumps({"ok": False, "error": "Unknown text root"}, ensure_ascii=False)
+        try:
+            parsed = json.loads(rules_json or "{}")
+            rule_map = load_rules_from_json(parsed)
+            normalized = json.dumps(dump_rules_to_json(rule_map), ensure_ascii=False)
+        except Exception as exc:  # noqa: BLE001
+            return json.dumps({"ok": False, "error": f"Invalid rules: {exc}"}, ensure_ascii=False)
+        self._repo.set_text_root_rules_json(root, normalized)
+        self.push_settings()
+        scanned = False
+        if self._repo.get_auto_scan_on_path_change() and self._host is not None:
+            self._host.start_scan("text")
+            scanned = True
+        self.emit_toast(
+            tr("text.rules.saved_title", "Text Rules saved"),
+            tr("text.rules.saved_msg", "Rules updated for this folder."),
+            "info",
+        )
+        return json.dumps({"ok": True, "scanned": scanned, "rules": json.loads(normalized)}, ensure_ascii=False)
+
+    @Slot(result=str)
+    def getTextRulePresets(self) -> str:
+        return json.dumps({"ok": True, "presets": self._repo.get_text_rule_presets()}, ensure_ascii=False)
+
+    @Slot(str, result=str)
+    def setTextRulePresets(self, presets_json: str) -> str:
+        try:
+            presets = json.loads(presets_json or "[]")
+        except (TypeError, ValueError) as exc:
+            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+        if not isinstance(presets, list):
+            return json.dumps({"ok": False, "error": "presets must be a list"}, ensure_ascii=False)
+        self._repo.set_text_rule_presets(presets)
+        return json.dumps({"ok": True, "presets": self._repo.get_text_rule_presets()}, ensure_ascii=False)
+
+    def _resolve_text_root(self, root_path: str) -> str | None:
+        target = os.path.normcase(os.path.normpath(str(root_path or "").strip()))
+        if not target:
+            return None
+        for path in self._repo.list_text_roots():
+            if os.path.normcase(os.path.normpath(path)) == target:
+                return os.path.normpath(path)
+        return None
+
+    def _safe_sample_under_root(self, root: str, sample_path: str) -> str | None:
+        try:
+            root_r = Path(root).resolve()
+            cand = Path(sample_path).resolve()
+            cand.relative_to(root_r)
+        except (OSError, ValueError):
+            return None
+        if not cand.is_file():
+            return None
+        return str(cand)
+
+    def _list_txt_samples(self, root: str, limit: int = 40) -> list[dict[str, str]]:
+        from bookhub.library.models import TEXT_FILE_EXTENSION
+
+        root_path = Path(root)
+        out: list[dict[str, str]] = []
+        if not root_path.is_dir():
+            return out
+        for current_dir, dir_names, file_names in os.walk(root_path):
+            dir_names[:] = sorted(dir_names)
+            for name in sorted(file_names):
+                if Path(name).suffix.lower() != TEXT_FILE_EXTENSION:
+                    continue
+                full = Path(current_dir) / name
+                try:
+                    rel = str(full.relative_to(root_path))
+                except ValueError:
+                    rel = name
+                out.append({"path": str(full.resolve(strict=False)), "name": name, "rel": rel})
+                if len(out) >= max(1, int(limit)):
+                    return out
+        return out
 
     @Slot(str)
     def startScan(self, scope: str) -> None:

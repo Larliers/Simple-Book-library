@@ -66,6 +66,7 @@ function wireSignals() {
   b.scanState.connect((json) => { const d = safeParse(json); if (d) updateScanState(d); });
   b.settingsChanged.connect((json) => { const d = safeParse(json); if (d) { State.settings = d; if (d.theme) applyThemeConfig(d.theme); if (State.currentPage === "settings") renderSettings(); } });
   b.errorLogsChanged.connect((text) => { const box = document.getElementById("errorLogBox"); if (box) box.textContent = text; });
+  if (typeof wireTextRulesSignal === "function") wireTextRulesSignal(b);
 }
 
 function safeParse(json) { try { return JSON.parse(json); } catch (e) { return null; } }
@@ -1232,7 +1233,7 @@ function buildRootCard(title, kind, roots, withRules) {
     row.appendChild(del);
     if (withRules) {
       const rules = elem("button", "ghost-btn", t("settings.roots.rules", "Rules"));
-      rules.title = t("settings.roots.rules_hint", "Opens the native Text Rules editor for this folder");
+      rules.title = t("settings.roots.rules_hint", "Open Text Rules editor for this folder");
       rules.addEventListener("click", () => State.bridge.openTextRules(root.path));
       row.appendChild(rules);
     }
