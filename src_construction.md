@@ -1,6 +1,6 @@
 ﻿# src 结构说明书（精简且完整）
 
-更新时间：2026-07-11
+更新时间：2026-07-14
 
 ## 1. 文档目标
 - 保留字符串式文件路径结构。
@@ -63,7 +63,6 @@ src/
    │  └─ worker.py
    └─ ui/
       ├─ __init__.py
-      ├─ app_window.py
       ├─ web_window.py
       ├─ web_bridge.py
       ├─ web_scheme.py
@@ -75,41 +74,18 @@ src/
       │     ├─ app.js
       │     ├─ text_rules.js
       │     └─ qwebchannel.js
-      ├─ dialogs/
-      │  ├─ __init__.py
-      │  ├─ add_tag_dialog.py
-      │  ├─ add_to_collection_dialog.py
-       │  ├─ import_dialog.py
-       │  ├─ quick_add_dialog.py
-       │  ├─ text_rule_dialog.py
-       │  ├─ text_rule_help_dialog.py
-       │  └─ text_rule_regex_dialog.py
       ├─ models/
       │  ├─ __init__.py
       │  └─ resource.py
-      ├─ pages/
-      │  ├─ __init__.py
-      │  ├─ comic_page.py
-      │  ├─ collections_page.py
-      │  ├─ favorites_page.py
-      │  ├─ library_page.py
-      │  ├─ settings_page.py
-      │  └─ text_novel_page.py
       ├─ resources/
       │  ├─ __init__.py
       │  ├─ assets.py
       │  ├─ font_runtime.py
       │  ├─ layout_config.py
       │  └─ styles.py
-      ├─ viewmodels/
-      │  ├─ __init__.py
-      │  └─ library_viewmodel.py
-      └─ widgets/
+      └─ viewmodels/
          ├─ __init__.py
-         ├─ book_card.py
-         ├─ sidebar.py
-         ├─ slide_toast.py
-         └─ topbar.py
+         └─ library_viewmodel.py
 ```
 
 ## 3. 每个代码组件的用处介绍
@@ -118,11 +94,11 @@ src/
 - `src/main.py`：应用入口；在创建 `QApplication` 前设置 `AA_ShareOpenGLContexts` 并注册 `app://` 自定义 scheme，随后创建 Qt 应用并启动 WebEngine 主窗口 `WebAppWindow`（`--check-pymupdf` 自检分支保留）。
 - `src/tests/test_rule_engine.py`：Text 规则引擎回归测试（步骤提取、行范围 warning、回退链、非法正则容错）。
 - `src/tests/test_rule_preview.py`：Text 规则预览回归测试（自动样本、规则链回退、非法正则失败、空目录无样本）。
-- `src/tests/test_text_rule_dialog.py`：Text 规则弹窗 smoke 测试（旧 JSON 加载、字段切换、上下文参数、预览状态、格式诊断、多样本预览、窗口尺寸记忆、帮助文档布局）。
 - `src/tests/test_text_rule_structure_parser.py`：Text 规则结构解析测试（嵌套括号、括号外分隔符、样本格式分组）。
 - `src/tests/test_scan_pdf_degrade.py`：PDF 后端降级容错回归测试（PyMuPDF 不可用时的聚合 warning 与入库行为）。
 - `src/tests/test_comic_preview_pipeline.py`：漫画快扫占位与后台并行补图回归测试（占位复制、压缩替换、原图删除、超大图降采样、排序顺序）。
-- `src/tests/test_comic_page_cache.py`：漫画页缓存回归测试（数据缓存命中、卡片复用与收藏联动失效）。
+- `src/tests/test_cover_grid_settings.py`：封面选中边框归一化与 Repository 偏好持久化（含 Text 规则预览高度/窗口尺寸/预设）；已不再依赖旧 Widgets 页。
+- `src/tests/test_web_bridge_smoke.py`：Web Bridge / scheme / Text Rules CRUD 冒烟。
 - `src/sql/.gitkeep`：运行数据目录占位，实际运行时生成 `library.db`、`scan_report.json`。
 
 ### 3.2 bookhub 包根
@@ -147,7 +123,7 @@ src/
 - `src/bookhub/library/text_rules/step_handlers.py`：规则步骤处理（文本清洗、文本删除、split、多分隔符取段、分隔范围拼接、单行/范围行提取、删除前/后 N 行、分界线截取、按行循环提取、嵌套感知括号提取/删除、regex_extract 等）。
 - `src/bookhub/library/text_rules/rule_preview.py`：Text 规则预览辅助；查找首个 TXT 样本、读取首行/开头文本并复用规则链执行预览。
 - `src/bookhub/library/text_rules/rule_examples.py`：默认规则链示例。
-- `src/bookhub/library/text_rules/rule_catalog.py`：Web/原生共享的 Text Rules 元数据目录（fields/sources/step 分类与参数表单、内置模板、常用正则、帮助章节）；`describe_step_catalog()` 供 Bridge 下发。
+- `src/bookhub/library/text_rules/rule_catalog.py`：Text Rules Web 元数据目录（fields/sources/step 分类与参数表单、内置模板、常用正则、帮助章节）；`describe_step_catalog()` 供 Bridge 下发。
 - `src/bookhub/library/worker.py`：扫描任务线程包装；透传 Library/Comic/Text 扫描进度信号；汇总多 scope 统计与 warning。
 - `src/bookhub/library/thumbnail_tasks.py`：缩略图清理与重建任务实现；漫画 `cover_fingerprint` 以 `manual:` 开头时跳过 regenerate，保留用户手选封面。
 - `src/bookhub/library/thumbnail_worker.py`：缩略图任务线程包装。
@@ -165,54 +141,27 @@ src/
 - `src/bookhub/ui/web/css/app.css`：玻璃拟态样式与动效；`.content-split` `user-select:none`（避免拖选干扰封面操作）；视口虚拟列表 `.virt-spacer-top/bottom`；`.content-split` / spacer / grid 设 `overflow-anchor: none`，禁用 Chromium 滚动锚定以防与 spacer 同步形成反馈环；Text Rules `.tr-overlay` / `.tr-host` 三栏宽屏面板与抽屉样式；`.tr-col` / `.tr-drawer-body` 设 `overflow-anchor: none`，对齐 `.content-split` 已验证约束，避免与 `renderTrBody()` 局部重建形成滚动锚定反馈；网格 `.book-card .cover` / `.mini-cover` 与详情 `.detail-cover-slot` 均 `object-fit: contain`（兼容非 2:3）；`.context-menu` 用 `width: max-content` 按文案收缩（避免子项 `width:100%` 相对视口撑满）；快添列表「添加/已添加」与 `.path-add-btn` 半透明 hover。
 - `src/bookhub/ui/web/js/qwebchannel.js`：Qt 官方 `qwebchannel.js` 原样内置（从 Qt 资源导出）。
 - `requirements-dev.txt`：开发/测试依赖（`pytest==8.3.5`）；运行依赖仍见根目录 `requirements.txt`。
-- `src/bookhub/ui/app_window.py`：旧版纯 QSS 主窗口装配（Sidebar+TopBar+QStackedWidget pages）；WebEngine 重写后不再作为入口，保留其页面/对话框供 `web_window.py` 复用与回退参考。
 
-### 3.6 对话框组件（bookhub/ui/dialogs）
-- `src/bookhub/ui/dialogs/__init__.py`：对话框包入口。
-- `src/bookhub/ui/dialogs/import_dialog.py`：导入相关对话框逻辑。
-- `src/bookhub/ui/dialogs/add_tag_dialog.py`：添加标签对话框。
-- `src/bookhub/ui/dialogs/add_to_collection_dialog.py`：旧版加入书单对话框（兼容保留）。
-- `src/bookhub/ui/dialogs/quick_add_dialog.py`：快速添加标签/加入书单弹窗。
-- `src/bookhub/ui/dialogs/text_rule_dialog.py`：Text Novel 规则步骤编辑对话框；左侧字段 Tab/规则链，中列按类别筛选的卡片式步骤编辑（含嵌套括号与分隔处理步骤）与用户预设导入/保存，右侧常驻 TXT 单样本预览、文件名格式诊断与多样本预览（项目样式滚动结果区，可拖拽并记忆高度）；窗口宽高会作为 UI 偏好记忆；右上角提供常用正则与使用文档入口。
-- `src/bookhub/ui/dialogs/text_rule_help_dialog.py`：Text Rules 内置使用文档窗口；说明 source、步骤、分隔提取、嵌套括号、格式诊断、多样本预览、窗口尺寸记忆和常见排错。
-- `src/bookhub/ui/dialogs/text_rule_regex_dialog.py`：Text Rules 常用正则示范窗口；按用途、示例文本、正则、提取结果展示，覆盖日期、tag、分隔/混合分隔文件名、Pixiv id 等示例。
-
-### 3.7 UI 数据模型（bookhub/ui/models）
+### 3.6 UI 数据模型（bookhub/ui/models）
 - `src/bookhub/ui/models/__init__.py`：模型包入口。
 - `src/bookhub/ui/models/resource.py`：UI 层 `ResourceItem` 资源模型。
 
-### 3.8 页面组件（bookhub/ui/pages）
-- `src/bookhub/ui/pages/__init__.py`：页面包入口。
-- `src/bookhub/ui/pages/comic_page.py`：Comic/Comic Fav 页面；支持文件夹日期/名称排序与显示模式二选一（瀑布流/分页）；封面双击外部打开；右键添加/移除收藏；网格封面采用无壳层 cover-only 卡片并共享全局选中边框设置。
-- `src/bookhub/ui/pages/library_page.py`：Library 页面；grid/list；右侧详情栏；单/双击交互；网格区域移除 `+ ADD NEW BOOK` 末尾方块入口，仅保留封面直陈列。
-- `src/bookhub/ui/pages/collections_page.py`：书单页与书单详情页；详情支持 grid/list 视图与侧键返回上一级。
-- `src/bookhub/ui/pages/favorites_page.py`：收藏页；支持 grid/list 视图与排序持久化；封面网格与 Library/Comic 共享无壳层 cover-only 卡片表现。
-- `src/bookhub/ui/pages/settings_page.py`：设置页；General 页重排为基础偏好、扫描策略、字体与界面、路径管理、扫描与维护等区块；导航仅保留 General 与 Error logs；扫描进度面板显示任务名、进度条、当前路径、统计快照与错误日志入口；Text Novel 路径行支持“Delete + Rules + Path”布局；支持 Text 预览长度、Text 规则窗口尺寸/结果区高度偏好与漫画显示模式（瀑布流/分页）及分页容量配置；扫描/缩略图任务按 Library/Comic/Text 分类型入口。
-- `src/bookhub/ui/pages/text_novel_page.py`：Text Novel 页面；固定列表视图；接收 AppWindow 按文本小说标题/作者/tag/路径过滤后的资源；右侧详情栏展示 TXT 预览文本；双击外部打开。
-
-### 3.9 UI 资源组件（bookhub/ui/resources）
+### 3.7 UI 资源组件（bookhub/ui/resources）
 - `src/bookhub/ui/resources/__init__.py`：资源包入口。
 - `src/assets/app_icon_bookcase.svg`：书柜主题应用图标源文件。
 - `src/assets/app_icon_bookcase.ico`：Nuitka/Windows exe 使用的应用图标。
 - `src/bookhub/ui/resources/assets.py`：图标/资源加载，支持 icons 子目录与顶层资产图标。
 - `src/bookhub/ui/resources/font_runtime.py`：运行时字体服务；扫描并注册 `src/fonts` 字体文件、解析有效字体与回退策略。
 - `src/bookhub/ui/resources/layout_config.py`：布局尺寸与间距配置；包含 cover-only 选中边框宽度/颜色的归一化与运行时状态。
-- `src/bookhub/ui/resources/styles.py`：全局 QSS 样式；支持基于选中字体动态构建 `font-family` 栈，并支持注入 cover-only 选中边框动态样式参数。
+- `src/bookhub/ui/resources/styles.py`：仅保留 `DEFAULT_FONT_STACK`，供 `WebAppWindow` 字体回退；旧全局 QSS/`build_app_style` 已随 Widgets UI 清理移除。
 
-### 3.10 视图模型组件（bookhub/ui/viewmodels）
+### 3.8 视图模型组件（bookhub/ui/viewmodels）
 - `src/bookhub/ui/viewmodels/__init__.py`：视图模型包入口。
 - `src/bookhub/ui/viewmodels/library_viewmodel.py`：Library/Text 资源查询过滤、字段前缀搜索（`title:`/`author:`/`tag:`）、视图模式、搜索建议状态。
 
-### 3.11 小部件组件（bookhub/ui/widgets）
-- `src/bookhub/ui/widgets/__init__.py`：小部件包入口。
-- `src/bookhub/ui/widgets/sidebar.py`：左侧导航栏组件。
-- `src/bookhub/ui/widgets/topbar.py`：顶部搜索栏与建议浮层；支持按页面切换搜索占位文案。
-- `src/bookhub/ui/widgets/book_card.py`：书籍卡片组件（常规卡片、cover-only 卡片）；统一格式化作者/出版社元信息并隐藏缺失出版社的 Unknown 占位；cover-only 分支使用零内边距封面直陈列（无常驻外壳）。
-- `src/bookhub/ui/widgets/slide_toast.py`：右下角滑入提示组件。
-
 ## 4. 当前关键实现（简要）
-- 2026-07-11 UI 重写（WebEngine 玻璃拟态）：UI 层从纯 QSS 迁移为 `QWebEngineView` 加载 `src/bookhub/ui/web/` 前端，`QWebChannel` 经 `UiBridge` 与后端双向通信；`app://` 自定义 scheme 服务前端资源并以白名单方式代理封面图；内建完整日/夜主题引擎（Auto/Day/Night + 本地时间自动切换 + 缓慢过渡）与 Web 化设置页（两向绑定到 `LibraryRepository`）。`main.py` 入口切换为 `WebAppWindow`；Text Rules 已 Web 化（宽屏三栏面板），原生 `TextRuleDialog` 仅保留回退/测试。`library/` 后端与数据结构未改动；`build_nuitka.ps1` 增加 `web/` 数据目录与 `--include-qt-plugins=all` 以携带 QtWebEngine 运行时；新增 `src/tests/test_web_bridge_smoke.py` 覆盖桥接与 scheme。`PySide6==6.6.1` 已内含 QtWebEngine，未新增 pip 依赖。旧 `app_window.py`/`pages/`/`widgets/`/`styles.py` 保留供复用与回退。
-- 运行依赖：`requirements.txt` 采用固定版本策略；在 Python 3.10.6 环境锁定 `PySide6==6.6.1` 以规避 `libshiboken/signature` 初始化崩溃。
+- 2026-07-14 旧 Widgets UI 清理：删除已无运行时入口的 `app_window.py`、`pages/`、`widgets/`、`dialogs/`；删除仅测旧 UI 的 `test_text_rule_dialog.py`/`test_comic_page_cache.py`；`test_cover_grid_settings.py` 仅保留 Repository/`layout_config` 断言；`styles.py` 瘦身为 `DEFAULT_FONT_STACK`。设计史料仍在 `Dev_Document/UI/旧UI-*`，与源码清理解耦。
+- 2026-07-11 UI 重写（WebEngine 玻璃拟态）：UI 层从纯 QSS 迁移为 `QWebEngineView` 加载 `src/bookhub/ui/web/` 前端，`QWebChannel` 经 `UiBridge` 与后端双向通信；`app://` 自定义 scheme 服务前端资源并以白名单方式代理封面图；内建完整日/夜主题引擎与 Web 化设置页。`main.py` 入口为 `WebAppWindow`；Text Rules 走 Web 三栏面板。`library/` 后端与数据结构未改动；`build_nuitka.ps1` 携带 `web/` 与 QtWebEngine；`src/tests/test_web_bridge_smoke.py` 覆盖桥接与 scheme。- 运行依赖：`requirements.txt` 采用固定版本策略；在 Python 3.10.6 环境锁定 `PySide6==6.6.1` 以规避 `libshiboken/signature` 初始化崩溃。
 - 打包准备：新增书柜主题应用图标，`scripts/build_nuitka.ps1` 使用 `Nuitka==4.1.2` 构建 exe，并显式打包 `src/assets`、i18n locales、`fitz` 与 `pymupdf` 原始包目录；PyMuPDF 采用预编译 `.pyd/.dll` 随包携带并关闭 Nuitka excluded-module 运行时阻断；`scripts/`、`src/tests/`、运行数据库、扫描日志、缩略图缓存不进入发行包。
 - 2026-05-29 外部工具链注释：本次仅完成 Hue 离线落地与本地 MCP 集成（`F:\Coding_Dev\UI\hue*`、全局 `mcp.json`），`src/` 代码与目录结构未发生变更。
 - 2026-05-30 外部工具链注释：Hue MCP 相关目录已统一迁移到 `F:\MCP\hue-mcp-server` 与 `F:\MCP\hue`；本次仍不涉及 `src/` 代码变更。

@@ -1,52 +1,71 @@
-# Simple Book Library
+# 简易图书馆（Simple Book Library）
 
-本地桌面书库管理工具，基于 **Python 3.10+** 与 **PySide6 (Qt)**。面向个人藏书场景：扫描目录、提取元数据、生成封面缩略图，并提供 Library / 漫画 / 文本小说等分区浏览。
+在 Windows 上管理个人藏书与本地文件的桌面工具：把 PDF / EPUB、漫画图片文件夹、TXT 小说扫进统一书库，用封面网格浏览，双击用系统默认程序打开。
 
-## 功能概览
+## 适合谁用
 
-| 模块 | 支持格式 | 说明 |
-|------|----------|------|
-| **Library** | PDF、EPUB | 网格/列表视图、右侧详情栏、标签与书单 |
-| **Comic** | 图片文件夹（jpg/png/webp 等） | 叶子目录识别、封面快扫 + 后台压缩缩略图 |
-| **Text Novel** | TXT | 独立列表页、正文预览、可配置导入规则链 |
-| **Collections** | — | 自定义书单，支持网格/列表与详情 |
-| **Favorites** | PDF/EPUB + 漫画收藏 | 统一收藏入口，排序可持久化 |
-| **Settings** | — | 路径、扫描策略、字体、缩略图维护、错误日志 |
+- 想集中管理本机 PDF、EPUB、漫画文件夹、TXT 小说
+- 希望按目录扫描入库，而不是一个个手动添加文件
+- 需要标签、书单、收藏，以及给 TXT 配置导入规则（从文件名或正文提取信息）
 
-### 导入与扫描
+## 能做什么
 
-- **导入粒度**：目录级（不支持单文件拖入）。
-- **Library 根目录**：递归扫描 PDF/EPUB，深度 1–3 层可配；提取标题/作者/出版社/语言，生成 WebP 缩略图。
-- **Comic 根目录**：识别含图片的叶子文件夹；首图占位复制，压缩缩略图可后台并行生成。
-- **Text 根目录**：按规则链从文件名或正文提取标题、作者、系列、标签；TXT 不进入 Library 主列表。
-- **缺失治理**：源文件/文件夹不存在时写入 `src/Scan_error_logs` 并硬删除库内记录。
-- **重名冲突**：同名同扩展名且路径不同则跳过导入，并记录到错误日志。
-- **PyMuPDF 降级**：`fitz` 不可用时 PDF 仍入库（标题兜底），跳过元数据与缩略图并给出聚合 warning。
+| 分区 | 支持内容 | 你可以做什么 |
+|------|----------|--------------|
+| **Library** | PDF、EPUB | 网格/列表浏览、右侧详情、标签、搜索 |
+| **Comic** | 含图片的文件夹（jpg / png / webp 等） | 按漫画本浏览封面，可选瀑布流或分页 |
+| **Text Novel** | TXT | 列表浏览、正文预览、自定义导入规则链 |
+| **Collections** | — | 自定义书单 |
+| **Favorites** | 图书 + 漫画 | 统一收藏入口 |
+| **Settings** | — | 路径、扫描、字体、缩略图、错误日志等 |
 
-### 浏览与交互
+### 导入
 
-- 单击选中并在右侧详情栏查看信息；双击用系统默认程序打开。
-- 顶部搜索：Library 支持 `title:` / `author:` / `tag:` 前缀；Text Novel 页独立过滤。
-- 封面网格采用 **cover-only** 无壳层样式，选中边框可在设置中调节。
-- 漫画页支持瀑布流/分页（全局二选一），按文件夹修改时间或名称排序。
+1. 在设置里分别指定 Library / Comic / Text 的根目录。
+2. 触发扫描后，程序会递归入库（目录级导入，**不支持**拖入单个文件）。
+3. 自动提取能拿到的标题、作者等信息，并生成封面缩略图。
 
-### 数据与文件
+补充说明：
 
-| 路径 | 用途 |
+- Library 扫描深度可调（约 1–3 层）。
+- 漫画：把「叶子文件夹」（里面是图片）识别成一本；会先快速占位封面，再后台生成压缩缩略图。
+- TXT：按你配置的**文本规则**从文件名或正文提取标题、作者、系列、标签；小说进入 Text Novel，不混进 Library 主列表。
+- 源文件失踪：会记入错误日志，并从库中删除对应记录。
+- 同名同扩展、路径不同：跳过导入并写入错误日志。
+
+### 浏览与打开
+
+- **单击**：选中，右侧看详情。
+- **双击**：用系统默认关联程序打开（需本机已安装对应阅读器）。
+- 顶部搜索：Library 可用 `title:` / `author:` / `tag:` 前缀；Text Novel 有独立过滤。
+- 封面样式可在设置中调节（如选中边框等）。
+
+### 文本规则（TXT）
+
+在设置的 Rules 中打开规则面板，可：
+
+- 增删改导入规则链，并实时预览效果  
+- 使用内置模板 / 常用正则  
+- 保存后，后续 Text 扫描按新规则提取元数据  
+
+### 数据存在哪
+
+都在本机，不上传云端：
+
+| 位置 | 用途 |
 |------|------|
-| `src/sql/library.db` | SQLite 书库数据库 |
-| `src/sql/scan_report.json` | 最近一次扫描摘要 |
-| `img_preview/` | 缩略图缓存（按资源类型与 original/compressed 分目录） |
-| `src/Scan_error_logs/` | 扫描冲突、缺失删除、图片处理失败等日志 |
-| `src/fonts/` | 可选自定义字体（Settings 中 Reload Fonts） |
+| `src/sql/library.db` | 书库数据库 |
+| `img_preview/` | 封面缩略图缓存 |
+| `src/Scan_error_logs/` | 扫描冲突、缺失删除等问题日志 |
+| `src/fonts/` | 可选自定义字体（设置里可重新加载） |
 
 ## 环境要求
 
-- Windows 10/11（主要开发与打包目标）
-- Python **3.10.6**（推荐，与依赖锁定版本一致）
-- 虚拟环境 + `requirements.txt` 固定版本（含 `PySide6==6.6.1`、`PyMuPDF==1.24.10`）
+- **系统**：Windows 10 / 11（主要支持平台）
+- **Python**：推荐 **3.10.6**（与依赖锁定一致；需 3.10+）
+- **界面语言**：简体中文为主
 
-## 快速开始
+## 安装与启动
 
 ```powershell
 # 1. 创建并激活虚拟环境
@@ -55,74 +74,45 @@ python -m venv .venv
 
 # 2. 安装依赖
 pip install -r requirements.txt
-# 开发/测试额外依赖
-pip install -r requirements-dev.txt
 
-# 3. 启动应用
+# 3. 启动（无控制台黑窗）
 .\.venv\Scripts\pythonw.exe src\main.py
 ```
 
-可选：在项目根目录放置 `启动 简易图书馆.lnk`，指向上述 `pythonw.exe` 与 `src\main.py`（该文件已被 `.gitignore` 忽略）。
+也可在项目根目录自建快捷方式「启动 简易图书馆.lnk」，指向上面的 `pythonw.exe` 与 `src\main.py`（该快捷方式不纳入版本库）。
 
-### 运行测试
-
-```powershell
-$env:PYTHONPATH="src"
-.\.venv\Scripts\python.exe -m pytest src/tests -q
-```
-
-### 验证 PyMuPDF
+### 可选：打包成 exe
 
 ```powershell
-.\.venv\Scripts\python.exe src\main.py --check-pymupdf
-# 退出码 0 表示可用
+.\scripts\build_nuitka.ps1          # 独立目录
+.\scripts\build_nuitka.ps1 -Onefile # 单文件
 ```
 
-## 打包（Nuitka）
+产物在 `build/nuitka/`。
 
-```powershell
-.\scripts\build_nuitka.ps1          # standalone
-.\scripts\build_nuitka.ps1 -Onefile # 单文件 exe
-```
-
-输出目录：`build/nuitka/`。脚本会打包 `src/assets`、i18n 文案与 PyMuPDF 原生模块。
-
-## 测试
+### 可选：开发自检
 
 ```powershell
 pip install -r requirements-dev.txt
 $env:PYTHONPATH="src"
-.\.venv\Scripts\python.exe -m pytest src/tests/ -q
+.\.venv\Scripts\python.exe -m pytest src/tests -q
+
+# 检查 PDF 引擎是否可用（退出码 0 = 正常）
+.\.venv\Scripts\python.exe src\main.py --check-pymupdf
 ```
 
-覆盖 Text 规则引擎、漫画预览流水线、PDF 降级、UI smoke 等回归用例。
+## 使用前请知晓
 
-## 项目结构（简）
+- 只支持**配置根目录后扫描**，不能拖单个文件入库。
+- 打开图书依赖本机已安装的默认程序（PDF 阅读器、看图软件等）。
+- 扫描与缩略图生成同一时间只跑一类后台任务，大库首次扫描可能较久。
+- 若未安装 / 不可用 PyMuPDF：PDF 仍可入库，但可能缺少详细元数据与封面，并给出提示。
 
-```
-src/
-├── main.py              # 应用入口
-├── bookhub/
-│   ├── library/         # 扫描、SQLite、缩略图、Text 规则
-│   └── ui/              # Qt 主窗口、页面、对话框、组件
-├── tests/               # 回归测试
-└── sql/                 # 运行时数据库（.gitkeep 占位）
-```
+## 更多文档
 
-完整结构说明见 [`src_construction.md`](src_construction.md)。
-
-## 已知限制
-
-- 不支持单文件导入，仅支持配置根目录后扫描。
-- 外部打开依赖系统默认关联程序。
-- 当前 UI 文案以中文（`zh-cn`）为主。
-- 扫描与缩略图任务互斥：同一时刻只跑一种后台任务。
-
-## 开发文档
-
-- Agent 规范与留档：`Agent-rule/`
-- UI 设计范本：`Simple-Book-library-Dev_Document/UI/新UI/`
+- 源码结构说明：[`src_construction.md`](src_construction.md)
+- UI 设计稿：`Simple-Book-library-Dev_Document/UI/新UI/`
 
 ## 许可证
 
-见仓库内各文件声明；第三方依赖遵循各自许可证。
+见仓库内声明；第三方依赖遵循各自许可证。
