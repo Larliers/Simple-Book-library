@@ -1,5 +1,7 @@
 # 简易图书馆（Simple Book Library）
 
+[中文](README.md) | [English](README.en.md)
+
 在 Windows 上管理个人藏书与本地文件的桌面工具：把 PDF / EPUB、漫画图片文件夹、TXT 小说扫进统一书库，用封面网格浏览，双击用系统默认程序打开。
 
 ## 适合谁用
