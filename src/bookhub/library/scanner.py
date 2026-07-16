@@ -36,6 +36,7 @@ from bookhub.library.preview_paths import build_preview_path, is_preview_variant
 from bookhub.library.repository import LibraryRepository
 from bookhub.library.text_rules import ImportRule, RuleContext, apply_rule_chain, load_rules_from_json
 from bookhub.library.text_rules.rule_examples import default_text_title_rule_chain
+from bookhub.library.text_encoding import read_text_file, read_text_first_line
 
 ScanProgressCallback = Callable[[int, int, str, dict[str, object]], None]
 
@@ -212,21 +213,12 @@ def _cleanup_stale_duplicate_if_needed(
 
 
 def _read_txt_first_line(file_path: Path) -> str:
-    try:
-        with file_path.open("r", encoding="utf-8", errors="ignore") as handle:
-            return (handle.readline() or "").strip()
-    except OSError:
-        return ""
+    return read_text_first_line(file_path)
 
 
 def _read_txt_head_text(file_path: Path, preview_chars: int) -> str:
     safe_limit = max(100, int(preview_chars))
-    try:
-        with file_path.open("r", encoding="utf-8", errors="ignore") as handle:
-            content = handle.read(safe_limit + 1)
-    except OSError:
-        return ""
-    return content[:safe_limit].strip()
+    return read_text_file(file_path, max_chars=safe_limit).strip()
 
 
 def _parse_rule_map(raw_rules_json: str, errors: list[str], path_for_error: str) -> dict[str, list[ImportRule]]:
@@ -278,10 +270,7 @@ def _collect_comic_info_text(folder: Path) -> str | None:
         return None
     parts: list[str] = []
     for txt_path in txt_paths:
-        try:
-            content = txt_path.read_text(encoding="utf-8", errors="ignore").strip()
-        except OSError:
-            continue
+        content = read_text_file(txt_path).strip()
         if content:
             parts.append(content)
     if not parts:

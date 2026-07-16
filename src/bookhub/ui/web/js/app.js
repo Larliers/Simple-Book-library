@@ -17,6 +17,8 @@ const State = {
   renderTimer: null,
   scrollPos: {},
   comicPageNum: { comic: 1, comic_fav: 1 },
+  _scanRunning: false,
+  _taskKind: "scan",
 };
 
 const COMIC_PAGES = new Set(["comic", "comic_fav"]);
@@ -775,11 +777,27 @@ function showToast(title, message, kind) {
 }
 
 /* ---------- scan progress ---------- */
+function setLibraryTaskButtonsDisabled(disabled) {
+  const top = $("scanBtn");
+  if (top) top.disabled = !!disabled;
+  document.querySelectorAll("[data-library-task-btn]").forEach((btn) => {
+    btn.disabled = !!disabled;
+  });
+}
+
 function updateScanState(d) {
-  State._scanRunning = d.running;
+  State._scanRunning = !!d.running;
+  State._taskKind = d.kind || (String(d.scope || "").includes(":thumb") ? "thumbnail" : "scan");
   const btn = $("scanBtn");
-  if (d.running) { btn.textContent = t("topbar.scanning", "Scanning..."); btn.disabled = true; }
-  else { btn.textContent = t("topbar.scan", "Scan"); btn.disabled = false; }
+  if (d.running) {
+    const scanningLabel = State._taskKind === "thumbnail"
+      ? t("topbar.thumb_busy", "Working...")
+      : t("topbar.scanning", "Scanning...");
+    if (btn) btn.textContent = scanningLabel;
+  } else if (btn) {
+    btn.textContent = t("topbar.scan", "Scan");
+  }
+  setLibraryTaskButtonsDisabled(!!d.running);
   const bar = document.getElementById("scanProgressBar");
   if (bar && !d.running) bar.style.width = "0%";
 }
@@ -1267,26 +1285,40 @@ function confirmRemoveRoot(kind, path) {
 
 function formatScanSummary(report) {
   if (!report || typeof report !== "object") return "";
+  const ignored = report.ignored_unsupported_count ?? report.ignored_unsupported ?? 0;
+  const textScanned = report.text_scanned_count ?? report.text_scanned_files ?? 0;
+  const downscaled = report.comic_thumbnail_downscaled_count ?? report.comic_large_image_downscaled_count ?? 0;
+  const addedTotal =
+    Number(report.added_count || 0) +
+    Number(report.text_added_count || 0) +
+    Number(report.comic_added_count || 0);
   let text = fmt(t("settings.scan_summary_template", "Last scan: {updated_at}\nScope: {scope} | Added: {added} | Ignored unsupported: {ignored} | Name conflicts: {conflicts}\nRemoved missing: {removed_total} (library/text: {removed_books}, comic: {removed_comics})"), {
     updated_at: report.updated_at || report.finished_at || "—",
     scope: report.scope || report.trigger || "—",
-    added: Number(report.added_count || 0) + Number(report.text_added_count || 0),
-    ignored: report.ignored_unsupported_count || 0,
+    added: addedTotal,
+    ignored,
     conflicts: Array.isArray(report.name_conflicts) ? report.name_conflicts.length : (report.name_conflict_count || 0),
     removed_total: report.removed_missing_count || 0,
     removed_books: report.removed_missing_book_count || 0,
     removed_comics: report.removed_missing_comic_count || 0,
   });
+  if (Number(report.skipped_unchanged_count || 0) > 0) {
+    text += fmt(t("settings.scan_summary_skipped", "\nLibrary unchanged skipped: {skipped}"), {
+      skipped: report.skipped_unchanged_count || 0,
+    });
+  }
   text += fmt(t("settings.text.scan_summary", "\nText Novel - scanned:{scanned} added:{added} updated:{updated}"), {
-    scanned: report.text_scanned_count || 0,
+    scanned: textScanned,
     added: report.text_added_count || 0,
     updated: report.text_updated_count || 0,
   });
-  text += fmt(t("settings.comic.scan_perf_summary", "\nComic - placeholders:{copied} thumbs queued:{queued} workers:{workers} downscaled:{downscaled}"), {
+  text += fmt(t("settings.comic.scan_perf_summary", "\nComic - added:{added} updated:{updated} placeholders:{copied} thumbs queued:{queued} workers:{workers} downscaled:{downscaled}"), {
+    added: report.comic_added_count || 0,
+    updated: report.comic_updated_count || 0,
     copied: report.comic_placeholder_copied_count || 0,
     queued: report.comic_thumbnail_enqueued_count || 0,
     workers: report.comic_thumbnail_workers_used || "—",
-    downscaled: report.comic_thumbnail_downscaled_count || 0,
+    downscaled,
   });
   return text;
 }
@@ -1304,6 +1336,8 @@ function renderSettingsTasks(panel) {
   const scanRow = elem("div", "detail-actions");
   [["library","settings.tasks.scan_library"],["comic","settings.tasks.scan_comic"],["text","settings.tasks.scan_text"]].forEach(([scope, key]) => {
     const btn = elem("button", "primary-btn", t(key));
+    btn.setAttribute("data-library-task-btn", "scan");
+    btn.disabled = !!State._scanRunning;
     btn.addEventListener("click", () => State.bridge.startScan(scope));
     scanRow.appendChild(btn);
   });
@@ -1313,6 +1347,8 @@ function renderSettingsTasks(panel) {
   [["cleanup","library","settings.tasks.cleanup_library"],["regenerate","library","settings.tasks.regen_library"],
    ["cleanup","comic","settings.tasks.cleanup_comic"],["regenerate","comic","settings.tasks.regen_comic"]].forEach(([kind, scope, key]) => {
     const btn = elem("button", "ghost-btn", t(key));
+    btn.setAttribute("data-library-task-btn", "thumb");
+    btn.disabled = !!State._scanRunning;
     btn.addEventListener("click", () => State.bridge.startThumbnailTask(kind, scope));
     thumbRow.appendChild(btn);
   });

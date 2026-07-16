@@ -115,13 +115,16 @@ class ScanWorker(QThread):
             summary["comic_large_image_downscaled_count"] = int(
                 comic_summary.get("comic_large_image_downscaled_count", 0) or 0
             )
+            summary["comic_thumbnail_downscaled_count"] = summary["comic_large_image_downscaled_count"]
             merged_conflicts = list(summary.get("name_conflicts", []))
             merged_conflicts.extend(list(text_summary.get("name_conflicts", [])))
             summary["name_conflicts"] = merged_conflicts
             summary["text_added_count"] = int(text_summary.get("text_added_count", 0) or 0)
             summary["text_updated_count"] = int(text_summary.get("text_updated_count", 0) or 0)
             summary["text_scanned_files"] = int(text_summary.get("text_scanned_files", 0) or 0)
+            summary["text_scanned_count"] = summary["text_scanned_files"]
             summary["text_errors"] = list(text_summary.get("text_errors", []))
+            summary["ignored_unsupported_count"] = int(summary.get("ignored_unsupported", 0) or 0)
             merged_warnings = list(summary.get("warnings", []))
             merged_warnings.extend(list(comic_summary.get("warnings", [])))
             merged_warnings.extend(list(text_summary.get("warnings", [])))

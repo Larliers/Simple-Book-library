@@ -122,6 +122,8 @@ class ScanResult:
             "added_count": self.added_count,
             "updated_count": self.updated_count,
             "ignored_unsupported": self.ignored_unsupported,
+            # Frontend alias (historical key name).
+            "ignored_unsupported_count": self.ignored_unsupported,
             "skipped_unchanged_count": self.skipped_unchanged_count,
             "name_conflicts": [item.as_dict() for item in self.name_conflicts],
             "removed_missing_count": self.removed_missing_count,
@@ -140,9 +142,13 @@ class ScanResult:
             "comic_thumbnail_enqueued_count": self.comic_thumbnail_enqueued_count,
             "comic_thumbnail_workers_used": self.comic_thumbnail_workers_used,
             "comic_large_image_downscaled_count": self.comic_large_image_downscaled_count,
+            # Frontend alias (historical key name).
+            "comic_thumbnail_downscaled_count": self.comic_large_image_downscaled_count,
             "text_added_count": self.text_added_count,
             "text_updated_count": self.text_updated_count,
             "text_scanned_files": self.text_scanned_files,
+            # Frontend alias (historical key name).
+            "text_scanned_count": self.text_scanned_files,
             "text_errors": list(self.text_errors),
         }
 

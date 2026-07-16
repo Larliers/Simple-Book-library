@@ -15,8 +15,8 @@ A local Windows desktop library app for your personal collection. Scan PDF / EPU
 | Section | Formats | What you can do |
 |---------|---------|-----------------|
 | **Library** | PDF, EPUB | Grid / list view, detail pane, tags, search |
-| **Comic** | Image folders (jpg / png / webp, …) | Browse by volume; waterfall or paginated layout |
-| **Text Novel** | TXT | List view, text preview, custom import rule chains |
+| **Comic** | **Leaf image folders** (jpg / jpeg / png / webp) | One folder = one volume; title = folder name; waterfall or paginated layout |
+| **Text Novel** | TXT (auto-detects UTF-8 / GBK, etc.) | List view, text preview, custom import rule chains |
 | **Collections** | — | Custom reading lists |
 | **Favorites** | Books + comics | Unified favorites entry |
 | **Settings** | — | Paths, scan options, fonts, thumbnails, error logs |
@@ -30,8 +30,8 @@ A local Windows desktop library app for your personal collection. Scan PDF / EPU
 Notes:
 
 - Library scan depth is configurable (about 1–3 levels).
-- Comics: a leaf folder of images is treated as one volume; a fast placeholder cover appears first, then compressed thumbnails are generated in the background.
-- TXT: **text rules** extract title, author, series, and tags from the filename or body; novels land in Text Novel, not the main Library list.
+- Comics (**by design**): aimed at readers who store pages as images, one folder per volume. A leaf folder of jpg/jpeg/png/webp becomes one comic; the title is the folder name. A fast placeholder cover appears first, then compressed thumbnails are generated in the background. **CBZ / CBR / ZIP comic archives are not supported.**
+- TXT: encoding is auto-detected (UTF-8, GBK/GB18030, etc.); **text rules** extract title, author, series, and tags from the filename or body; novels land in Text Novel, not the main Library list.
 - Missing source files are logged and removed from the library.
 - Same name + extension under different paths: import is skipped and logged.
 
@@ -106,6 +106,7 @@ $env:PYTHONPATH="src"
 ## Limitations
 
 - Import is **scan-from-configured-roots only**; you cannot drop a single file into the library.
+- The Comic section manages **image folders only** — CBZ/CBR archives are not supported.
 - Opening files depends on OS file associations (PDF reader, image viewer, etc.).
 - Scan and thumbnail jobs are mutually exclusive; large first-time scans can take a while.
 - If PyMuPDF is missing or unavailable, PDFs can still be indexed, but metadata and covers may be incomplete (with a warning).

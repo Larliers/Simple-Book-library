@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from bookhub.library.models import DEFAULT_TEXT_PREVIEW_CHARS, TEXT_FILE_EXTENSION
+from bookhub.library.text_encoding import read_text_file, read_text_first_line
 from bookhub.library.text_rules.rule_models import ImportRule, RuleContext, RuleResult
 from bookhub.library.text_rules.rule_engine import apply_rule_chain
 
@@ -36,13 +37,24 @@ def read_txt_preview_sample(file_path: str, preview_chars: int = DEFAULT_TEXT_PR
         return None
 
     safe_limit = max(100, int(preview_chars or DEFAULT_TEXT_PREVIEW_CHARS))
-    try:
-        with path.open("r", encoding="utf-8", errors="ignore") as handle:
-            first_line = (handle.readline() or "").strip()
-            handle.seek(0)
-            head_text = handle.read(safe_limit + 1)[:safe_limit].strip()
-    except OSError:
-        return None
+    first_line = read_text_first_line(path)
+    head_text = read_text_file(path, max_chars=safe_limit).strip()
+    if not first_line and not head_text:
+        # Distinguish empty file from unreadable: still return sample for empty UTF-ish files.
+        try:
+            if path.stat().st_size == 0:
+                return RulePreviewSample(
+                    file_path=str(path.resolve(strict=False)),
+                    txt_first_line="",
+                    txt_head_text="",
+                )
+        except OSError:
+            return None
+        return RulePreviewSample(
+            file_path=str(path.resolve(strict=False)),
+            txt_first_line="",
+            txt_head_text="",
+        )
 
     return RulePreviewSample(
         file_path=str(path.resolve(strict=False)),

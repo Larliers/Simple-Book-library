@@ -402,8 +402,18 @@ class WebAppWindow(QMainWindow):
     # ---- scan ----------------------------------------------------------
     def start_scan(self, scope: str = "all") -> None:
         if self._thumbnail_worker is not None and self._thumbnail_worker.isRunning():
+            self._bridge.emit_toast(
+                tr("scan.busy_title", "Busy"),
+                tr("scan.busy_thumb_msg", "A thumbnail task is running. Please wait."),
+                "warning",
+            )
             return
         if self._scan_worker is not None and self._scan_worker.isRunning():
+            self._bridge.emit_toast(
+                tr("scan.busy_title", "Busy"),
+                tr("scan.busy_scan_msg", "A scan is already running. Please wait."),
+                "warning",
+            )
             return
         repo = self._repository
         roots = repo.list_roots() if scope in {"all", "library"} else []
@@ -412,7 +422,7 @@ class WebAppWindow(QMainWindow):
         if not roots and not comic_roots and not text_roots:
             self._bridge.emit_toast(tr("scan.none_title", "Nothing to scan"), tr("scan.none_msg", "Add a folder first."), "warning")
             return
-        self._emit_scan_state(scope, True)
+        self._emit_task_busy_state(kind="scan", scope=scope, running=True)
         worker = ScanWorker(
             db_path=repo.db_path,
             scan_report_path=repo.scan_report_path,
@@ -435,7 +445,12 @@ class WebAppWindow(QMainWindow):
         worker.start()
 
     def _emit_scan_state(self, scope: str, running: bool) -> None:
-        self._bridge.scanState.emit(json.dumps({"scope": scope, "running": running}, ensure_ascii=False))
+        self._emit_task_busy_state(kind="scan", scope=scope, running=running)
+
+    def _emit_task_busy_state(self, *, kind: str, scope: str, running: bool) -> None:
+        self._bridge.scanState.emit(
+            json.dumps({"scope": scope, "running": running, "kind": kind}, ensure_ascii=False)
+        )
 
     def _on_scan_progress(self, current: int, total: int, label: str, snapshot_obj: object) -> None:
         payload = {"current": current, "total": total, "label": label}
@@ -453,14 +468,31 @@ class WebAppWindow(QMainWindow):
             for item in conflicts:
                 if isinstance(item, dict):
                     file_name = str(item.get("file_name") or "").strip()
-                    src = str(item.get("source_path") or item.get("path") or "").strip()
+                    src = str(
+                        item.get("incoming_path")
+                        or item.get("source_path")
+                        or item.get("path")
+                        or ""
+                    ).strip()
                     existing = str(item.get("existing_path") or "").strip()
                     append_conflict_if_new(f"conflict={file_name} | source={src} | existing={existing}")
             self._bridge.errorLogsChanged.emit(read_latest_log_text())
-        added = int(summary.get("added_count", 0) or 0) + int(summary.get("text_added_count", 0) or 0)
+        added = (
+            int(summary.get("added_count", 0) or 0)
+            + int(summary.get("text_added_count", 0) or 0)
+            + int(summary.get("comic_added_count", 0) or 0)
+        )
+        skipped = int(summary.get("skipped_unchanged_count", 0) or 0)
+        if skipped > 0:
+            done_msg = tr(
+                "scan.done_msg_with_skipped",
+                "Imported {count} new items ({skipped} unchanged skipped).",
+            ).format(count=added, skipped=skipped)
+        else:
+            done_msg = tr("scan.done_msg", "Imported {count} new items.").format(count=added)
         self._bridge.emit_toast(
             tr("scan.done_title", "Scan completed"),
-            tr("scan.done_msg", "Imported {count} new items.").format(count=added),
+            done_msg,
             "info",
         )
         should_auto_queue = (
@@ -495,12 +527,22 @@ class WebAppWindow(QMainWindow):
     # ---- thumbnail tasks ----------------------------------------------
     def start_thumbnail_task(self, task_kind: str, scope: str) -> None:
         if self._scan_worker is not None and self._scan_worker.isRunning():
+            self._bridge.emit_toast(
+                tr("scan.busy_title", "Busy"),
+                tr("scan.busy_scan_msg", "A scan is already running. Please wait."),
+                "warning",
+            )
             return
         if self._thumbnail_worker is not None and self._thumbnail_worker.isRunning():
+            self._bridge.emit_toast(
+                tr("scan.busy_title", "Busy"),
+                tr("scan.busy_thumb_msg", "A thumbnail task is running. Please wait."),
+                "warning",
+            )
             return
         self._active_thumbnail_task_kind = task_kind
         self._active_thumbnail_task_scope = scope
-        self._emit_scan_state(scope + ":thumb", True)
+        self._emit_task_busy_state(kind="thumbnail", scope=scope, running=True)
         repo = self._repository
         worker = ThumbnailTaskWorker(
             db_path=repo.db_path,
@@ -522,7 +564,7 @@ class WebAppWindow(QMainWindow):
     def _on_thumbnail_completed(self, summary_obj: object) -> None:
         summary = summary_obj if isinstance(summary_obj, dict) else {}
         scope = str(summary.get("task_scope") or self._active_thumbnail_task_scope or "library")
-        self._emit_scan_state(scope + ":thumb", False)
+        self._emit_task_busy_state(kind="thumbnail", scope=scope, running=False)
         self._bridge.reload_data()
         self._bridge.push_resources()
         succeeded = int(summary.get("succeeded", 0) or 0)
@@ -535,7 +577,7 @@ class WebAppWindow(QMainWindow):
 
     def _on_thumbnail_failed(self, message: str) -> None:
         scope = self._active_thumbnail_task_scope or "library"
-        self._emit_scan_state(scope + ":thumb", False)
+        self._emit_task_busy_state(kind="thumbnail", scope=scope, running=False)
         self._bridge.emit_toast(tr("settings.thumb.failed_title", "Thumbnail task failed"), message, "warning")
 
     def _on_thumbnail_finished(self) -> None:
