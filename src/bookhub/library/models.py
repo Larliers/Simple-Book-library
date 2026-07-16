@@ -94,6 +94,7 @@ class ScanResult:
     added_count: int = 0
     updated_count: int = 0
     ignored_unsupported: int = 0
+    skipped_unchanged_count: int = 0
     removed_missing_count: int = 0
     removed_missing_book_count: int = 0
     removed_missing_comic_count: int = 0
@@ -121,6 +122,7 @@ class ScanResult:
             "added_count": self.added_count,
             "updated_count": self.updated_count,
             "ignored_unsupported": self.ignored_unsupported,
+            "skipped_unchanged_count": self.skipped_unchanged_count,
             "name_conflicts": [item.as_dict() for item in self.name_conflicts],
             "removed_missing_count": self.removed_missing_count,
             "removed_missing_book_count": self.removed_missing_book_count,

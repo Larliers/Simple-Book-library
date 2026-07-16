@@ -638,7 +638,7 @@ def scan_text_roots(
                     tags.extend(_split_text_rule_tags(extracted["tag"]))
 
                 try:
-                    fingerprints = compute_fingerprints(file_path)
+                    fingerprints = compute_fingerprints(file_path, strategy="sha256")
                 except OSError as exc:
                     result.text_errors.append(f"Text fingerprint failed for {normalized_path}: {exc}")
                     _emit_scan_progress(progress_cb, result.text_scanned_files, total_files, normalized_path, result)
@@ -707,6 +707,7 @@ def scan_roots(
     pdf_backend_ok, pdf_backend_reason = _probe_pdf_backend()
     skipped_pdf_backend_count = 0
     total_files = _count_library_scan_files(scanned_roots, scan_depth)
+    existing_by_path = repository.map_library_books_for_scan(scanned_roots)
 
     for raw_root in scanned_roots:
         root = Path(raw_root)
@@ -725,9 +726,33 @@ def scan_roots(
 
             normalized_path = repository.normalize_path(file_path)
             try:
-                fingerprints = compute_fingerprints(file_path)
+                fingerprints = compute_fingerprints(file_path, strategy=hash_strategy)
             except OSError as exc:
                 result.errors.append(f"Fingerprint failed for {normalized_path}: {exc}")
+                _emit_scan_progress(progress_cb, result.scanned_files, total_files, normalized_path, result)
+                continue
+
+            existing = existing_by_path.get(normalized_path)
+            current_fp = fingerprints.value_for(hash_strategy)
+            existing_fp = ""
+            if isinstance(existing, dict):
+                if hash_strategy == "sha256":
+                    existing_fp = str(existing.get("fingerprint_sha256") or "")
+                elif hash_strategy == "quick":
+                    existing_fp = str(existing.get("fingerprint_quick") or "")
+                else:
+                    existing_fp = str(existing.get("fingerprint_size_mtime") or "")
+            existing_thumb = str(existing.get("thumbnail_path") or "") if isinstance(existing, dict) else ""
+            thumb_file = uri_to_path(existing_thumb)
+            has_valid_thumb = bool(thumb_file and thumb_file.exists() and thumb_file.is_file())
+            if (
+                isinstance(existing, dict)
+                and current_fp
+                and existing_fp
+                and current_fp == existing_fp
+                and has_valid_thumb
+            ):
+                result.skipped_unchanged_count += 1
                 _emit_scan_progress(progress_cb, result.scanned_files, total_files, normalized_path, result)
                 continue
 
@@ -748,14 +773,14 @@ def scan_roots(
             language = metadata.language if metadata else None
             tags = build_metadata_tags(metadata) if metadata else []
 
-            thumb_file = _thumbnail_path_for(repository, normalized_path)
+            thumb_out = _thumbnail_path_for(repository, normalized_path)
             thumbnail_path: str | None = None
             if not should_skip_pdf_backend:
                 try:
                     thumbnail_path = _build_thumbnail_by_extension(
                         file_path=file_path,
                         extension=extension,
-                        output_path=thumb_file,
+                        output_path=thumb_out,
                         title_fallback=title,
                     )
                 except Exception as exc:  # noqa: BLE001
@@ -794,6 +819,14 @@ def scan_roots(
                 result.added_count += 1
             else:
                 result.updated_count += 1
+            prior = existing if isinstance(existing, dict) else {}
+            existing_by_path[normalized_path] = {
+                "path": normalized_path,
+                "thumbnail_path": thumbnail_path,
+                "fingerprint_sha256": fingerprints.sha256 or str(prior.get("fingerprint_sha256") or ""),
+                "fingerprint_size_mtime": fingerprints.size_mtime or str(prior.get("fingerprint_size_mtime") or ""),
+                "fingerprint_quick": fingerprints.quick or str(prior.get("fingerprint_quick") or ""),
+            }
             _emit_scan_progress(progress_cb, result.scanned_files, total_files, normalized_path, result)
 
     if skipped_pdf_backend_count > 0:

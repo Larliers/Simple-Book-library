@@ -850,9 +850,42 @@ class LibraryRepository:
             return "lower(title) DESC"
         return f"{mtime_expr} DESC, lower(title) ASC"
 
+    @staticmethod
+    def _fingerprint_or_none(value: object) -> str | None:
+        text = str(value or "").strip()
+        return text or None
+
+    def map_library_books_for_scan(self, roots: list[str]) -> dict[str, dict[str, Any]]:
+        """Lightweight path→fingerprint/thumb map for Library incremental scan (excludes text_novel)."""
+        with self._connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT path, thumbnail_path, fingerprint_sha256, fingerprint_size_mtime, fingerprint_quick
+                FROM books
+                WHERE is_missing = 0
+                  AND COALESCE(resource_type, '') != 'text_novel'
+                """
+            ).fetchall()
+        mapped: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            path_value = str(row["path"] or "")
+            if not path_value or not self._path_in_roots(path_value, roots):
+                continue
+            mapped[path_value] = {
+                "path": path_value,
+                "thumbnail_path": row["thumbnail_path"],
+                "fingerprint_sha256": row["fingerprint_sha256"] or "",
+                "fingerprint_size_mtime": row["fingerprint_size_mtime"] or "",
+                "fingerprint_quick": row["fingerprint_quick"] or "",
+            }
+        return mapped
+
     def upsert_book(self, payload: dict[str, Any]) -> bool:
         path = payload["path"]
         timestamp = now_utc_iso()
+        fp_sha = self._fingerprint_or_none(payload.get("fingerprint_sha256"))
+        fp_size = self._fingerprint_or_none(payload.get("fingerprint_size_mtime"))
+        fp_quick = self._fingerprint_or_none(payload.get("fingerprint_quick"))
         with self._connection() as conn:
             existing = conn.execute("SELECT id, resource_id FROM books WHERE path = ?", (path,)).fetchone()
             if existing:
@@ -862,7 +895,10 @@ class LibraryRepository:
                     SET file_name = ?, extension = ?, title = ?, author = ?, publisher = ?, language = ?,
                         tags_json = ?, status = ?, resource_type = ?, thumbnail_path = ?, info_text = ?,
                         is_missing = 0, missing_reason = NULL,
-                        fingerprint_sha256 = ?, fingerprint_size_mtime = ?, fingerprint_quick = ?, updated_at = ?
+                        fingerprint_sha256 = COALESCE(?, fingerprint_sha256),
+                        fingerprint_size_mtime = COALESCE(?, fingerprint_size_mtime),
+                        fingerprint_quick = COALESCE(?, fingerprint_quick),
+                        updated_at = ?
                     WHERE id = ?
                     """,
                     (
@@ -877,9 +913,9 @@ class LibraryRepository:
                         payload.get("resource_type", "book"),
                         payload.get("thumbnail_path"),
                         payload.get("info_text"),
-                        payload.get("fingerprint_sha256"),
-                        payload.get("fingerprint_size_mtime"),
-                        payload.get("fingerprint_quick"),
+                        fp_sha,
+                        fp_size,
+                        fp_quick,
                         timestamp,
                         existing["id"],
                     ),
@@ -910,9 +946,9 @@ class LibraryRepository:
                     path,
                     payload.get("thumbnail_path"),
                     payload.get("info_text"),
-                    payload.get("fingerprint_sha256"),
-                    payload.get("fingerprint_size_mtime"),
-                    payload.get("fingerprint_quick"),
+                    fp_sha,
+                    fp_size,
+                    fp_quick,
                     timestamp,
                     timestamp,
                 ),
@@ -1033,6 +1069,7 @@ class LibraryRepository:
             "added_count": 0,
             "updated_count": 0,
             "ignored_unsupported": 0,
+            "skipped_unchanged_count": 0,
             "name_conflicts": [],
             "removed_missing_count": 0,
             "removed_missing_book_count": 0,

@@ -1,6 +1,6 @@
 ﻿# src 结构说明书（精简且完整）
 
-更新时间：2026-07-14
+更新时间：2026-07-16
 
 ## 1. 文档目标
 - 保留字符串式文件路径结构。
@@ -18,7 +18,8 @@ src/
 │  ├─ test_rule_preview.py
 │  ├─ test_text_rule_structure_parser.py
 │  ├─ test_text_rule_dialog.py
-│  └─ test_scan_pdf_degrade.py
+│  ├─ test_scan_pdf_degrade.py
+│  └─ test_library_scan_incremental.py
 ├─ sql/
 │  └─ .gitkeep
 ├─ assets/
@@ -96,6 +97,7 @@ src/
 - `src/tests/test_rule_preview.py`：Text 规则预览回归测试（自动样本、规则链回退、非法正则失败、空目录无样本）。
 - `src/tests/test_text_rule_structure_parser.py`：Text 规则结构解析测试（嵌套括号、括号外分隔符、样本格式分组）。
 - `src/tests/test_scan_pdf_degrade.py`：PDF 后端降级容错回归测试（PyMuPDF 不可用时的聚合 warning 与入库行为）。
+- `src/tests/test_library_scan_incremental.py`：Library 增量扫描与 `hash_strategy` 分级指纹（未变跳过、touch 强制更新、缺缩略图重处理、COALESCE 保留指纹）。
 - `src/tests/test_comic_preview_pipeline.py`：漫画快扫占位与后台并行补图回归测试（占位复制、压缩替换、原图删除、超大图降采样、排序顺序）。
 - `src/tests/test_cover_grid_settings.py`：封面选中边框归一化与 Repository 偏好持久化（含 Text 规则预览高度/窗口尺寸/预设）；已不再依赖旧 Widgets 页。
 - `src/tests/test_web_bridge_smoke.py`：Web Bridge / scheme / Text Rules CRUD 冒烟。
@@ -111,11 +113,11 @@ src/
 
 ### 3.4 书库后端组件（bookhub/library）
 - `src/bookhub/library/__init__.py`：后端模块导出入口。
-- `src/bookhub/library/repository.py`：SQLite 读写中心；设置、书籍、书单、收藏、标签操作；漫画排序与显示模式、Text 规则预览结果区高度、规则窗口尺寸、用户预设等 UI 偏好持久化。
-- `src/bookhub/library/scanner.py`：目录扫描与文件过滤；构建入库候选（PDF/EPUB、Comic、Text Novel）；扫描函数支持可选进度回调并输出当前路径与统计快照；Text 规则 author 入库前清理 Unknown/unkown 等占位作者，tag 结果按换行拆分为多标签；漫画目录快照判定、`folder_modified_at` 写入与超大封面降采样占位。
+- `src/bookhub/library/repository.py`：SQLite 读写中心；设置、书籍、书单、收藏、标签操作；`map_library_books_for_scan` 提供 Library 增量扫描用的 path→指纹/缩略图索引；`upsert_book` 对空指纹列 COALESCE 保留旧值；漫画排序与显示模式、Text 规则预览结果区高度、规则窗口尺寸、用户预设等 UI 偏好持久化。
+- `src/bookhub/library/scanner.py`：目录扫描与文件过滤；构建入库候选（PDF/EPUB、Comic、Text Novel）；Library 按 `hash_strategy` 比对已存指纹，未变且缩略图仍在则计入 `skipped_unchanged_count` 并跳过元数据/封面重处理；扫描函数支持可选进度回调并输出当前路径与统计快照；Text 规则 author 入库前清理 Unknown/unkown 等占位作者，tag 结果按换行拆分为多标签；漫画目录快照判定、`folder_modified_at` 写入与超大封面降采样占位。
 - `src/bookhub/library/preview_paths.py`：预览图目录结构与路径构建服务（`resource_type + variant`）。
-- `src/bookhub/library/metadata.py`：元数据提取与缩略图生成（WebP，`file://` 路径）。
-- `src/bookhub/library/models.py`：扫描/任务的数据结构定义。
+- `src/bookhub/library/metadata.py`：元数据提取与缩略图生成（WebP，`file://` 路径）；`compute_fingerprints` 按策略分级读盘（`size_mtime` 仅 stat、`quick` 前 4MB、`sha256` 整文件）。
+- `src/bookhub/library/models.py`：扫描/任务的数据结构定义（含 `skipped_unchanged_count`）。
 - `src/bookhub/library/text_rules/rule_models.py`：Text Novel 规则模型（`ImportRule`/`RuleStep`/`RuleContext`/`RuleResult`，含预览 warning 字段）。
 - `src/bookhub/library/text_rules/rule_engine.py`：规则执行器与规则链回退（`apply_rule`、`apply_rule_chain`），透传步骤 warning。
 - `src/bookhub/library/text_rules/source_resolver.py`：规则 source 解析（`filename`/`stem`/`txt_first_line`/`txt_head_text` 等）。
@@ -160,6 +162,7 @@ src/
 - `src/bookhub/ui/viewmodels/library_viewmodel.py`：Library/Text 资源查询过滤、字段前缀搜索（`title:`/`author:`/`tag:`）、视图模式、搜索建议状态。
 
 ## 4. 当前关键实现（简要）
+- 2026-07-16 Library 增量扫描：`compute_fingerprints` 按 `hash_strategy` 分级读盘；`scan_roots` 对指纹未变且缩略图仍在的书跳过元数据/封面；`map_library_books_for_scan` + upsert 指纹 COALESCE；摘要字段 `skipped_unchanged_count`。
 - 2026-07-14 旧 Widgets UI 清理：删除已无运行时入口的 `app_window.py`、`pages/`、`widgets/`、`dialogs/`；删除仅测旧 UI 的 `test_text_rule_dialog.py`/`test_comic_page_cache.py`；`test_cover_grid_settings.py` 仅保留 Repository/`layout_config` 断言；`styles.py` 瘦身为 `DEFAULT_FONT_STACK`。设计史料仍在 `Dev_Document/UI/旧UI-*`，与源码清理解耦。
 - 2026-07-11 UI 重写（WebEngine 玻璃拟态）：UI 层从纯 QSS 迁移为 `QWebEngineView` 加载 `src/bookhub/ui/web/` 前端，`QWebChannel` 经 `UiBridge` 与后端双向通信；`app://` 自定义 scheme 服务前端资源并以白名单方式代理封面图；内建完整日/夜主题引擎与 Web 化设置页。`main.py` 入口为 `WebAppWindow`；Text Rules 走 Web 三栏面板。`library/` 后端与数据结构未改动；`build_nuitka.ps1` 携带 `web/` 与 QtWebEngine；`src/tests/test_web_bridge_smoke.py` 覆盖桥接与 scheme。- 运行依赖：`requirements.txt` 采用固定版本策略；在 Python 3.10.6 环境锁定 `PySide6==6.6.1` 以规避 `libshiboken/signature` 初始化崩溃。
 - 打包准备：新增书柜主题应用图标，`scripts/build_nuitka.ps1` 使用 `Nuitka==4.1.2` 构建 exe，并显式打包 `src/assets`、i18n locales、`fitz` 与 `pymupdf` 原始包目录；PyMuPDF 采用预编译 `.pyd/.dll` 随包携带并关闭 Nuitka excluded-module 运行时阻断；`scripts/`、`src/tests/`、运行数据库、扫描日志、缩略图缓存不进入发行包。

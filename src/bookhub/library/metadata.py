@@ -11,7 +11,14 @@ from PIL import Image, ImageDraw
 
 from bookhub.library.media_sanitizer import sanitize_image_for_ui
 
-from bookhub.library.models import FingerprintBundle, ParsedMetadata
+from bookhub.library.models import (
+    HASH_STRATEGY_QUICK,
+    HASH_STRATEGY_SHA256,
+    HASH_STRATEGY_SIZE_MTIME,
+    FingerprintBundle,
+    HashStrategy,
+    ParsedMetadata,
+)
 
 EPUB_NS = {
     "container": "urn:oasis:names:tc:opendocument:xmlns:container",
@@ -52,21 +59,46 @@ def build_metadata_tags(metadata: ParsedMetadata) -> list[str]:
     return tags
 
 
-def compute_fingerprints(file_path: Path) -> FingerprintBundle:
+def compute_fingerprints(
+    file_path: Path,
+    strategy: HashStrategy = HASH_STRATEGY_SHA256,
+) -> FingerprintBundle:
+    """Compute fingerprints according to strategy.
+
+    - size_mtime: only stat (no file read)
+    - quick: first 4 MiB hash + size_mtime
+    - sha256: full-file hash + quick + size_mtime
+    Uncomputed fields are empty strings so callers can COALESCE on upsert.
+    """
     stat = file_path.stat()
     size_mtime = f"{stat.st_size}:{int(stat.st_mtime)}"
-    sha256 = hashlib.sha256()
-    quick = hashlib.sha256()
+    if strategy == HASH_STRATEGY_SIZE_MTIME:
+        return FingerprintBundle(sha256="", size_mtime=size_mtime, quick="")
+
+    quick_digest = ""
+    sha256_digest = ""
     with file_path.open("rb") as handle:
         first_chunk = handle.read(4 * 1024 * 1024)
-        quick.update(first_chunk)
-        sha256.update(first_chunk)
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            sha256.update(chunk)
+        quick_hasher = hashlib.sha256()
+        quick_hasher.update(first_chunk)
+        quick_digest = quick_hasher.hexdigest()
+        if strategy == HASH_STRATEGY_SHA256:
+            sha256_hasher = hashlib.sha256()
+            sha256_hasher.update(first_chunk)
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                sha256_hasher.update(chunk)
+            sha256_digest = sha256_hasher.hexdigest()
+        elif strategy != HASH_STRATEGY_QUICK:
+            # Unknown strategy: fall back to full hash for safety.
+            sha256_hasher = hashlib.sha256()
+            sha256_hasher.update(first_chunk)
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                sha256_hasher.update(chunk)
+            sha256_digest = sha256_hasher.hexdigest()
     return FingerprintBundle(
-        sha256=sha256.hexdigest(),
+        sha256=sha256_digest,
         size_mtime=size_mtime,
-        quick=quick.hexdigest(),
+        quick=quick_digest,
     )
 
 
