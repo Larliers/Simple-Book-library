@@ -25,6 +25,11 @@ def sanitize_image_for_ui(input_path: str | Path, output_path: str | Path) -> Sa
 
     try:
         with Image.open(src) as img:
+            # GIF (and multi-frame TIFF): always use the first frame for UI covers.
+            try:
+                img.seek(0)
+            except EOFError:
+                pass
             normalized = img.convert("RGB")
             normalized.save(dst, format="PNG", icc_profile=None, optimize=True)
         return SanitizeResult(ok=True, output_path=str(dst), message="sanitized")

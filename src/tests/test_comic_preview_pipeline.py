@@ -116,6 +116,53 @@ class ComicPreviewPipelineTests(unittest.TestCase):
         self.assertEqual([item["title"] for item in by_name_desc], ["B_beta", "A_alpha"])
         self.assertGreater(int(by_mtime_desc[0].get("folder_modified_at") or 0), int(by_mtime_desc[1].get("folder_modified_at") or 0))
 
+    def test_gif_bmp_tiff_leaf_folder_and_gif_first_frame_cover(self) -> None:
+        comic_root = self.tmp_path / "comic_root"
+        chapter = comic_root / "gif_vol"
+        chapter.mkdir(parents=True, exist_ok=True)
+        frame0 = Image.new("RGB", (80, 100), color=(255, 0, 0))
+        frame1 = Image.new("RGB", (80, 100), color=(0, 255, 0))
+        cover = chapter / "000.gif"
+        frame0.save(
+            cover,
+            save_all=True,
+            append_images=[frame1],
+            duration=100,
+            loop=0,
+            format="GIF",
+        )
+        Image.new("RGB", (80, 100), color=(0, 0, 255)).save(chapter / "001.bmp")
+        Image.new("RGB", (80, 100), color=(10, 20, 30)).save(chapter / "002.tiff")
+
+        result = scan_comic_roots(
+            self.repo,
+            ComicScanRequest(
+                roots=[str(comic_root)],
+                max_depth=5,
+                placeholder_copy_enabled=True,
+            ),
+        )
+        self.assertEqual(result.comic_detected_folders, 1)
+        self.assertEqual(result.comic_added_count, 1)
+        self.assertEqual(result.comic_placeholder_copied_count, 1)
+
+        records = self.repo.list_comics(include_missing=False)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["title"], "gif_vol")
+        self.assertEqual(int(records[0]["image_count"]), 3)
+        placeholder_uri = str(records[0].get("thumbnail_path") or "")
+        from bookhub.library.preview_paths import uri_to_path
+
+        thumb = uri_to_path(placeholder_uri)
+        self.assertIsNotNone(thumb)
+        assert thumb is not None
+        self.assertTrue(thumb.exists())
+        self.assertEqual(thumb.suffix.lower(), ".png")
+        with Image.open(thumb) as img:
+            self.assertEqual(img.mode, "RGB")
+            # First GIF frame is red.
+            self.assertEqual(img.getpixel((40, 50))[:3], (255, 0, 0))
+
 
 if __name__ == "__main__":
     unittest.main()

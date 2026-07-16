@@ -16,7 +16,7 @@ APP_SCHEME = b"app"
 APP_SCHEME_STR = "app"
 WEB_ROOT = Path(__file__).resolve().parent / "web"
 
-_IMAGE_SUFFIXES = {".webp", ".png", ".jpg", ".jpeg", ".gif", ".bmp"}
+_IMAGE_SUFFIXES = {".webp", ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff"}
 _TEXT_MIME_OVERRIDES = {
     ".js": "application/javascript",
     ".mjs": "application/javascript",

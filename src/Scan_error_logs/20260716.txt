@@ -1,0 +1,4 @@
+[2026-07-16 23:00:48] missing_removed | type=book | title=Gone Book | path=C:\Users\83023\AppData\Local\Temp\tmp6bkngwr4\gone.pdf | reason=legacy is_missing purged
+[2026-07-16 23:00:48] missing_removed | type=comic_folder | title=Gone Comic | path=C:\Users\83023\AppData\Local\Temp\tmp6bkngwr4\gone_comic | reason=legacy is_missing purged
+[2026-07-16 23:01:58] missing_removed | type=book | title=Gone Book | path=C:\Users\83023\AppData\Local\Temp\tmplyxxf9kq\gone.pdf | reason=legacy is_missing purged
+[2026-07-16 23:01:58] missing_removed | type=comic_folder | title=Gone Comic | path=C:\Users\83023\AppData\Local\Temp\tmplyxxf9kq\gone_comic | reason=legacy is_missing purged

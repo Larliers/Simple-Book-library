@@ -22,6 +22,7 @@ src/
 │  ├─ test_library_scan_incremental.py
 │  ├─ test_scan_summary_fields.py
 │  ├─ test_text_encoding.py
+│  ├─ test_missed_cleanup.py
 │  └─ test_text_scan_tags.py
 ├─ sql/
 │  └─ .gitkeep
@@ -104,7 +105,8 @@ src/
 - `src/tests/test_library_scan_incremental.py`：Library 增量扫描与 `hash_strategy` 分级指纹（未变跳过、touch 强制更新、缺缩略图重处理、COALESCE 保留指纹）。
 - `src/tests/test_scan_summary_fields.py`：扫描摘要字段对齐回归（comic 计入新增、别名键、冲突 `incoming_path`）。
 - `src/tests/test_text_encoding.py`：TXT 编码探测回归（GBK/GB18030、UTF-8 BOM、规则预览读入）。
-- `src/tests/test_comic_preview_pipeline.py`：漫画快扫占位与后台并行补图回归测试（占位复制、压缩替换、原图删除、超大图降采样、排序顺序）。
+- `src/tests/test_missed_cleanup.py`：启动时清理遗留 `is_missing=1` 行；确认无 Missed 恢复 API。
+- `src/tests/test_comic_preview_pipeline.py`：漫画快扫占位与后台并行补图回归测试（占位复制、压缩替换、原图删除、超大图降采样、排序顺序、GIF/BMP/TIFF 入库与 GIF 首帧封面）。
 - `src/tests/test_cover_grid_settings.py`：封面选中边框归一化与 Repository 偏好持久化（含 Text 规则预览高度/窗口尺寸/预设）；已不再依赖旧 Widgets 页。
 - `src/tests/test_web_bridge_smoke.py`：Web Bridge / scheme / Text Rules CRUD 冒烟。
 - `src/sql/.gitkeep`：运行数据目录占位，实际运行时生成 `library.db`、`scan_report.json`。
@@ -124,7 +126,8 @@ src/
 - `src/bookhub/library/text_encoding.py`：TXT 统一读入；UTF-8 优先，charset-normalizer 辅助，Big5 误判时改用 GB18030（面向简体小说）。
 - `src/bookhub/library/preview_paths.py`：预览图目录结构与路径构建服务（`resource_type + variant`）。
 - `src/bookhub/library/metadata.py`：元数据提取与缩略图生成（WebP，`file://` 路径）；`compute_fingerprints` 按策略分级读盘（`size_mtime` 仅 stat、`quick` 前 4MB、`sha256` 整文件）。
-- `src/bookhub/library/models.py`：扫描/任务的数据结构定义（含 `skipped_unchanged_count`；`to_summary` 同时输出前端历史别名键）。
+- `src/bookhub/library/models.py`：扫描/任务的数据结构定义（含 `skipped_unchanged_count`；`to_summary` 同时输出前端历史别名键）；`COMIC_IMAGE_EXTENSIONS` 含 jpg/png/webp/gif/bmp/tif/tiff。
+- `src/bookhub/library/media_sanitizer.py`：封面图消毒；GIF/多帧图 `seek(0)` 后转 RGB PNG。
 - `src/bookhub/library/text_rules/rule_models.py`：Text Novel 规则模型（`ImportRule`/`RuleStep`/`RuleContext`/`RuleResult`，含预览 warning 字段）。
 - `src/bookhub/library/text_rules/rule_engine.py`：规则执行器与规则链回退（`apply_rule`、`apply_rule_chain`），透传步骤 warning。
 - `src/bookhub/library/text_rules/source_resolver.py`：规则 source 解析（`filename`/`stem`/`txt_first_line`/`txt_head_text` 等）。
@@ -169,6 +172,7 @@ src/
 - `src/bookhub/ui/viewmodels/library_viewmodel.py`：Library/Text 资源查询过滤、字段前缀搜索（`title:`/`author:`/`tag:`）、视图模式、搜索建议状态。
 
 ## 4. 当前关键实现（简要）
+- 2026-07-16 漫画格式 / Missed 清理 / indexer 契约靠拢：COMIC 扩展 gif/bmp/tiff（GIF 首帧封面）；删除 Missed 恢复 API 与文案，启动 purge `is_missing=1`；indexer-contract/agent 改为描述全量遍历+局部跳过。
 - 2026-07-16 TXT 编码 / 忙时 Scan / README 漫画边界：`text_encoding` 统一探测；忙碌态禁用全部 Scan/缩略图按钮并 Toast；README 标明文件夹漫画预期、不支持 CBZ/CBR。
 - 2026-07-16 扫描反馈对齐：Toast/摘要计入 `comic_added_count`；`to_summary` 输出历史别名键；冲突日志优先 `incoming_path`；Settings 展示 skipped / comic added。
 - 2026-07-16 Library 增量扫描：`compute_fingerprints` 按 `hash_strategy` 分级读盘；`scan_roots` 对指纹未变且缩略图仍在的书跳过元数据/封面；`map_library_books_for_scan` + upsert 指纹 COALESCE；摘要字段 `skipped_unchanged_count`。
@@ -190,7 +194,7 @@ src/
 - Text 规则 i18n：补齐规则弹窗内参数字段名、source/step 文案、规则/步骤列表格式与帮助文档文案键，减少硬编码英文暴露。
 - i18n 治理基线：新增 `scripts/i18n_hardcoded_scan.py`，用于扫描 UI 常见硬编码文案候选并输出清单（仅报告，不阻断）。
 - 扫描容错：当 PyMuPDF（`fitz`）不可用时，PDF 扫描自动降级为“仅入库+标题兜底”，跳过元数据/缩略图并输出单条聚合 warning，避免错误风暴弹窗。
-- 缺失记录治理：扫描按 scope 检查已入库源路径；缺失项写入 `src/Scan_error_logs` 后硬删除，不再进入 Missed 体系；重名冲突遇到陈旧路径会先清理再导入。
+- 缺失记录治理：扫描按 scope 检查已入库源路径；缺失项写入 `src/Scan_error_logs` 后硬删除；无 Missed 指纹恢复；启动时 purge 遗留 `is_missing=1` 行；重名冲突遇到陈旧路径会先清理再导入。
 - 任务触发：启动扫描支持配置开关（默认关闭）；路径变更自动扫描支持独立开关（默认开启）。
 - 缩略图任务：Library 与 Comic 分 scope 清理/重建；结果摘要包含 `scope + task_kind + total/succeeded/skipped/failed`。
 - Reading Now 与 Tools 占位页已下线：主窗口不再注册对应页面，侧栏仅保留可用功能入口；底层 `status` 字段与数据结构保持不变。

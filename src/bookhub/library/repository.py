@@ -89,6 +89,36 @@ class LibraryRepository:
         self._init_db()
         self._init_collections_tables()
         self._ensure_defaults()
+        self.purge_marked_missing_records()
+
+    def purge_marked_missing_records(self) -> int:
+        """Delete legacy is_missing=1 rows (product rule: missing sources are removed, not restored)."""
+        with self._connection() as conn:
+            book_rows = conn.execute("SELECT id, title, path FROM books WHERE is_missing = 1").fetchall()
+            comic_rows = conn.execute("SELECT id, title, path FROM comics WHERE is_missing = 1").fetchall()
+            book_ids = [int(row["id"]) for row in book_rows]
+            comic_ids = [int(row["id"]) for row in comic_rows]
+            if book_ids:
+                self._purge_book_links(conn, book_ids)
+                placeholders = ",".join(["?"] * len(book_ids))
+                conn.execute(f"DELETE FROM books WHERE id IN ({placeholders})", tuple(book_ids))  # noqa: S608
+            if comic_ids:
+                self._purge_comic_links(conn, comic_ids)
+                placeholders = ",".join(["?"] * len(comic_ids))
+                conn.execute(f"DELETE FROM comics WHERE id IN ({placeholders})", tuple(comic_ids))  # noqa: S608
+        deleted = len(book_ids) + len(comic_ids)
+        if deleted > 0:
+            for row in book_rows:
+                append_scan_log(
+                    "missing_removed | type=book | title="
+                    f"{row['title'] or 'Unknown'} | path={row['path'] or ''} | reason=legacy is_missing purged"
+                )
+            for row in comic_rows:
+                append_scan_log(
+                    "missing_removed | type=comic_folder | title="
+                    f"{row['title'] or 'Unknown'} | path={row['path'] or ''} | reason=legacy is_missing purged"
+                )
+        return deleted
 
     @contextmanager
     def _connection(self):
@@ -658,8 +688,8 @@ class LibraryRepository:
                 """,
                 (normalized, root_prefix),
             )
-            moved_to_missed = cursor.rowcount if cursor.rowcount is not None else 0
-        return max(0, int(moved_to_missed))
+            deleted_count = cursor.rowcount if cursor.rowcount is not None else 0
+        return max(0, int(deleted_count))
 
     def list_comic_roots(self) -> list[str]:
         with self._connection() as conn:
@@ -703,8 +733,8 @@ class LibraryRepository:
                 """,
                 (normalized, root_prefix),
             )
-            moved_to_missed = cursor.rowcount if cursor.rowcount is not None else 0
-        return max(0, int(moved_to_missed))
+            deleted_count = cursor.rowcount if cursor.rowcount is not None else 0
+        return max(0, int(deleted_count))
 
     def list_text_roots(self) -> list[str]:
         with self._connection() as conn:
@@ -755,8 +785,8 @@ class LibraryRepository:
                 """,
                 (normalized, root_prefix),
             )
-            moved_to_missed = cursor.rowcount if cursor.rowcount is not None else 0
-        return max(0, int(moved_to_missed))
+            deleted_count = cursor.rowcount if cursor.rowcount is not None else 0
+        return max(0, int(deleted_count))
 
     def get_text_root_rules_json(self, path: str | Path) -> str:
         normalized = self.normalize_path(path)
@@ -778,22 +808,6 @@ class LibraryRepository:
                 """,
                 (normalized, str(rules_json or "{}"), timestamp, timestamp),
             )
-
-    def find_missing_by_fingerprint(self, strategy: HashStrategy, value: str) -> dict[str, Any] | None:
-        if not value:
-            return None
-        column_map = {
-            "sha256": "fingerprint_sha256",
-            "size_mtime": "fingerprint_size_mtime",
-            "quick": "fingerprint_quick",
-        }
-        column = column_map[strategy]
-        with self._connection() as conn:
-            row = conn.execute(
-                f"SELECT * FROM books WHERE is_missing = 1 AND {column} = ? LIMIT 1",  # noqa: S608
-                (value,),
-            ).fetchone()
-        return dict(row) if row else None
 
     def find_duplicate_name(self, file_name: str, extension: str, incoming_path: str) -> dict[str, Any] | None:
         with self._connection() as conn:
@@ -954,40 +968,6 @@ class LibraryRepository:
                 ),
             )
             return True
-
-    def restore_missing_book(self, missing_id: int, payload: dict[str, Any]) -> None:
-        timestamp = now_utc_iso()
-        with self._connection() as conn:
-            conn.execute("DELETE FROM books WHERE path = ? AND id != ?", (payload["path"], missing_id))
-            conn.execute(
-                """
-                UPDATE books
-                SET file_name = ?, extension = ?, title = ?, author = ?, publisher = ?, language = ?,
-                    tags_json = ?, status = ?, resource_type = ?, path = ?, thumbnail_path = ?, info_text = ?,
-                    is_missing = 0, missing_reason = NULL,
-                    fingerprint_sha256 = ?, fingerprint_size_mtime = ?, fingerprint_quick = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    payload["file_name"],
-                    payload["extension"],
-                    payload.get("title"),
-                    payload.get("author"),
-                    payload.get("publisher"),
-                    payload.get("language"),
-                    payload["tags_json"],
-                    payload.get("status", "UNREAD"),
-                    payload.get("resource_type", "book"),
-                    payload["path"],
-                    payload.get("thumbnail_path"),
-                    payload.get("info_text"),
-                    payload.get("fingerprint_sha256"),
-                    payload.get("fingerprint_size_mtime"),
-                    payload.get("fingerprint_quick"),
-                    timestamp,
-                    missing_id,
-                ),
-            )
 
     def list_books(self, include_missing: bool | None = None) -> list[dict[str, Any]]:
         where_clause = ""

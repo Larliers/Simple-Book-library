@@ -17,7 +17,7 @@ ScanScope = Literal["library", "comic", "text", "all"]
 ThumbnailScope = Literal["library", "comic"]
 
 SUPPORTED_EXTENSIONS = (".pdf", ".epub")
-COMIC_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+COMIC_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff")
 TEXT_FILE_EXTENSION = ".txt"
 DEFAULT_TEXT_PREVIEW_CHARS = 1200
 TEXT_PREVIEW_CHAR_OPTIONS = (600, 1200, 2000, 4000)

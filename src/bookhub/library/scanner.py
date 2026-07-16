@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+"""Directory scan / index update for Library, Comic, and Text Novel.
+
+Indexer contract alignment (Agent-rule/contracts/indexer-contract.md):
+- Each scan walks configured roots fully.
+- Local skip only: Library hash_strategy fingerprints; Comic folder_size_mtime.
+- Missing sources are deleted from DB and logged (no Missed restore path).
+- No last_checkpoint / next_checkpoint API.
+"""
+
 import importlib
 import json
 import os
@@ -331,6 +340,9 @@ def _collect_leaf_comic_candidates(
     return leaf, scanned_dirs
 
 
+_RASTERIZE_COVER_EXTENSIONS = {".gif", ".bmp", ".tif", ".tiff"}
+
+
 def _copy_or_downscale_comic_placeholder(
     cover_path: Path,
     placeholder_path: Path,
@@ -339,18 +351,30 @@ def _copy_or_downscale_comic_placeholder(
 ) -> tuple[Path, bool]:
     placeholder_path.parent.mkdir(parents=True, exist_ok=True)
     downscaled_path = placeholder_path.with_suffix(".png")
+    suffix = cover_path.suffix.lower()
+    must_rasterize = suffix in _RASTERIZE_COVER_EXTENSIONS
     try:
         with Image.open(str(cover_path)) as img:
+            # Animated GIF / multi-frame TIFF: first frame only as static cover.
+            try:
+                img.seek(0)
+            except EOFError:
+                pass
             width, height = img.size
             projected_bytes = int(width) * int(height) * 4
-            if projected_bytes <= max_decode_bytes:
+            if (not must_rasterize) and projected_bytes <= max_decode_bytes:
                 shutil.copy2(cover_path, placeholder_path)
                 return placeholder_path, False
             safe_img = img.convert("RGB")
-            safe_img.thumbnail((1400, 2000), _lanczos_resample())
+            downscaled = False
+            if projected_bytes > max_decode_bytes:
+                safe_img.thumbnail((1400, 2000), _lanczos_resample())
+                downscaled = True
             safe_img.save(downscaled_path, format="PNG", icc_profile=None, optimize=True)
-            return downscaled_path, True
-    except Exception:
+            return downscaled_path, downscaled
+    except Exception as exc:
+        if must_rasterize:
+            raise OSError(f"rasterize cover failed for {cover_path}: {exc}") from exc
         shutil.copy2(cover_path, placeholder_path)
         return placeholder_path, False
 

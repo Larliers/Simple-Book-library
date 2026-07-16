@@ -15,7 +15,7 @@ A local Windows desktop library app for your personal collection. Scan PDF / EPU
 | Section | Formats | What you can do |
 |---------|---------|-----------------|
 | **Library** | PDF, EPUB | Grid / list view, detail pane, tags, search |
-| **Comic** | **Leaf image folders** (jpg / jpeg / png / webp) | One folder = one volume; title = folder name; waterfall or paginated layout |
+| **Comic** | **Leaf image folders** (jpg / jpeg / png / webp / gif / bmp / tiff) | One folder = one volume; title = folder name; GIF covers use the first frame; waterfall or paginated layout |
 | **Text Novel** | TXT (auto-detects UTF-8 / GBK, etc.) | List view, text preview, custom import rule chains |
 | **Collections** | — | Custom reading lists |
 | **Favorites** | Books + comics | Unified favorites entry |
@@ -30,7 +30,7 @@ A local Windows desktop library app for your personal collection. Scan PDF / EPU
 Notes:
 
 - Library scan depth is configurable (about 1–3 levels).
-- Comics (**by design**): aimed at readers who store pages as images, one folder per volume. A leaf folder of jpg/jpeg/png/webp becomes one comic; the title is the folder name. A fast placeholder cover appears first, then compressed thumbnails are generated in the background. **CBZ / CBR / ZIP comic archives are not supported.**
+- Comics (**by design**): aimed at readers who store pages as images, one folder per volume. A leaf folder of jpg/jpeg/png/webp/gif/bmp/tiff becomes one comic; the title is the folder name. GIF covers use the **first frame** as a static image. A fast placeholder cover appears first, then compressed thumbnails are generated in the background. **CBZ / CBR / ZIP comic archives are not supported.**
 - TXT: encoding is auto-detected (UTF-8, GBK/GB18030, etc.); **text rules** extract title, author, series, and tags from the filename or body; novels land in Text Novel, not the main Library list.
 - Missing source files are logged and removed from the library.
 - Same name + extension under different paths: import is skipped and logged.

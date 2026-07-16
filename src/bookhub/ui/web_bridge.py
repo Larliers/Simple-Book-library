@@ -127,7 +127,7 @@ def _web_strings() -> dict[str, str]:
         ("settings.font_family", "Font family"),
         ("settings.search_font", "Search font size"),
         ("settings.scan_depth", "Scan depth"),
-        ("settings.hash", "Missed hash matching"),
+        ("settings.hash", "Fingerprint matching"),
         ("settings.hash.fast", "Fast"),
         ("settings.hash.strict", "Strict"),
         ("settings.hash.quick", "Quick"),
@@ -294,7 +294,7 @@ class UiBridge(QObject):
             if not local:
                 continue
             path = Path(local)
-            if path.suffix.lower() not in {".webp", ".png", ".jpg", ".jpeg", ".gif", ".bmp"}:
+            if path.suffix.lower() not in {".webp", ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff"}:
                 continue
             if not path.is_file():
                 continue

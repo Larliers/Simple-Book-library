@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""Background library scan orchestration.
+
+Maps to Agent-rule/contracts/indexer-contract.md:
+full root walk per run + local skips (library fingerprints, comic folder snapshots);
+no last_checkpoint/next_checkpoint engine.
+"""
+
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
