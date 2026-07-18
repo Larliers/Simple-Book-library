@@ -11,7 +11,7 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from bookhub.library.models import ParsedMetadata, ScanRequest
+from bookhub.library.models import LibraryScanRoot, ParsedMetadata, ScanRequest
 from bookhub.library.repository import LibraryRepository
 from bookhub.library.scanner import scan_roots
 
@@ -26,7 +26,7 @@ class ScanPdfDegradeTests(unittest.TestCase):
                 (root / f"book_{index}.pdf").write_bytes(b"%PDF-1.4\nmock\n")
 
             repository = LibraryRepository(base / "library.db", base / "scan_report.json")
-            request = ScanRequest(roots=[str(root)], scan_depth=2, hash_strategy="size_mtime")
+            request = ScanRequest(roots=[LibraryScanRoot(path=str(root))], scan_depth=2, hash_strategy="size_mtime")
 
             with mock.patch(
                 "bookhub.library.scanner._probe_pdf_backend",
@@ -59,7 +59,7 @@ class ScanPdfDegradeTests(unittest.TestCase):
             pdf_path.write_bytes(b"%PDF-1.4\nmock\n")
 
             repository = LibraryRepository(base / "library.db", base / "scan_report.json")
-            request = ScanRequest(roots=[str(root)], scan_depth=2, hash_strategy="size_mtime")
+            request = ScanRequest(roots=[LibraryScanRoot(path=str(root))], scan_depth=2, hash_strategy="size_mtime")
 
             with (
                 mock.patch("bookhub.library.scanner._probe_pdf_backend", return_value=(True, None)),
@@ -96,7 +96,7 @@ class ScanPdfDegradeTests(unittest.TestCase):
             pdf_path.write_bytes(b"%PDF-1.4\nmock\n")
 
             repository = LibraryRepository(base / "library.db", base / "scan_report.json")
-            request = ScanRequest(roots=[str(root)], scan_depth=2, hash_strategy="size_mtime")
+            request = ScanRequest(roots=[LibraryScanRoot(path=str(root))], scan_depth=2, hash_strategy="size_mtime")
             events: list[tuple[int, int, str, dict[str, object]]] = []
 
             with mock.patch(

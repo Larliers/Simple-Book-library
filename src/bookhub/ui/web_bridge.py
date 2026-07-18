@@ -132,6 +132,9 @@ def _web_strings() -> dict[str, str]:
         ("settings.hash.strict", "Strict"),
         ("settings.hash.quick", "Quick"),
         ("settings.hash.hint", "Fast may miss content changes; use Quick or Strict for important libraries."),
+        ("settings.comic_scan_strategy", "Comic scan strategy"),
+        ("settings.comic_scan_strategy.snapshot", "Directory snapshot (fast)"),
+        ("settings.comic_scan_strategy.full", "Full rescan each time (strict)"),
         ("settings.comic_title_conflict", "Comic title conflict"),
         ("settings.comic_title_conflict.skip_incoming", "Skip incoming"),
         ("settings.comic_title_conflict.keep_both", "Keep both"),
@@ -177,6 +180,12 @@ def _web_strings() -> dict[str, str]:
         ("settings.roots.rules", "Rules"),
         ("settings.roots.rules_hint", "Open Text Rules editor for this folder"),
         ("settings.roots.delete", "Delete"),
+        ("settings.per_root_strategy", "Assign scan strategy per path"),
+        ("settings.per_root_strategy.hint", "When enabled, set a scan strategy for each root; when disabled, global strategies apply (saved overrides are kept)."),
+        ("settings.roots.scan_strategy", "Scan strategy"),
+        ("settings.roots.scan_strategy_hint", "Choose a scan strategy for this directory"),
+        ("settings.roots.scan_strategy.title", "Directory scan strategy"),
+        ("settings.scan_strategy.inherit", "Inherit global"),
         ("text.rules.title", "Text Rules"),
         ("text.rules.root", "Path: {path}"),
         ("text.rules.fields", "Fields"),
@@ -460,6 +469,8 @@ class UiBridge(QObject):
             "searchFontSize": repo.get_topbar_search_font_size(),
             "scanDepth": repo.get_scan_depth(),
             "hashStrategy": repo.get_hash_strategy(),
+            "perRootScanStrategyEnabled": repo.get_per_root_scan_strategy_enabled(),
+            "comicScanStrategy": repo.get_comic_scan_strategy(),
             "comicTitleConflictPolicy": repo.get_comic_title_conflict_policy(),
             "textEncodingPreference": repo.get_text_encoding_preference(),
             "cardSpacing": repo.get_card_spacing(),
@@ -475,8 +486,8 @@ class UiBridge(QObject):
             "comicPlaceholderCopy": repo.get_comic_placeholder_copy_enabled(),
             "autoGenerateComicThumbs": repo.get_auto_generate_comic_thumbnails_after_scan(),
             "comicThumbnailWorkers": repo.get_comic_thumbnail_workers_raw(),
-            "libraryRoots": repo.list_roots(),
-            "comicRoots": repo.list_comic_roots(),
+            "libraryRoots": repo.list_roots_with_strategy(),
+            "comicRoots": repo.list_comic_roots_with_strategy(),
             "textRoots": repo.list_text_roots_with_rules(),
             "theme": self._theme_payload(),
             "scanReport": repo.read_scan_report(),
@@ -786,6 +797,15 @@ class UiBridge(QObject):
     def removeRoot(self, kind: str, path: str) -> None:
         if self._host is not None:
             self._host.remove_root(kind, path)
+
+    @Slot(str, str, str)
+    def setRootScanStrategy(self, kind: str, path: str, strategy: str) -> None:
+        try:
+            self._repo.set_root_scan_strategy(kind, path, strategy or None)
+        except ValueError as exc:
+            self.emit_toast(tr("common.error", "Error"), str(exc), "warning")
+            return
+        self.push_settings()
 
     @Slot(str)
     def openTextRules(self, root_path: str) -> None:

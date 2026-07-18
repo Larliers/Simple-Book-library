@@ -95,6 +95,10 @@ class WebBridgeSmokeTests(unittest.TestCase):
             "settings.scan_summary_title",
             "settings.hash.hint",
             "settings.nav.paths",
+            "settings.per_root_strategy",
+            "settings.comic_scan_strategy",
+            "settings.roots.scan_strategy",
+            "settings.scan_strategy.inherit",
         ):
             self.assertIn(key, strings)
         self.assertIn("Fast", strings["settings.hash.hint"])
@@ -113,7 +117,11 @@ class WebBridgeSmokeTests(unittest.TestCase):
         self.assertIn("autoGenerateComicThumbs", settings)
         self.assertIn("comicThumbnailWorkers", settings)
         self.assertIn("scanReport", settings)
+        self.assertIn("perRootScanStrategyEnabled", settings)
+        self.assertIn("comicScanStrategy", settings)
         self.assertEqual(settings.get("hashStrategy"), "quick")
+        self.assertFalse(settings["perRootScanStrategyEnabled"])
+        self.assertEqual(settings["comicScanStrategy"], "snapshot")
 
     def test_edit_cover_slot_exists(self) -> None:
         bridge = self._make_bridge()
@@ -122,6 +130,10 @@ class WebBridgeSmokeTests(unittest.TestCase):
     def test_remove_from_library_slot_exists(self) -> None:
         bridge = self._make_bridge()
         self.assertTrue(callable(getattr(bridge, "removeFromLibrary", None)))
+
+    def test_set_root_scan_strategy_slot_exists(self) -> None:
+        bridge = self._make_bridge()
+        self.assertTrue(callable(getattr(bridge, "setRootScanStrategy", None)))
 
     def test_comic_view_default_is_pagination(self) -> None:
         bridge = self._make_bridge()

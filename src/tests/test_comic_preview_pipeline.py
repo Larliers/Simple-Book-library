@@ -13,7 +13,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from PIL import Image
 
-from bookhub.library.models import ComicScanRequest
+from bookhub.library.models import ComicScanRequest, ComicScanRoot
 from bookhub.library.preview_paths import ensure_preview_structure, is_preview_variant_uri
 from bookhub.library.repository import LibraryRepository
 from bookhub.library.scanner import scan_comic_roots
@@ -44,7 +44,7 @@ class ComicPreviewPipelineTests(unittest.TestCase):
         result = scan_comic_roots(
             self.repo,
             ComicScanRequest(
-                roots=[str(comic_root)],
+                roots=[ComicScanRoot(path=str(comic_root))],
                 max_depth=5,
                 placeholder_copy_enabled=True,
             ),
@@ -75,7 +75,7 @@ class ComicPreviewPipelineTests(unittest.TestCase):
         result = scan_comic_roots(
             self.repo,
             ComicScanRequest(
-                roots=[str(comic_root)],
+                roots=[ComicScanRoot(path=str(comic_root))],
                 max_depth=5,
                 placeholder_copy_enabled=True,
                 max_image_decode_bytes=1,
@@ -100,7 +100,7 @@ class ComicPreviewPipelineTests(unittest.TestCase):
         scan_comic_roots(
             self.repo,
             ComicScanRequest(
-                roots=[str(comic_root)],
+                roots=[ComicScanRoot(path=str(comic_root))],
                 max_depth=5,
                 placeholder_copy_enabled=False,
             ),
@@ -137,7 +137,7 @@ class ComicPreviewPipelineTests(unittest.TestCase):
         result = scan_comic_roots(
             self.repo,
             ComicScanRequest(
-                roots=[str(comic_root)],
+                roots=[ComicScanRoot(path=str(comic_root))],
                 max_depth=5,
                 placeholder_copy_enabled=True,
             ),

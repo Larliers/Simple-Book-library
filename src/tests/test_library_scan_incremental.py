@@ -14,7 +14,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from bookhub.library.metadata import compute_fingerprints
-from bookhub.library.models import ParsedMetadata, ScanRequest
+from bookhub.library.models import LibraryScanRoot, ParsedMetadata, ScanRequest
 from bookhub.library.preview_paths import uri_to_path
 from bookhub.library.repository import LibraryRepository
 from bookhub.library.scanner import scan_roots
@@ -77,7 +77,7 @@ class LibraryScanIncrementalTests(unittest.TestCase):
             _write_mock_pdf(root / "alpha.pdf")
 
             repository = LibraryRepository(base / "library.db", base / "scan_report.json")
-            request = ScanRequest(roots=[str(root)], scan_depth=2, hash_strategy="size_mtime")
+            request = ScanRequest(roots=[LibraryScanRoot(path=str(root))], scan_depth=2, hash_strategy="size_mtime")
             metadata = ParsedMetadata(title="Alpha", author="A")
 
             with _patched_library_scan(metadata):
@@ -99,7 +99,7 @@ class LibraryScanIncrementalTests(unittest.TestCase):
             _write_mock_pdf(pdf_path)
 
             repository = LibraryRepository(base / "library.db", base / "scan_report.json")
-            request = ScanRequest(roots=[str(root)], scan_depth=2, hash_strategy="size_mtime")
+            request = ScanRequest(roots=[LibraryScanRoot(path=str(root))], scan_depth=2, hash_strategy="size_mtime")
             metadata = ParsedMetadata(title="Beta", author="B")
 
             with _patched_library_scan(metadata):
@@ -117,7 +117,7 @@ class LibraryScanIncrementalTests(unittest.TestCase):
             _write_mock_pdf(root / "gamma.pdf")
 
             repository = LibraryRepository(base / "library.db", base / "scan_report.json")
-            request = ScanRequest(roots=[str(root)], scan_depth=2, hash_strategy="size_mtime")
+            request = ScanRequest(roots=[LibraryScanRoot(path=str(root))], scan_depth=2, hash_strategy="size_mtime")
             metadata = ParsedMetadata(title="Gamma", author="C")
 
             with _patched_library_scan(metadata):
@@ -183,7 +183,7 @@ class LibraryScanIncrementalTests(unittest.TestCase):
             with _patched_library_scan(metadata):
                 first = scan_roots(
                     repository,
-                    ScanRequest(roots=[str(root)], scan_depth=2, hash_strategy="size_mtime"),
+                    ScanRequest(roots=[LibraryScanRoot(path=str(root))], scan_depth=2, hash_strategy="size_mtime"),
                 )
                 self.assertEqual(first.added_count, 1)
                 mapped = repository.map_library_books_for_scan([str(root)])
@@ -191,7 +191,7 @@ class LibraryScanIncrementalTests(unittest.TestCase):
                 self.assertTrue(record["fingerprint_size_mtime"])
                 self.assertEqual(record["fingerprint_quick"], "")
 
-                quick_request = ScanRequest(roots=[str(root)], scan_depth=2, hash_strategy="quick")
+                quick_request = ScanRequest(roots=[LibraryScanRoot(path=str(root))], scan_depth=2, hash_strategy="quick")
                 backfill = scan_roots(repository, quick_request)
                 self.assertEqual(backfill.skipped_unchanged_count, 0)
                 self.assertEqual(backfill.updated_count, 1)

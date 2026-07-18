@@ -13,7 +13,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from PIL import Image
 
-from bookhub.library.models import ComicScanRequest
+from bookhub.library.models import ComicScanRequest, ComicScanRoot
 from bookhub.library.preview_paths import ensure_preview_structure
 from bookhub.library.repository import LibraryRepository
 from bookhub.library.scanner import scan_comic_roots
@@ -44,12 +44,12 @@ class ComicTitleConflictTests(unittest.TestCase):
         _make_comic_folder(first)
         scan_comic_roots(
             self.repo,
-            ComicScanRequest(roots=[str(self.comic_root)], title_conflict_policy="skip_incoming"),
+            ComicScanRequest(roots=[ComicScanRoot(path=str(self.comic_root))], title_conflict_policy="skip_incoming"),
         )
         _make_comic_folder(second)
         result = scan_comic_roots(
             self.repo,
-            ComicScanRequest(roots=[str(self.comic_root)], title_conflict_policy="skip_incoming"),
+            ComicScanRequest(roots=[ComicScanRoot(path=str(self.comic_root))], title_conflict_policy="skip_incoming"),
         )
         comics = self.repo.list_comics(include_missing=False)
         self.assertEqual(len(comics), 1)
@@ -63,12 +63,12 @@ class ComicTitleConflictTests(unittest.TestCase):
         _make_comic_folder(first)
         scan_comic_roots(
             self.repo,
-            ComicScanRequest(roots=[str(self.comic_root)], title_conflict_policy="keep_both"),
+            ComicScanRequest(roots=[ComicScanRoot(path=str(self.comic_root))], title_conflict_policy="keep_both"),
         )
         _make_comic_folder(second)
         result = scan_comic_roots(
             self.repo,
-            ComicScanRequest(roots=[str(self.comic_root)], title_conflict_policy="keep_both"),
+            ComicScanRequest(roots=[ComicScanRoot(path=str(self.comic_root))], title_conflict_policy="keep_both"),
         )
         comics = self.repo.list_comics(include_missing=False)
         self.assertEqual(len(comics), 2)
@@ -83,7 +83,7 @@ class ComicTitleConflictTests(unittest.TestCase):
             os.utime(child, (1_000_000, 1_000_000))
         scan_comic_roots(
             self.repo,
-            ComicScanRequest(roots=[str(self.comic_root)], title_conflict_policy="prefer_newer"),
+            ComicScanRequest(roots=[ComicScanRoot(path=str(self.comic_root))], title_conflict_policy="prefer_newer"),
         )
         _make_comic_folder(newer)
         newer_mtime = 2_000_000
@@ -92,7 +92,7 @@ class ComicTitleConflictTests(unittest.TestCase):
             os.utime(child, (newer_mtime, newer_mtime))
         result = scan_comic_roots(
             self.repo,
-            ComicScanRequest(roots=[str(self.comic_root)], title_conflict_policy="prefer_newer"),
+            ComicScanRequest(roots=[ComicScanRoot(path=str(self.comic_root))], title_conflict_policy="prefer_newer"),
         )
         comics = self.repo.list_comics(include_missing=False)
         self.assertEqual(len(comics), 1)
@@ -107,7 +107,7 @@ class ComicTitleConflictTests(unittest.TestCase):
         result = scan_comic_roots(
             self.repo,
             ComicScanRequest(
-                roots=[str(root_a), str(root_b)],
+                roots=[ComicScanRoot(path=str(root_a)), ComicScanRoot(path=str(root_b))],
                 title_conflict_policy="skip_incoming",
             ),
         )

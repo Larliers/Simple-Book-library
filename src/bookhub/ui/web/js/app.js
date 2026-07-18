@@ -1162,6 +1162,10 @@ function renderSettingsGeneral(panel) {
   hashHint.style.margin = "6px 0 0";
   hashField.appendChild(hashHint);
   grid.appendChild(hashField);
+  grid.appendChild(selectField("settings.comic_scan_strategy", "comicScanStrategy", [
+    ["snapshot", t("settings.comic_scan_strategy.snapshot", "Directory snapshot (fast)")],
+    ["full", t("settings.comic_scan_strategy.full", "Full rescan each time (strict)")],
+  ], s.comicScanStrategy || "snapshot"));
   grid.appendChild(selectField("settings.comic_title_conflict", "comicTitleConflictPolicy", [
     ["skip_incoming", t("settings.comic_title_conflict.skip_incoming", "Skip incoming")],
     ["keep_both", t("settings.comic_title_conflict.keep_both", "Keep both")],
@@ -1249,12 +1253,63 @@ function themeSelectField(labelKey, prop, options, current) {
 
 function renderSettingsPaths(panel) {
   const s = State.settings;
-  panel.appendChild(buildRootCard(t("settings.roots.library", "Library roots"), "library", (s.libraryRoots || []).map((p) => ({ path: p }))));
-  panel.appendChild(buildRootCard(t("settings.roots.comic", "Comic roots"), "comic", (s.comicRoots || []).map((p) => ({ path: p }))));
-  panel.appendChild(buildRootCard(t("settings.roots.text", "Text novel roots"), "text", (s.textRoots || []).map((r) => ({ path: r.path || r })), true));
+  const strategyCard = settingCard(null);
+  strategyCard.appendChild(switchField("settings.per_root_strategy", "perRootScanStrategyEnabled", s.perRootScanStrategyEnabled));
+  const strategyHint = elem("p", "small-note", t("settings.per_root_strategy.hint", "When enabled, set a scan strategy for each root; when disabled, global strategies apply (saved overrides are kept)."));
+  strategyHint.style.margin = "6px 0 0";
+  strategyCard.appendChild(strategyHint);
+  panel.appendChild(strategyCard);
+  panel.appendChild(buildRootCard(
+    t("settings.roots.library", "Library roots"),
+    "library",
+    normalizeRootList(s.libraryRoots),
+    false,
+    true
+  ));
+  panel.appendChild(buildRootCard(
+    t("settings.roots.comic", "Comic roots"),
+    "comic",
+    normalizeRootList(s.comicRoots),
+    false,
+    true
+  ));
+  panel.appendChild(buildRootCard(
+    t("settings.roots.text", "Text novel roots"),
+    "text",
+    normalizeRootList(s.textRoots),
+    true,
+    true
+  ));
 }
 
-function buildRootCard(title, kind, roots, withRules) {
+function normalizeRootList(roots) {
+  return (roots || []).map((item) => {
+    if (item && typeof item === "object") {
+      return {
+        path: String(item.path || ""),
+        scan_strategy: item.scan_strategy || "",
+      };
+    }
+    return { path: String(item), scan_strategy: "" };
+  });
+}
+
+function rootScanStrategyShortLabel(kind, strategy) {
+  const value = strategy || "";
+  if (!value) return t("settings.scan_strategy.inherit", "Inherit global");
+  if (kind === "comic") {
+    if (value === "snapshot") return t("settings.comic_scan_strategy.snapshot", "Directory snapshot (fast)");
+    if (value === "full") return t("settings.comic_scan_strategy.full", "Full rescan each time (strict)");
+    return value;
+  }
+  if (value === "size_mtime") return t("settings.hash.fast", "Fast");
+  if (value === "quick") return t("settings.hash.quick", "Quick");
+  if (value === "sha256") return t("settings.hash.strict", "Strict");
+  return value;
+}
+
+function buildRootCard(title, kind, roots, withRules, withStrategy) {
+  const s = State.settings;
   const card = settingCard(title);
   const add = elem("button", "ghost-btn path-add-btn", t("settings.roots.add", "Add folder"));
   add.addEventListener("click", () => State.bridge.addRoot(kind));
@@ -1265,6 +1320,13 @@ function buildRootCard(title, kind, roots, withRules) {
     const del = elem("button", "danger-btn", t("settings.roots.delete", "Delete"));
     del.addEventListener("click", () => confirmRemoveRoot(kind, root.path));
     row.appendChild(del);
+    if (withStrategy && s.perRootScanStrategyEnabled) {
+      const shortLabel = rootScanStrategyShortLabel(kind, root.scan_strategy);
+      const strategyBtn = elem("button", "ghost-btn", `${t("settings.roots.scan_strategy", "Scan strategy")} · ${shortLabel}`);
+      strategyBtn.title = t("settings.roots.scan_strategy_hint", "Choose a scan strategy for this directory");
+      strategyBtn.addEventListener("click", () => openRootScanStrategyModal(kind, root.path, root.scan_strategy || ""));
+      row.appendChild(strategyBtn);
+    }
     if (withRules) {
       const rules = elem("button", "ghost-btn", t("settings.roots.rules", "Rules"));
       rules.title = t("settings.roots.rules_hint", "Open Text Rules editor for this folder");
@@ -1276,6 +1338,48 @@ function buildRootCard(title, kind, roots, withRules) {
   });
   card.appendChild(list);
   return card;
+}
+
+function openRootScanStrategyModal(kind, path, current) {
+  const options = kind === "comic"
+    ? [
+      ["", t("settings.scan_strategy.inherit", "Inherit global")],
+      ["snapshot", t("settings.comic_scan_strategy.snapshot", "Directory snapshot (fast)")],
+      ["full", t("settings.comic_scan_strategy.full", "Full rescan each time (strict)")],
+    ]
+    : [
+      ["", t("settings.scan_strategy.inherit", "Inherit global")],
+      ["size_mtime", t("settings.hash.fast", "Fast")],
+      ["quick", t("settings.hash.quick", "Quick")],
+      ["sha256", t("settings.hash.strict", "Strict")],
+    ];
+  openModal((modal, close) => {
+    modalHeader(modal, t("settings.roots.scan_strategy.title", "Directory scan strategy"), close);
+    modal.appendChild(elem("p", "small-note", path));
+    modal.appendChild(elem("p", "small-note", t("settings.roots.scan_strategy_hint", "Choose a scan strategy for this directory")));
+    const field = elem("div", "field");
+    field.appendChild(elem("label", null, t("settings.roots.scan_strategy", "Scan strategy")));
+    const sel = elem("select");
+    options.forEach(([value, label]) => {
+      const opt = elem("option", null, label);
+      opt.value = value;
+      if (String(value) === String(current || "")) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    field.appendChild(sel);
+    modal.appendChild(field);
+    const actions = elem("div", "modal-actions");
+    const cancel = elem("button", "ghost-btn", t("common.cancel", "Cancel"));
+    cancel.addEventListener("click", close);
+    const confirm = elem("button", "primary-btn", t("common.confirm", "Confirm"));
+    confirm.addEventListener("click", () => {
+      State.bridge.setRootScanStrategy(kind, path, sel.value);
+      close();
+    });
+    actions.appendChild(cancel);
+    actions.appendChild(confirm);
+    modal.appendChild(actions);
+  });
 }
 
 function confirmRemoveRoot(kind, path) {

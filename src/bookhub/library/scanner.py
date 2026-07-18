@@ -32,6 +32,7 @@ from bookhub.library.metadata import (
 from bookhub.library.error_logs import append_scan_log
 from bookhub.library.models import (
     COMIC_IMAGE_EXTENSIONS,
+    COMIC_SCAN_STRATEGY_FULL,
     COMIC_TITLE_CONFLICT_POLICIES,
     COMIC_TITLE_CONFLICT_PREFER_NEWER,
     COMIC_TITLE_CONFLICT_SKIP_INCOMING,
@@ -43,6 +44,8 @@ from bookhub.library.models import (
     ScanResult,
     TEXT_FILE_EXTENSION,
     TextScanRequest,
+    resolve_comic_scan_strategy,
+    resolve_library_hash_strategy,
 )
 from bookhub.library.preview_paths import build_preview_path, is_preview_variant_uri, uri_to_path
 from bookhub.library.repository import LibraryRepository
@@ -482,7 +485,8 @@ def scan_comic_roots(
     if title_conflict_policy not in COMIC_TITLE_CONFLICT_POLICIES:
         title_conflict_policy = COMIC_TITLE_CONFLICT_SKIP_INCOMING
     encoding_preference = normalize_encoding_preference(request.encoding_preference)
-    scanned_roots = [repository.normalize_path(path) for path in request.roots]
+    per_root_strategy_enabled = repository.get_per_root_scan_strategy_enabled()
+    scanned_roots = [repository.normalize_path(root.path) for root in request.roots]
     removed_missing = _remove_missing_comics_in_scope(repository, scanned_roots)
     repository.backfill_comic_folder_modified_at()
     if removed_missing > 0:
@@ -493,7 +497,13 @@ def scan_comic_roots(
         str(record.get("path") or ""): record for record in existing_records if str(record.get("path") or "").strip()
     }
 
-    for raw_root in scanned_roots:
+    for root_spec in request.roots:
+        raw_root = repository.normalize_path(root_spec.path)
+        comic_scan_strategy = resolve_comic_scan_strategy(
+            root_spec.scan_strategy,
+            request.scan_strategy,
+            per_root_strategy_enabled,
+        )
         root = Path(raw_root)
         if not root.exists() or not root.is_dir():
             result.comic_errors.append(f"Comic root unavailable: {raw_root}")
@@ -526,6 +536,8 @@ def scan_comic_roots(
                 variant="original",
             )
             snapshot_unchanged = bool(existing) and existing_snapshot == folder_snapshot
+            if comic_scan_strategy == COMIC_SCAN_STRATEGY_FULL:
+                snapshot_unchanged = False
             current_fingerprint = existing_fingerprint or None
             if snapshot_unchanged and has_valid_thumb and not points_to_original:
                 need_regenerate = False
@@ -661,7 +673,7 @@ def scan_text_roots(
 ) -> ScanResult:
     result = ScanResult()
     preview_chars = max(100, int(request.preview_chars or 1200))
-    hash_strategy: HashStrategy = request.hash_strategy
+    per_root_strategy_enabled = repository.get_per_root_scan_strategy_enabled()
     encoding_preference = normalize_encoding_preference(request.encoding_preference)
     scanned_roots = [repository.normalize_path(item.path) for item in request.roots if str(item.path).strip()]
     total_files = _count_text_scan_files(request.roots)
@@ -673,6 +685,11 @@ def scan_text_roots(
 
     for root in request.roots:
         normalized_root = repository.normalize_path(root.path)
+        hash_strategy: HashStrategy = resolve_library_hash_strategy(
+            root.scan_strategy,
+            request.hash_strategy,
+            per_root_strategy_enabled,
+        )
         root_path = Path(normalized_root)
         if not root_path.exists() or not root_path.is_dir():
             result.text_errors.append(f"Text root unavailable: {normalized_root}")
@@ -786,8 +803,8 @@ def scan_roots(
 ) -> ScanResult:
     result = ScanResult()
     scan_depth = min(3, max(1, request.scan_depth))
-    hash_strategy: HashStrategy = request.hash_strategy
-    scanned_roots = [repository.normalize_path(path) for path in request.roots]
+    per_root_strategy_enabled = repository.get_per_root_scan_strategy_enabled()
+    scanned_roots = [repository.normalize_path(root.path) for root in request.roots]
     removed_missing = _remove_missing_books_in_scope(
         repository,
         scanned_roots,
@@ -802,7 +819,13 @@ def scan_roots(
     total_files = _count_library_scan_files(scanned_roots, scan_depth)
     existing_by_path = repository.map_library_books_for_scan(scanned_roots)
 
-    for raw_root in scanned_roots:
+    for root_spec in request.roots:
+        raw_root = repository.normalize_path(root_spec.path)
+        hash_strategy: HashStrategy = resolve_library_hash_strategy(
+            root_spec.scan_strategy,
+            request.hash_strategy,
+            per_root_strategy_enabled,
+        )
         root = Path(raw_root)
         if not root.exists() or not root.is_dir():
             result.errors.append(f"Scan root unavailable: {raw_root}")

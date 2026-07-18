@@ -18,9 +18,15 @@ scan_roots / comic_roots / text_roots
 ## Scan Semantics
 - **遍历模式**：每次扫描对配置根目录做**全量遍历**。
 - **局部跳过（非 checkpoint API）**：
-  - Library：按 Settings `hash_strategy`（`size_mtime` / `quick` / `sha256`）比对已存指纹；未变且缩略图仍在则跳过元数据/封面。
-  - Comic：按 `folder_size_mtime`（及封面指纹）判断文件夹是否未变；同一 `comic_root` 下同标题（叶子文件夹名）冲突按 `comic_title_conflict_policy` 处理；旁注 TXT 经 `text_encoding` 按偏好读入。
-  - Text：按与 Library 相同的 Settings `hash_strategy` 比对已存指纹；未变则跳过规则链与 upsert（无缩略图要求）；TXT 正文经 `text_encoding` 按偏好读入。
+  - Library：按有效 `hash_strategy`（`size_mtime` / `quick` / `sha256`）比对已存指纹；未变且缩略图仍在则跳过元数据/封面。
+  - Comic：默认按 Settings `comic_scan_strategy`=`snapshot` 用 `folder_size_mtime`（及封面指纹）判断文件夹是否未变；`full` 禁用 `folder_size_mtime` 短路并**重读旁注 TXT**；同一 `comic_root` 下同标题（叶子文件夹名）冲突按 `comic_title_conflict_policy` 处理；旁注 TXT 经 `text_encoding` 按偏好读入。
+  - Text：按与 Library 相同的有效 `hash_strategy` 比对已存指纹；未变则跳过规则链与 upsert（无缩略图要求）；TXT 正文经 `text_encoding` 按偏好读入。
+- **目录级策略覆盖**（Settings `per_root_scan_strategy_enabled`，默认关）：
+  - **关**：Library/Text 统一用全局 `hash_strategy`；Comic 统一用全局 `comic_scan_strategy`；各根表 `scan_strategy` 列仍持久化覆盖值但不生效。
+  - **开**：`library_roots` / `comic_roots` / `text_roots` 可空列 `scan_strategy`；`NULL` 或空串 = 继承对应全局策略。
+  - Library/Text 覆盖值：`size_mtime` | `quick` | `sha256`（非法值回退全局）。
+  - Comic 覆盖值：`snapshot` | `full`（非法值回退全局）。
+  - 解析入口：`models.resolve_library_hash_strategy` / `models.resolve_comic_scan_strategy`；`scanner` 按根调用。
 - **文本编码偏好**（Settings `text_encoding_preference`，默认 `simplified`）：
   - `simplified`：简体优先；normalizer 排名偏向 GB 族，**从不**选用 Big5 族。
   - `traditional`：繁体优先；Big5 族可胜出。
@@ -35,12 +41,14 @@ scan_roots / comic_roots / text_roots
 ## Logical Input (mapped to code)
 ```json
 {
-  "roots": ["library root paths"],
-  "comic_roots": ["comic root paths"],
-  "text_roots": [{"path": "string", "rules_json": "string"}],
+  "roots": [{"path": "string", "scan_strategy": "size_mtime|quick|sha256|null"}],
+  "comic_roots": [{"path": "string", "scan_strategy": "snapshot|full|null"}],
+  "text_roots": [{"path": "string", "rules_json": "string", "scan_strategy": "size_mtime|quick|sha256|null"}],
   "scan_depth": "1-3 for library",
   "comic_max_depth": "1-5 (worker currently fixed at 5)",
   "hash_strategy": "size_mtime|quick|sha256 (default: quick)",
+  "comic_scan_strategy": "snapshot|full (default: snapshot)",
+  "per_root_scan_strategy_enabled": "boolean (default: false)",
   "text_encoding_preference": "simplified|traditional|auto",
   "comic_title_conflict_policy": "keep_both|skip_incoming|prefer_newer",
   "scope": "all|library|comic|text",

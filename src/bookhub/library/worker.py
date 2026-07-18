@@ -18,6 +18,8 @@ from bookhub.library.models import (
     TEXT_ENCODING_PREFERENCES,
     TEXT_ENCODING_SIMPLIFIED,
     ComicScanRequest,
+    ComicScanRoot,
+    LibraryScanRoot,
     ScanRequest,
     TextScanRequest,
     TextScanRoot,
@@ -85,8 +87,15 @@ class ScanWorker(QThread):
                 str(label),
                 dict(snapshot),
             )
+            library_root_items = {
+                str(item.get("path") or ""): item.get("scan_strategy")
+                for item in repository.list_roots_with_strategy()
+            }
             request = ScanRequest(
-                roots=self._roots,
+                roots=[
+                    LibraryScanRoot(path=path, scan_strategy=library_root_items.get(path))
+                    for path in self._roots
+                ],
                 scan_depth=self._scan_depth,
                 hash_strategy=self._hash_strategy,  # type: ignore[arg-type]
                 trigger=self._trigger,
@@ -99,12 +108,20 @@ class ScanWorker(QThread):
                 result = ScanResult()
 
             if self._scope in {"all", "comic"}:
+                comic_root_items = {
+                    str(item.get("path") or ""): item.get("scan_strategy")
+                    for item in repository.list_comic_roots_with_strategy()
+                }
                 comic_request = ComicScanRequest(
-                    roots=self._comic_roots,
+                    roots=[
+                        ComicScanRoot(path=path, scan_strategy=comic_root_items.get(path))
+                        for path in self._comic_roots
+                    ],
                     max_depth=5,
                     placeholder_copy_enabled=self._comic_placeholder_copy_enabled,
                     title_conflict_policy=self._comic_title_conflict_policy,
                     encoding_preference=self._text_encoding_preference,
+                    scan_strategy=repository.get_comic_scan_strategy(),
                 )
                 comic_result = scan_comic_roots(repository, comic_request, progress_cb=progress_cb)
             else:
@@ -115,7 +132,11 @@ class ScanWorker(QThread):
             if self._scope in {"all", "text"}:
                 text_request = TextScanRequest(
                     roots=[
-                        TextScanRoot(path=str(item.get("path") or ""), rules_json=str(item.get("rules_json") or "{}"))
+                        TextScanRoot(
+                            path=str(item.get("path") or ""),
+                            rules_json=str(item.get("rules_json") or "{}"),
+                            scan_strategy=item.get("scan_strategy"),
+                        )
                         for item in self._text_roots
                         if str(item.get("path") or "").strip()
                     ],

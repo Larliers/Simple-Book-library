@@ -1,0 +1,19 @@
+[2026-07-17 10:30:24] missing_removed | type=book | title=FL Studio Beginner's Guide: How to Start Making Music in FL Studio - the Ultimate Shortcut | path=F:\Coding_Dev\BOOKS\Simple-Book-library\book_test_using\FL Studio Beginners Guide How to Start Making Music in FL Studio - the Ultimate Shortcut (Screech House) (Z-Library).epub | reason=legacy is_missing purged
+[2026-07-17 10:30:24] missing_removed | type=comic_folder | title=[Lander] 聚魔町的秘密情事517.8 MB 1433148 | path=D:\下载\[Lander] 聚魔町的秘密情事517.8 MB 1433148 | reason=legacy is_missing purged
+[2026-07-17 10:30:46] conflict=chs | source=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\chs | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.11\Comic\CHS
+[2026-07-17 10:30:46] conflict=eng | source=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\eng | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.11\Comic\ENG
+[2026-07-17 10:30:46] conflict=no text | source=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\no text | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.11\Comic\NO TEXT
+[2026-07-17 10:30:46] conflict=CHS | source=F:\Censored\Censored\BZ\BZ\Lingdong\2024.11\Comic\CHS | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\chs
+[2026-07-17 10:30:46] conflict=ENG | source=F:\Censored\Censored\BZ\BZ\Lingdong\2024.11\Comic\ENG | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\eng
+[2026-07-17 10:30:46] conflict=NO TEXT | source=F:\Censored\Censored\BZ\BZ\Lingdong\2024.11\Comic\NO TEXT | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\no text
+[2026-07-17 10:30:46] conflict=CHS | source=F:\Censored\Censored\BZ\BZ\Lingdong\2024年7月\Comic\CHS | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\chs
+[2026-07-17 10:30:46] conflict=ENG | source=F:\Censored\Censored\BZ\BZ\Lingdong\2024年7月\Comic\ENG | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\eng
+[2026-07-17 10:30:46] conflict=NO TEXT | source=F:\Censored\Censored\BZ\BZ\Lingdong\2024年7月\Comic\NO TEXT | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\no text
+[2026-07-17 10:30:46] conflict=CHS | source=F:\Censored\Censored\BZ\BZ\Lingdong\[Lindong] 2023 November - Chief Bogo\JPG\CHS | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\chs
+[2026-07-17 10:30:46] conflict=ENG | source=F:\Censored\Censored\BZ\BZ\Lingdong\[Lindong] 2023 November - Chief Bogo\JPG\ENG | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\eng
+[2026-07-17 10:30:46] conflict=CHS | source=F:\Censored\Censored\BZ\BZ\Lingdong\Bakal, Ornn, Boar\8\BAKAL\CHS | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\chs
+[2026-07-17 10:30:46] conflict=ENG | source=F:\Censored\Censored\BZ\BZ\Lingdong\Bakal, Ornn, Boar\8\BAKAL\ENG | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\eng
+[2026-07-17 10:30:46] conflict=NO TEXT | source=F:\Censored\Censored\BZ\BZ\Lingdong\Bakal, Ornn, Boar\8\BAKAL\NO TEXT | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\no text
+[2026-07-17 10:30:46] conflict=CHS | source=F:\Censored\Censored\BZ\BZ\Lingdong\Lindong Forging Desires comic and animations\comic\CHS | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\chs
+[2026-07-17 10:30:46] conflict=ENG | source=F:\Censored\Censored\BZ\BZ\Lingdong\Lindong Forging Desires comic and animations\comic\ENG | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\eng
+[2026-07-17 10:30:46] conflict=NO TEXT | source=F:\Censored\Censored\BZ\BZ\Lingdong\Lindong Forging Desires comic and animations\comic\NO TEXT | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\no text

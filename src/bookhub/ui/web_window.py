@@ -166,6 +166,10 @@ class WebAppWindow(QMainWindow):
             repo.set_scan_depth(int(value))
         elif key == "hashStrategy":
             repo.set_hash_strategy(value)
+        elif key == "perRootScanStrategyEnabled":
+            repo.set_per_root_scan_strategy_enabled(self._as_bool(value))
+        elif key == "comicScanStrategy":
+            repo.set_comic_scan_strategy(value)
         elif key == "comicTitleConflictPolicy":
             repo.set_comic_title_conflict_policy(value)
         elif key == "textEncodingPreference":

@@ -12,6 +12,15 @@ HASH_STRATEGIES = {
     HASH_STRATEGY_QUICK,
 }
 HashStrategy = Literal["sha256", "size_mtime", "quick"]
+
+COMIC_SCAN_STRATEGY_SNAPSHOT = "snapshot"
+COMIC_SCAN_STRATEGY_FULL = "full"
+COMIC_SCAN_STRATEGIES = {
+    COMIC_SCAN_STRATEGY_SNAPSHOT,
+    COMIC_SCAN_STRATEGY_FULL,
+}
+ComicScanStrategy = Literal["snapshot", "full"]
+
 ThumbnailTaskKind = Literal["cleanup", "regenerate", "regenerate_missing"]
 ScanScope = Literal["library", "comic", "text", "all"]
 ThumbnailScope = Literal["library", "comic"]
@@ -80,8 +89,20 @@ class ScanConflict:
 
 
 @dataclass(slots=True)
+class LibraryScanRoot:
+    path: str
+    scan_strategy: str | None = None
+
+
+@dataclass(slots=True)
+class ComicScanRoot:
+    path: str
+    scan_strategy: str | None = None
+
+
+@dataclass(slots=True)
 class ScanRequest:
-    roots: list[str]
+    roots: list[LibraryScanRoot]
     scan_depth: int
     hash_strategy: HashStrategy
     trigger: str = "manual"
@@ -89,18 +110,20 @@ class ScanRequest:
 
 @dataclass(slots=True)
 class ComicScanRequest:
-    roots: list[str]
+    roots: list[ComicScanRoot]
     max_depth: int = 5
     placeholder_copy_enabled: bool = True
     max_image_decode_bytes: int = 256 * 1024 * 1024
     title_conflict_policy: str = COMIC_TITLE_CONFLICT_SKIP_INCOMING
     encoding_preference: str = TEXT_ENCODING_SIMPLIFIED
+    scan_strategy: ComicScanStrategy = COMIC_SCAN_STRATEGY_SNAPSHOT
 
 
 @dataclass(slots=True)
 class TextScanRoot:
     path: str
     rules_json: str | None = None
+    scan_strategy: str | None = None
 
 
 @dataclass(slots=True)
@@ -173,6 +196,36 @@ class ScanResult:
             "text_scanned_count": self.text_scanned_files,
             "text_errors": list(self.text_errors),
         }
+
+
+def resolve_library_hash_strategy(
+    root_override: str | None,
+    global_strategy: HashStrategy,
+    per_root_enabled: bool,
+) -> HashStrategy:
+    if not per_root_enabled:
+        return global_strategy
+    normalized = str(root_override or "").strip()
+    if not normalized:
+        return global_strategy
+    if normalized not in HASH_STRATEGIES:
+        return global_strategy
+    return normalized  # type: ignore[return-value]
+
+
+def resolve_comic_scan_strategy(
+    root_override: str | None,
+    global_strategy: ComicScanStrategy,
+    per_root_enabled: bool,
+) -> ComicScanStrategy:
+    if not per_root_enabled:
+        return global_strategy
+    normalized = str(root_override or "").strip()
+    if not normalized:
+        return global_strategy
+    if normalized not in COMIC_SCAN_STRATEGIES:
+        return global_strategy
+    return normalized  # type: ignore[return-value]
 
 
 @dataclass(slots=True)

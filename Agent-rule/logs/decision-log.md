@@ -169,3 +169,36 @@
   ]
 }
 ```
+
+```json
+{
+  "decision_id": "decision-20260718-002",
+  "timestamp": "2026-07-18T12:00:00+08:00",
+  "owner": "indexer-agent + ui-agent",
+  "title": "目录级扫描策略：总开关 + 全局/覆盖继承；漫画 snapshot/full",
+  "context": "用户希望不同根目录使用不同指纹或漫画重扫强度；需与全局 Settings 共存且关闭开关时不丢已配覆盖值",
+  "options": [
+    "A: 仅全局 hash_strategy，无 per-root",
+    "B: 每根强制独立策略，无全局回退",
+    "C: 总开关 per_root_scan_strategy_enabled；开时根 scan_strategy 覆盖全局，关时统一全局但保留 DB 覆盖值",
+    "D: 漫画仅 snapshot，不提供 full"
+  ],
+  "decision": "选择 C；漫画全局与 per-root 均为 snapshot|full，默认 snapshot",
+  "rationale": [
+    "总开关降低默认复杂度，关闭时行为与旧版一致",
+    "保留覆盖值避免用户反复配置；开开关即可恢复",
+    "Library/Text 复用 hash_strategy 三档；Comic 用 folder_size_mtime 快照 vs full 重扫旁注",
+    "resolve_* 集中解析，scanner/worker 不重复分支"
+  ],
+  "impact": [
+    "三表 library_roots/comic_roots/text_roots 新增可空 scan_strategy；settings 新增 per_root_scan_strategy_enabled、comic_scan_strategy",
+    "UI 路径页开关 + 各根策略按钮/弹窗；General 页漫画全局策略下拉",
+    "comic full 禁用 folder_size_mtime 短路并重读 info_text 旁注",
+    "indexer-contract / README / src_construction / test_root_scan_strategy 需同步"
+  ],
+  "followups": [
+    "大型多根书库下对比 per-root Quick vs Strict 耗时",
+    "可选：UI 自动化覆盖 setRootScanStrategy 端到端"
+  ]
+}
+```

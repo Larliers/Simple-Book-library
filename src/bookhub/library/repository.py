@@ -11,6 +11,8 @@ from uuid import uuid4
 
 from bookhub.library.error_logs import append_scan_log
 from bookhub.library.models import (
+    COMIC_SCAN_STRATEGIES,
+    COMIC_SCAN_STRATEGY_SNAPSHOT,
     COMIC_TITLE_CONFLICT_POLICIES,
     COMIC_TITLE_CONFLICT_SKIP_INCOMING,
     HASH_STRATEGIES,
@@ -19,6 +21,7 @@ from bookhub.library.models import (
     TEXT_ENCODING_PREFERENCES,
     TEXT_ENCODING_SIMPLIFIED,
     TEXT_PREVIEW_CHAR_OPTIONS,
+    ComicScanStrategy,
     HashStrategy,
 )
 from bookhub.library.preview_paths import ensure_preview_structure
@@ -266,6 +269,24 @@ class LibraryRepository:
             self._ensure_column(conn, "comics", "folder_size_mtime", "ALTER TABLE comics ADD COLUMN folder_size_mtime TEXT")
             self._ensure_column(conn, "comics", "folder_mtime", "ALTER TABLE comics ADD COLUMN folder_mtime INTEGER")
             self._ensure_column(conn, "comics", "folder_modified_at", "ALTER TABLE comics ADD COLUMN folder_modified_at INTEGER")
+            self._ensure_column(
+                conn,
+                "library_roots",
+                "scan_strategy",
+                "ALTER TABLE library_roots ADD COLUMN scan_strategy TEXT",
+            )
+            self._ensure_column(
+                conn,
+                "comic_roots",
+                "scan_strategy",
+                "ALTER TABLE comic_roots ADD COLUMN scan_strategy TEXT",
+            )
+            self._ensure_column(
+                conn,
+                "text_roots",
+                "scan_strategy",
+                "ALTER TABLE text_roots ADD COLUMN scan_strategy TEXT",
+            )
 
     @staticmethod
     def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, ddl_sql: str) -> None:
@@ -280,6 +301,10 @@ class LibraryRepository:
             self.set_setting("scan_depth", 2)
         if self.get_setting("hash_strategy", None) is None:
             self.set_setting("hash_strategy", HASH_STRATEGY_QUICK)
+        if self.get_setting("per_root_scan_strategy_enabled", None) is None:
+            self.set_setting("per_root_scan_strategy_enabled", False)
+        if self.get_setting("comic_scan_strategy", None) is None:
+            self.set_setting("comic_scan_strategy", COMIC_SCAN_STRATEGY_SNAPSHOT)
         if self.get_setting("comic_title_conflict_policy", None) is None:
             self.set_setting("comic_title_conflict_policy", COMIC_TITLE_CONFLICT_SKIP_INCOMING)
         if self.get_setting("text_encoding_preference", None) is None:
@@ -381,6 +406,22 @@ class LibraryRepository:
     def set_hash_strategy(self, strategy: str) -> None:
         normalized = strategy if strategy in HASH_STRATEGIES else HASH_STRATEGY_QUICK
         self.set_setting("hash_strategy", normalized)
+
+    def get_per_root_scan_strategy_enabled(self) -> bool:
+        return bool(self.get_setting("per_root_scan_strategy_enabled", False))
+
+    def set_per_root_scan_strategy_enabled(self, enabled: bool) -> None:
+        self.set_setting("per_root_scan_strategy_enabled", bool(enabled))
+
+    def get_comic_scan_strategy(self) -> ComicScanStrategy:
+        strategy = str(self.get_setting("comic_scan_strategy", COMIC_SCAN_STRATEGY_SNAPSHOT))
+        if strategy not in COMIC_SCAN_STRATEGIES:
+            strategy = COMIC_SCAN_STRATEGY_SNAPSHOT
+        return strategy  # type: ignore[return-value]
+
+    def set_comic_scan_strategy(self, strategy: str) -> None:
+        normalized = strategy if strategy in COMIC_SCAN_STRATEGIES else COMIC_SCAN_STRATEGY_SNAPSHOT
+        self.set_setting("comic_scan_strategy", normalized)
 
     def get_comic_title_conflict_policy(self) -> str:
         policy = str(self.get_setting("comic_title_conflict_policy", COMIC_TITLE_CONFLICT_SKIP_INCOMING))
@@ -677,6 +718,54 @@ class LibraryRepository:
             rows = conn.execute("SELECT path FROM library_roots ORDER BY lower(path)").fetchall()
         return [str(row["path"]) for row in rows]
 
+    def list_roots_with_strategy(self) -> list[dict[str, str | None]]:
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT path, scan_strategy FROM library_roots ORDER BY lower(path)"
+            ).fetchall()
+        return [
+            {
+                "path": str(row["path"]),
+                "scan_strategy": self._normalize_root_scan_strategy(row["scan_strategy"]),
+            }
+            for row in rows
+        ]
+
+    @staticmethod
+    def _normalize_root_scan_strategy(value: Any) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+    def set_root_scan_strategy(self, kind: str, path: str | Path, strategy: str | None) -> None:
+        normalized_kind = str(kind or "").strip().lower()
+        if normalized_kind not in {"library", "comic", "text"}:
+            raise ValueError(f"Unsupported root kind: {kind}")
+        normalized_path = self.normalize_path(path)
+        normalized_strategy = self._normalize_root_scan_strategy(strategy)
+        if normalized_strategy is not None:
+            allowed = COMIC_SCAN_STRATEGIES if normalized_kind == "comic" else HASH_STRATEGIES
+            if normalized_strategy not in allowed:
+                raise ValueError(f"Unsupported scan strategy: {strategy}")
+        table_name = {
+            "library": "library_roots",
+            "comic": "comic_roots",
+            "text": "text_roots",
+        }[normalized_kind]
+        timestamp = now_utc_iso()
+        with self._connection() as conn:
+            cursor = conn.execute(
+                f"""
+                UPDATE {table_name}
+                SET scan_strategy = ?, updated_at = ?
+                WHERE path = ?
+                """,  # noqa: S608
+                (normalized_strategy, timestamp, normalized_path),
+            )
+            if int(cursor.rowcount or 0) <= 0:
+                raise ValueError(f"Root not found: {normalized_path}")
+
     def add_root(self, path: str | Path) -> str:
         normalized = self.normalize_path(path)
         timestamp = now_utc_iso()
@@ -724,6 +813,19 @@ class LibraryRepository:
             rows = conn.execute("SELECT path FROM comic_roots ORDER BY lower(path)").fetchall()
         return [str(row["path"]) for row in rows]
 
+    def list_comic_roots_with_strategy(self) -> list[dict[str, str | None]]:
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT path, scan_strategy FROM comic_roots ORDER BY lower(path)"
+            ).fetchall()
+        return [
+            {
+                "path": str(row["path"]),
+                "scan_strategy": self._normalize_root_scan_strategy(row["scan_strategy"]),
+            }
+            for row in rows
+        ]
+
     def add_comic_root(self, path: str | Path) -> str:
         normalized = self.normalize_path(path)
         timestamp = now_utc_iso()
@@ -769,10 +871,19 @@ class LibraryRepository:
             rows = conn.execute("SELECT path FROM text_roots ORDER BY lower(path)").fetchall()
         return [str(row["path"]) for row in rows]
 
-    def list_text_roots_with_rules(self) -> list[dict[str, str]]:
+    def list_text_roots_with_rules(self) -> list[dict[str, str | None]]:
         with self._connection() as conn:
-            rows = conn.execute("SELECT path, rules_json FROM text_roots ORDER BY lower(path)").fetchall()
-        return [{"path": str(row["path"]), "rules_json": str(row["rules_json"] or "{}")} for row in rows]
+            rows = conn.execute(
+                "SELECT path, rules_json, scan_strategy FROM text_roots ORDER BY lower(path)"
+            ).fetchall()
+        return [
+            {
+                "path": str(row["path"]),
+                "rules_json": str(row["rules_json"] or "{}"),
+                "scan_strategy": self._normalize_root_scan_strategy(row["scan_strategy"]),
+            }
+            for row in rows
+        ]
 
     def add_text_root(self, path: str | Path) -> str:
         normalized = self.normalize_path(path)
