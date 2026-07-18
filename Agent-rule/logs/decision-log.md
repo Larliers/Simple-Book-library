@@ -78,3 +78,94 @@
   ]
 }
 ```
+
+```json
+{
+  "decision_id": "decision-20260717-001",
+  "timestamp": "2026-07-17T10:05:00+08:00",
+  "owner": "indexer-agent",
+  "title": "漫画同名默认 skip_incoming；Text 指纹跳过对齐 Library",
+  "context": "Text 重扫仍全量跑规则链成本高；同一 comic_root 下同名叶子夹易重复入库，需可配置策略且默认保守",
+  "options": [
+    "A: 漫画冲突 keep_both（维持现状）为默认",
+    "B: 漫画冲突 skip_incoming 为默认，另提供 keep_both / prefer_newer",
+    "C: Text 继续全量 sha256 / 不跳过",
+    "D: Text 使用与 Library 相同的 Settings hash_strategy 跳过（无 thumb 要求）"
+  ],
+  "decision": "漫画选 B；Text 选 D",
+  "rationale": [
+    "默认跳过新人避免同 root 重复占库，仍可用 keep_both 保留旧行为",
+    "Text 与 Library 共用指纹策略，设置心智一致；Text 无封面故跳过条件不含 thumb",
+    "跨 comic_root 允许同名，避免不同系列「第01卷」被全局误杀"
+  ],
+  "impact": [
+    "Settings 新增 comic_title_conflict_policy；indexer-contract / README 需同步",
+    "Text 二次扫描可计入 skipped_unchanged_count；用户改过的 title/tags 在指纹未变时得以保留",
+    "Fast 指纹优化仅建议留档；TXT 编码优化后由 decision-20260717-002 落地"
+  ],
+  "followups": [
+    "可选：落地 Fast 指纹优化建议（见 history/2026-07-17.md）；TXT 编码见 decision-20260717-002"
+  ]
+}
+```
+
+```json
+{
+  "decision_id": "decision-20260717-002",
+  "timestamp": "2026-07-17T10:50:00+08:00",
+  "owner": "indexer-agent",
+  "title": "TXT 编码偏好 simplified|traditional|auto（默认简体）",
+  "context": "纯 Big5→GB18030 强制改写会伤台繁库；需可配简/繁偏好，并降低低置信误判",
+  "options": [
+    "A: 维持强制 Big5→GB18030（仅面向简体）",
+    "B: Settings text_encoding_preference + 64KB 样本 + normalizer 排名 + 双候选回退",
+    "C: 无开关全量 GBK / errors=ignore"
+  ],
+  "decision": "选择 B；默认 simplified",
+  "rationale": [
+    "简体默认不选 Big5，避免大陆库乱码；繁体优先允许 Big5",
+    "低置信双候选（GB18030↔UTF-8）比盲信 normalizer 更稳",
+    "规则预览暴露 detectedEncoding/confidence，便于排查乱码"
+  ],
+  "impact": [
+    "Worker 将偏好传入 Text/Comic 扫描；repository 持久化默认值",
+    "indexer-contract / README / src_construction 需同步；design-advice-20260717-txt-encoding 标为已实现"
+  ],
+  "followups": [
+    "Fast 指纹优化见 decision-20260718-001（文案 + 新装默认 Quick；算法本身未改）"
+  ]
+}
+```
+
+```json
+{
+  "decision_id": "decision-20260718-001",
+  "timestamp": "2026-07-18T10:30:00+08:00",
+  "owner": "indexer-agent + ui-agent",
+  "title": "新装默认 Quick，路径与扫描任务共用设置入口",
+  "context": "Fast 的 size+mtime 比对可能漏检内容变化；路径配置与扫描动作属于同一工作流，宜合并以便后续按文件夹定制扫描策略",
+  "options": [
+    "A: 继续默认 Fast 并仅增加风险提示",
+    "B: 默认 Quick，保留 Fast 与 Strict 可选；旧用户已持久化值不强制迁移",
+    "C: 默认 Strict",
+    "D: 路径与任务继续分为两个导航页",
+    "E: 路径与任务合并到一个导航页"
+  ],
+  "decision": "选择 B 与 E",
+  "rationale": [
+    "Quick 读盘成本远低于 Strict，假阴性远低于 Fast",
+    "保留 Fast 给追求最低 I/O 的用户，并用 Settings 文案标明风险",
+    "无法可靠区分旧默认与用户主动选 Fast，故不做强制迁移",
+    "路径与扫描合并减少导航层级，并为「指定文件夹策略」预留同页布局"
+  ],
+  "impact": [
+    "新库 / 非法值回退为 quick；已有合法 size_mtime 保持",
+    "Settings 导航「路径与扫描」同时渲染路径卡与任务卡；旧 tasks 状态归一到 paths",
+    "切换到 Quick 后旧记录首次补算 fingerprint_quick，第二次可 skip"
+  ],
+  "followups": [
+    "观察大型书库使用 Quick 时的扫描耗时",
+    "下一轮：支持指定文件夹使用特定扫描策略"
+  ]
+}
+```

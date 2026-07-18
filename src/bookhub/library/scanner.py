@@ -4,7 +4,7 @@ from __future__ import annotations
 
 Indexer contract alignment (Agent-rule/contracts/indexer-contract.md):
 - Each scan walks configured roots fully.
-- Local skip only: Library hash_strategy fingerprints; Comic folder_size_mtime.
+- Local skip only: Library/Text hash_strategy fingerprints; Comic folder_size_mtime.
 - Missing sources are deleted from DB and logged (no Missed restore path).
 - No last_checkpoint / next_checkpoint API.
 """
@@ -32,6 +32,9 @@ from bookhub.library.metadata import (
 from bookhub.library.error_logs import append_scan_log
 from bookhub.library.models import (
     COMIC_IMAGE_EXTENSIONS,
+    COMIC_TITLE_CONFLICT_POLICIES,
+    COMIC_TITLE_CONFLICT_PREFER_NEWER,
+    COMIC_TITLE_CONFLICT_SKIP_INCOMING,
     SUPPORTED_EXTENSIONS,
     ComicScanRequest,
     HashStrategy,
@@ -45,7 +48,12 @@ from bookhub.library.preview_paths import build_preview_path, is_preview_variant
 from bookhub.library.repository import LibraryRepository
 from bookhub.library.text_rules import ImportRule, RuleContext, apply_rule_chain, load_rules_from_json
 from bookhub.library.text_rules.rule_examples import default_text_title_rule_chain
-from bookhub.library.text_encoding import read_text_file, read_text_first_line
+from bookhub.library.text_encoding import (
+    TEXT_ENCODING_SIMPLIFIED,
+    normalize_encoding_preference,
+    read_text_file,
+    read_text_first_line,
+)
 
 ScanProgressCallback = Callable[[int, int, str, dict[str, object]], None]
 
@@ -221,13 +229,18 @@ def _cleanup_stale_duplicate_if_needed(
     return True
 
 
-def _read_txt_first_line(file_path: Path) -> str:
-    return read_text_first_line(file_path)
+def _read_txt_first_line(file_path: Path, *, preference: str = TEXT_ENCODING_SIMPLIFIED) -> str:
+    return read_text_first_line(file_path, preference=preference)
 
 
-def _read_txt_head_text(file_path: Path, preview_chars: int) -> str:
+def _read_txt_head_text(
+    file_path: Path,
+    preview_chars: int,
+    *,
+    preference: str = TEXT_ENCODING_SIMPLIFIED,
+) -> str:
     safe_limit = max(100, int(preview_chars))
-    return read_text_file(file_path, max_chars=safe_limit).strip()
+    return read_text_file(file_path, max_chars=safe_limit, preference=preference).strip()
 
 
 def _parse_rule_map(raw_rules_json: str, errors: list[str], path_for_error: str) -> dict[str, list[ImportRule]]:
@@ -270,7 +283,7 @@ def _collect_comic_folder_metrics(file_names: list[str], folder_path: Path) -> t
     return folder_path / sorted_names[0], image_count, snapshot, max_mtime, folder_modified_at
 
 
-def _collect_comic_info_text(folder: Path) -> str | None:
+def _collect_comic_info_text(folder: Path, *, preference: str = TEXT_ENCODING_SIMPLIFIED) -> str | None:
     txt_paths = sorted(
         [child for child in folder.iterdir() if child.is_file() and child.suffix.lower() == ".txt"],
         key=_natural_sort_key,
@@ -279,7 +292,7 @@ def _collect_comic_info_text(folder: Path) -> str | None:
         return None
     parts: list[str] = []
     for txt_path in txt_paths:
-        content = read_text_file(txt_path).strip()
+        content = read_text_file(txt_path, preference=preference).strip()
         if content:
             parts.append(content)
     if not parts:
@@ -465,6 +478,10 @@ def scan_comic_roots(
     max_depth = min(5, max(1, int(request.max_depth or 5)))
     placeholder_copy_enabled = bool(request.placeholder_copy_enabled)
     max_image_decode_bytes = max(1, int(request.max_image_decode_bytes or 0))
+    title_conflict_policy = str(request.title_conflict_policy or COMIC_TITLE_CONFLICT_SKIP_INCOMING)
+    if title_conflict_policy not in COMIC_TITLE_CONFLICT_POLICIES:
+        title_conflict_policy = COMIC_TITLE_CONFLICT_SKIP_INCOMING
+    encoding_preference = normalize_encoding_preference(request.encoding_preference)
     scanned_roots = [repository.normalize_path(path) for path in request.roots]
     removed_missing = _remove_missing_comics_in_scope(repository, scanned_roots)
     repository.backfill_comic_folder_modified_at()
@@ -557,7 +574,7 @@ def scan_comic_roots(
             if snapshot_unchanged and isinstance(existing, dict):
                 info_text = str(existing.get("info_text") or "") or None
             else:
-                info_text = _collect_comic_info_text(folder_path)
+                info_text = _collect_comic_info_text(folder_path, preference=encoding_preference)
             payload = {
                 "path": normalized_folder,
                 "title": folder_path.name,
@@ -571,6 +588,44 @@ def scan_comic_roots(
                 "image_count": image_count,
                 "info_text": info_text,
             }
+            conflict = repository.find_comic_title_conflict(
+                normalized_root,
+                folder_path.name,
+                normalized_folder,
+            )
+            if conflict:
+                conflict_item = ScanConflict(
+                    file_name=folder_path.name,
+                    incoming_path=normalized_folder,
+                    existing_path=str(conflict.get("path") or ""),
+                    existing_title=str(conflict.get("title") or folder_path.name),
+                )
+                result.name_conflicts.append(conflict_item)
+                if title_conflict_policy == COMIC_TITLE_CONFLICT_SKIP_INCOMING:
+                    result.comic_errors.append(
+                        f"Comic title conflict skipped (incoming): {normalized_folder} vs {conflict_item.existing_path}"
+                    )
+                    _emit_scan_progress(progress_cb, index, total, normalized_folder, result)
+                    continue
+                if title_conflict_policy == COMIC_TITLE_CONFLICT_PREFER_NEWER:
+                    existing_mtime = max(
+                        int(conflict.get("folder_modified_at") or 0),
+                        int(conflict.get("folder_mtime") or 0),
+                    )
+                    incoming_mtime = max(int(folder_modified_at or 0), int(folder_mtime or 0))
+                    if incoming_mtime <= existing_mtime:
+                        result.comic_errors.append(
+                            f"Comic title conflict kept existing (newer/equal): {conflict_item.existing_path}"
+                        )
+                        _emit_scan_progress(progress_cb, index, total, normalized_folder, result)
+                        continue
+                    old_id = int(conflict.get("id") or 0)
+                    old_path = str(conflict.get("path") or "")
+                    if old_id > 0:
+                        repository.delete_comics_by_ids([old_id])
+                    if old_path:
+                        existing_by_path.pop(old_path, None)
+                # keep_both: log conflict above, then upsert incoming as usual
             inserted = repository.upsert_comic(payload)
             if inserted:
                 result.comic_added_count += 1
@@ -606,12 +661,15 @@ def scan_text_roots(
 ) -> ScanResult:
     result = ScanResult()
     preview_chars = max(100, int(request.preview_chars or 1200))
+    hash_strategy: HashStrategy = request.hash_strategy
+    encoding_preference = normalize_encoding_preference(request.encoding_preference)
     scanned_roots = [repository.normalize_path(item.path) for item in request.roots if str(item.path).strip()]
     total_files = _count_text_scan_files(request.roots)
     removed_missing = _remove_missing_books_in_scope(repository, scanned_roots, resource_type="text_novel")
     if removed_missing > 0:
         result.removed_missing_count += removed_missing
         result.removed_missing_book_count += removed_missing
+    existing_by_path = repository.map_text_novels_for_scan(scanned_roots)
 
     for root in request.roots:
         normalized_root = repository.normalize_path(root.path)
@@ -633,8 +691,31 @@ def scan_text_roots(
 
                 result.text_scanned_files += 1
                 normalized_path = repository.normalize_path(file_path)
-                txt_first_line = _read_txt_first_line(file_path)
-                txt_head_text = _read_txt_head_text(file_path, preview_chars)
+
+                try:
+                    fingerprints = compute_fingerprints(file_path, strategy=hash_strategy)
+                except OSError as exc:
+                    result.text_errors.append(f"Text fingerprint failed for {normalized_path}: {exc}")
+                    _emit_scan_progress(progress_cb, result.text_scanned_files, total_files, normalized_path, result)
+                    continue
+
+                existing = existing_by_path.get(normalized_path)
+                current_fp = fingerprints.value_for(hash_strategy)
+                existing_fp = ""
+                if isinstance(existing, dict):
+                    if hash_strategy == "sha256":
+                        existing_fp = str(existing.get("fingerprint_sha256") or "")
+                    elif hash_strategy == "quick":
+                        existing_fp = str(existing.get("fingerprint_quick") or "")
+                    else:
+                        existing_fp = str(existing.get("fingerprint_size_mtime") or "")
+                if isinstance(existing, dict) and current_fp and existing_fp and current_fp == existing_fp:
+                    result.skipped_unchanged_count += 1
+                    _emit_scan_progress(progress_cb, result.text_scanned_files, total_files, normalized_path, result)
+                    continue
+
+                txt_first_line = _read_txt_first_line(file_path, preference=encoding_preference)
+                txt_head_text = _read_txt_head_text(file_path, preview_chars, preference=encoding_preference)
                 context = RuleContext(
                     file_path=normalized_path,
                     txt_first_line=txt_first_line,
@@ -649,13 +730,6 @@ def scan_text_roots(
                     tags.append(f"series:{extracted['series']}")
                 if extracted.get("tag"):
                     tags.extend(_split_text_rule_tags(extracted["tag"]))
-
-                try:
-                    fingerprints = compute_fingerprints(file_path, strategy="sha256")
-                except OSError as exc:
-                    result.text_errors.append(f"Text fingerprint failed for {normalized_path}: {exc}")
-                    _emit_scan_progress(progress_cb, result.text_scanned_files, total_files, normalized_path, result)
-                    continue
 
                 payload: dict[str, Any] = {
                     "path": normalized_path,
@@ -695,6 +769,12 @@ def scan_text_roots(
                     result.text_added_count += 1
                 else:
                     result.text_updated_count += 1
+                existing_by_path[normalized_path] = {
+                    "path": normalized_path,
+                    "fingerprint_sha256": fingerprints.sha256 or "",
+                    "fingerprint_size_mtime": fingerprints.size_mtime or "",
+                    "fingerprint_quick": fingerprints.quick or "",
+                }
                 _emit_scan_progress(progress_cb, result.text_scanned_files, total_files, normalized_path, result)
     return result
 

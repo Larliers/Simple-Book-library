@@ -166,6 +166,10 @@ class WebAppWindow(QMainWindow):
             repo.set_scan_depth(int(value))
         elif key == "hashStrategy":
             repo.set_hash_strategy(value)
+        elif key == "comicTitleConflictPolicy":
+            repo.set_comic_title_conflict_policy(value)
+        elif key == "textEncodingPreference":
+            repo.set_text_encoding_preference(value)
         elif key == "cardSpacing":
             repo.set_card_spacing(normalize_card_spacing(value))
             UI_LAYOUT.set_card_spacing(repo.get_card_spacing())
@@ -434,6 +438,8 @@ class WebAppWindow(QMainWindow):
             hash_strategy=repo.get_hash_strategy(),
             comic_placeholder_copy_enabled=repo.get_comic_placeholder_copy_enabled(),
             comic_thumbnail_workers_used=repo.get_comic_thumbnail_workers(),
+            comic_title_conflict_policy=repo.get_comic_title_conflict_policy(),
+            text_encoding_preference=repo.get_text_encoding_preference(),
             trigger="manual_" + scope,
             scope=scope,
         )

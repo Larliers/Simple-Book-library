@@ -22,6 +22,24 @@ TEXT_FILE_EXTENSION = ".txt"
 DEFAULT_TEXT_PREVIEW_CHARS = 1200
 TEXT_PREVIEW_CHAR_OPTIONS = (600, 1200, 2000, 4000)
 
+COMIC_TITLE_CONFLICT_KEEP_BOTH = "keep_both"
+COMIC_TITLE_CONFLICT_SKIP_INCOMING = "skip_incoming"
+COMIC_TITLE_CONFLICT_PREFER_NEWER = "prefer_newer"
+COMIC_TITLE_CONFLICT_POLICIES = {
+    COMIC_TITLE_CONFLICT_KEEP_BOTH,
+    COMIC_TITLE_CONFLICT_SKIP_INCOMING,
+    COMIC_TITLE_CONFLICT_PREFER_NEWER,
+}
+
+TEXT_ENCODING_SIMPLIFIED = "simplified"
+TEXT_ENCODING_TRADITIONAL = "traditional"
+TEXT_ENCODING_AUTO = "auto"
+TEXT_ENCODING_PREFERENCES = {
+    TEXT_ENCODING_SIMPLIFIED,
+    TEXT_ENCODING_TRADITIONAL,
+    TEXT_ENCODING_AUTO,
+}
+
 
 @dataclass(slots=True)
 class ParsedMetadata:
@@ -48,11 +66,11 @@ class FingerprintBundle:
 @dataclass(slots=True)
 class ScanConflict:
     file_name: str
-    incoming_path: str
     existing_path: str
-    existing_title: str | None = None
+    existing_title: str
+    incoming_path: str = ""
 
-    def as_dict(self) -> dict[str, str | None]:
+    def as_dict(self) -> dict[str, str]:
         return {
             "file_name": self.file_name,
             "incoming_path": self.incoming_path,
@@ -75,6 +93,8 @@ class ComicScanRequest:
     max_depth: int = 5
     placeholder_copy_enabled: bool = True
     max_image_decode_bytes: int = 256 * 1024 * 1024
+    title_conflict_policy: str = COMIC_TITLE_CONFLICT_SKIP_INCOMING
+    encoding_preference: str = TEXT_ENCODING_SIMPLIFIED
 
 
 @dataclass(slots=True)
@@ -87,6 +107,8 @@ class TextScanRoot:
 class TextScanRequest:
     roots: list[TextScanRoot]
     preview_chars: int = DEFAULT_TEXT_PREVIEW_CHARS
+    hash_strategy: HashStrategy = HASH_STRATEGY_QUICK
+    encoding_preference: str = TEXT_ENCODING_SIMPLIFIED
 
 
 @dataclass(slots=True)

@@ -118,7 +118,7 @@ def _web_strings() -> dict[str, str]:
         ("quick_add.confirm", "Confirm add"),
         ("settings.title", "Settings"),
         ("settings.nav.general", "General"),
-        ("settings.nav.paths", "Paths"),
+        ("settings.nav.paths", "Paths & Scan"),
         ("settings.nav.appearance", "Appearance & Theme"),
         ("settings.nav.tasks", "Scan & Tasks"),
         ("settings.nav.errors", "Error logs"),
@@ -131,6 +131,15 @@ def _web_strings() -> dict[str, str]:
         ("settings.hash.fast", "Fast"),
         ("settings.hash.strict", "Strict"),
         ("settings.hash.quick", "Quick"),
+        ("settings.hash.hint", "Fast may miss content changes; use Quick or Strict for important libraries."),
+        ("settings.comic_title_conflict", "Comic title conflict"),
+        ("settings.comic_title_conflict.skip_incoming", "Skip incoming"),
+        ("settings.comic_title_conflict.keep_both", "Keep both"),
+        ("settings.comic_title_conflict.prefer_newer", "Prefer newer"),
+        ("settings.text_encoding_preference", "Text encoding preference"),
+        ("settings.text_encoding.simplified", "Simplified first"),
+        ("settings.text_encoding.traditional", "Traditional first"),
+        ("settings.text_encoding.auto", "Auto"),
         ("settings.card_spacing", "Card spacing"),
         ("settings.cover_border_width", "Cover selected border width"),
         ("settings.cover_border_color", "Cover selected border color"),
@@ -451,6 +460,8 @@ class UiBridge(QObject):
             "searchFontSize": repo.get_topbar_search_font_size(),
             "scanDepth": repo.get_scan_depth(),
             "hashStrategy": repo.get_hash_strategy(),
+            "comicTitleConflictPolicy": repo.get_comic_title_conflict_policy(),
+            "textEncodingPreference": repo.get_text_encoding_preference(),
             "cardSpacing": repo.get_card_spacing(),
             "coverBorderWidth": repo.get_cover_selected_border_width(),
             "coverBorderColor": repo.get_cover_selected_border_color(),
@@ -863,7 +874,11 @@ class UiBridge(QObject):
                 {"ok": True, "success": False, "value": "", "error": "No TXT sample found", "warning": None, "samplePath": None},
                 ensure_ascii=False,
             )
-        sample = read_txt_preview_sample(file_path, self._repo.get_text_preview_chars())
+        sample = read_txt_preview_sample(
+            file_path,
+            self._repo.get_text_preview_chars(),
+            preference=self._repo.get_text_encoding_preference(),
+        )
         if sample is None:
             return json.dumps(
                 {"ok": True, "success": False, "value": "", "error": "Cannot read sample", "warning": None, "samplePath": file_path},
@@ -882,6 +897,9 @@ class UiBridge(QObject):
                 "samplePath": sample.file_path,
                 "txtFirstLine": sample.txt_first_line,
                 "txtHeadText": sample.txt_head_text,
+                "detectedEncoding": sample.detected_encoding,
+                "encodingConfidence": round(float(sample.encoding_confidence or 0.0), 3),
+                "encodingFallback": bool(sample.encoding_fallback),
             },
             ensure_ascii=False,
         )

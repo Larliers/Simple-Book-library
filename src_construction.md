@@ -1,6 +1,6 @@
 ﻿# src 结构说明书（精简且完整）
 
-更新时间：2026-07-16
+更新时间：2026-07-18
 
 ## 1. 文档目标
 - 保留字符串式文件路径结构。
@@ -104,7 +104,7 @@ src/
 - `src/tests/test_scan_pdf_degrade.py`：PDF 后端降级容错回归测试（PyMuPDF 不可用时的聚合 warning 与入库行为）。
 - `src/tests/test_library_scan_incremental.py`：Library 增量扫描与 `hash_strategy` 分级指纹（未变跳过、touch 强制更新、缺缩略图重处理、COALESCE 保留指纹）。
 - `src/tests/test_scan_summary_fields.py`：扫描摘要字段对齐回归（comic 计入新增、别名键、冲突 `incoming_path`）。
-- `src/tests/test_text_encoding.py`：TXT 编码探测回归（GBK/GB18030、UTF-8 BOM、规则预览读入）。
+- `src/tests/test_text_encoding.py`：TXT 编码探测回归（GBK/GB18030、UTF-8 BOM、简/繁偏好、低置信双候选、规则预览 `detectedEncoding`）。
 - `src/tests/test_missed_cleanup.py`：启动时清理遗留 `is_missing=1` 行；确认无 Missed 恢复 API。
 - `src/tests/test_comic_preview_pipeline.py`：漫画快扫占位与后台并行补图回归测试（占位复制、压缩替换、原图删除、超大图降采样、排序顺序、GIF/BMP/TIFF 入库与 GIF 首帧封面）。
 - `src/tests/test_cover_grid_settings.py`：封面选中边框归一化与 Repository 偏好持久化（含 Text 规则预览高度/窗口尺寸/预设）；已不再依赖旧 Widgets 页。
@@ -117,37 +117,37 @@ src/
 ### 3.3 国际化组件（bookhub/i18n）
 - `src/bookhub/i18n/__init__.py`：国际化导出入口。
 - `src/bookhub/i18n/language.py`：语言切换、词典加载、回退策略。
-- `src/bookhub/i18n/locales/zh-cn.json`：中文文案键值表。
+- `src/bookhub/i18n/locales/zh-cn.json`：中文文案键值表；设置导航将路径与扫描合并命名，并提供 Fast 指纹漏检风险提示。
 
 ### 3.4 书库后端组件（bookhub/library）
 - `src/bookhub/library/__init__.py`：后端模块导出入口。
-- `src/bookhub/library/repository.py`：SQLite 读写中心；设置、书籍、书单、收藏、标签操作；`map_library_books_for_scan` 提供 Library 增量扫描用的 path→指纹/缩略图索引；`upsert_book` 对空指纹列 COALESCE 保留旧值；漫画排序与显示模式、Text 规则预览结果区高度、规则窗口尺寸、用户预设等 UI 偏好持久化。
-- `src/bookhub/library/scanner.py`：目录扫描与文件过滤；构建入库候选（PDF/EPUB、Comic、Text Novel）；Library 按 `hash_strategy` 比对已存指纹，未变且缩略图仍在则计入 `skipped_unchanged_count` 并跳过元数据/封面重处理；TXT/漫画旁注经 `text_encoding` 探测编码后读入；扫描函数支持可选进度回调并输出当前路径与统计快照；Text 规则 author 入库前清理 Unknown/unkown 等占位作者，tag 结果按换行拆分为多标签；漫画目录快照判定、`folder_modified_at` 写入与超大封面降采样占位。
-- `src/bookhub/library/text_encoding.py`：TXT 统一读入；UTF-8 优先，charset-normalizer 辅助，Big5 误判时改用 GB18030（面向简体小说）。
+- `src/bookhub/library/repository.py`：SQLite 读写中心；设置、书籍、书单、收藏、标签操作；`hash_strategy` 新装与非法值回退均默认 `quick`；`map_library_books_for_scan` / `map_text_novels_for_scan` 提供 Library/Text 增量扫描用的 path→指纹索引；`upsert_book` 对空指纹列 COALESCE 保留旧值；漫画同名冲突查询与设置 `comic_title_conflict_policy`（默认 `skip_incoming`）；`get/set_text_encoding_preference`（`simplified|traditional|auto`，默认 `simplified`）；漫画排序与显示模式、Text 规则预览结果区高度、规则窗口尺寸、用户预设等 UI 偏好持久化。
+- `src/bookhub/library/scanner.py`：目录扫描与文件过滤；构建入库候选（PDF/EPUB、Comic、Text Novel）；Library/Text 均按 Settings `hash_strategy` 比对已存指纹并计入 `skipped_unchanged_count`（Library 另要求缩略图仍在；Text 无 thumb 要求即跳过规则链）；漫画 upsert 前按 `comic_title_conflict_policy` 处理同 `comic_root` 同标题冲突；TXT/漫画旁注经 `text_encoding` 按 `encoding_preference` 探测后读入；扫描函数支持可选进度回调并输出当前路径与统计快照；Text 规则 author 入库前清理 Unknown/unkown 等占位作者，tag 结果按换行拆分为多标签；漫画目录快照判定、`folder_modified_at` 写入与超大封面降采样占位。
+- `src/bookhub/library/text_encoding.py`：TXT 统一读入；`DecodeResult` / `detect_and_decode`；UTF-8 优先，64KB 样本经 charset-normalizer 按 `text_encoding_preference`（简/繁/自动）排名；简体永不选 Big5，繁体优先 Big5；低置信时 GB18030↔UTF-8 双候选回退。
 - `src/bookhub/library/preview_paths.py`：预览图目录结构与路径构建服务（`resource_type + variant`）。
 - `src/bookhub/library/metadata.py`：元数据提取与缩略图生成（WebP，`file://` 路径）；`compute_fingerprints` 按策略分级读盘（`size_mtime` 仅 stat、`quick` 前 4MB、`sha256` 整文件）。
-- `src/bookhub/library/models.py`：扫描/任务的数据结构定义（含 `skipped_unchanged_count`；`to_summary` 同时输出前端历史别名键）；`COMIC_IMAGE_EXTENSIONS` 含 jpg/png/webp/gif/bmp/tif/tiff。
+- `src/bookhub/library/models.py`：扫描/任务的数据结构定义（含 `skipped_unchanged_count`；`TextScanRequest.hash_strategy` 默认 `quick`，并携带 `encoding_preference`；`ComicScanRequest.title_conflict_policy` / `encoding_preference`；`to_summary` 同时输出前端历史别名键）；`COMIC_IMAGE_EXTENSIONS` 含 jpg/png/webp/gif/bmp/tif/tiff。
 - `src/bookhub/library/media_sanitizer.py`：封面图消毒；GIF/多帧图 `seek(0)` 后转 RGB PNG。
 - `src/bookhub/library/text_rules/rule_models.py`：Text Novel 规则模型（`ImportRule`/`RuleStep`/`RuleContext`/`RuleResult`，含预览 warning 字段）。
 - `src/bookhub/library/text_rules/rule_engine.py`：规则执行器与规则链回退（`apply_rule`、`apply_rule_chain`），透传步骤 warning。
 - `src/bookhub/library/text_rules/source_resolver.py`：规则 source 解析（`filename`/`stem`/`txt_first_line`/`txt_head_text` 等）。
 - `src/bookhub/library/text_rules/structure_parser.py`：Text 规则结构解析；支持嵌套括号块解析、括号范围过滤、括号外分隔符结构签名与多样本格式诊断分组。
 - `src/bookhub/library/text_rules/step_handlers.py`：规则步骤处理（文本清洗、文本删除、split、多分隔符取段、分隔范围拼接、单行/范围行提取、删除前/后 N 行、分界线截取、按行循环提取、嵌套感知括号提取/删除、regex_extract 等）。
-- `src/bookhub/library/text_rules/rule_preview.py`：Text 规则预览辅助；查找首个 TXT 样本、经 `text_encoding` 读取首行/开头文本并复用规则链执行预览。
+- `src/bookhub/library/text_rules/rule_preview.py`：Text 规则预览辅助；查找首个 TXT 样本、经 `text_encoding`（按偏好）读取首行/开头文本并复用规则链执行预览；样本载荷含 `detected_encoding` / `encoding_confidence`。
 - `src/bookhub/library/text_rules/rule_examples.py`：默认规则链示例。
 - `src/bookhub/library/text_rules/rule_catalog.py`：Text Rules Web 元数据目录（fields/sources/step 分类与参数表单、内置模板、常用正则、帮助章节）；`describe_step_catalog()` 供 Bridge 下发。
-- `src/bookhub/library/worker.py`：扫描任务线程包装；透传 Library/Comic/Text 扫描进度信号；汇总多 scope 统计与 warning。
+- `src/bookhub/library/worker.py`：扫描任务线程包装；透传 Library/Comic/Text 扫描进度信号；将 Settings `hash_strategy` 传入 Text/Library 请求（非法策略回退 `quick`）、将 `comic_title_conflict_policy` 与 `text_encoding_preference` 传入 Comic/Text 请求；汇总多 scope 统计与 warning。
 - `src/bookhub/library/thumbnail_tasks.py`：缩略图清理与重建任务实现；漫画 `cover_fingerprint` 以 `manual:` 开头时跳过 regenerate，保留用户手选封面。
 - `src/bookhub/library/thumbnail_worker.py`：缩略图任务线程包装。
 - `src/bookhub/library/error_logs.py`：扫描/冲突日志读写；日志目录固定解析为项目根下 `src/Scan_error_logs`（避免相对路径导致 `src/src/Scan_error_logs`）。
 
 ### 3.5 UI 主组件（bookhub/ui）
 - `src/bookhub/ui/__init__.py`：UI 包导出入口。
-- `src/bookhub/ui/web_window.py`：当前主窗口 `WebAppWindow`；承载 `QWebEngineView` + `QWebChannel`，注册 `app://` scheme handler，装配 `UiBridge`；`page.setBackgroundColor` 与主题日/夜底色同步，减轻 Windows 焦点切回时 Chromium 清屏闪白；`web_zoom_factor` 启动 `setZoomFactor` 恢复并以轮询+debounce 写回 `app_settings`；负责后端编排——扫描/缩略图 worker、原生 `QFileDialog` 添加根目录与编辑封面（书籍+漫画；漫画写 `manual:` fingerprint 防自动缩略图覆盖）、`remove_from_library`（仅删库记录不删磁盘）、`open_text_rules` 转交 Bridge 打开 Web 面板（不再 `exec` 原生 `TextRuleDialog`）、字体与设置写库；扫描完成 Toast 计入 `comic_added_count`，冲突日志优先写 `incoming_path`；忙时再点扫描/缩略图会 Toast，并通过 `scanState.kind` 推送忙碌态。
-- `src/bookhub/ui/web/js/app.js`：单一 SPA 壳（侧栏/顶栏/详情常驻）；`#importBtn` → `addRoot("library")`；切页只重建 `#contentArea`；`scheduleRenderPage` + `renderGen` 可取消过期渲染；主内容区封面网格/合集/表格/漫画瀑布流与分页均走视口窗口化（`getBufferScreens`/`getGridColumns`/`measureCoverGridMetrics`/`visibleIndexRange` + `virt-spacer` + scroll/ResizeObserver rAF 合并）；可见 range 未变时跳过 DOM 重建，避免无效重建；`gridColumns` 限制每行封面数以放大单卡占屏、降低同屏解码量；`State.scrollPos` 切页恢复 scrollTop；收藏/漫画 `pageHeadTools` 排序控件；设置含 `viewportBufferScreens`（3–6）与 `gridColumns`（4–12）；设置删路径确认模态；Settings 文本根「Rules」走 Web Text Rules 面板；Tasks 扫描摘要（字段兼容别名并计入漫画新增）；扫描/缩略图忙碌时禁用顶栏与 Settings 全部相关按钮；漫画性能三项开关；右键/详情支持漫画编辑封面与「从书库移除」；页面路由与网格/列表/漫画/合集渲染、详情栏、搜索建议、设置页、Quick Add/合集模态、日/夜主题引擎；全局拦截 Chromium 默认右键。
-- `src/bookhub/ui/web/js/text_rules.js`：Text Rules 宽屏遮罩三栏编辑器（字段/规则链/步骤/预览）；防抖单样本预览、多样本预览、内置模板、用户预设、常用正则与帮助抽屉；经 Bridge 读写 `rules_json`。`renderTextRulesPanel()` 仅在 `openTextRulesPanel` 打开时构建一次性外壳（`.tr-overlay`/`.tr-host`/header/footer，带入场动画）；此后所有编辑（字段切换、规则/步骤增删移动、source/类别/类型 change、模板/预设）改调用 `renderTrBody()` 仅重建 `.tr-body` 三栏内容并保存/恢复各栏 `scrollTop`，不再重播入场动画；`installTrWheelGuard` 在 host 上拦截落在 `<select>` 的滚轮事件（Windows 悬停滚轮会静默改变原生 select 值并触发 change），`preventDefault` 后手动转发 `deltaY` 给 `.tr-col`/`.tr-drawer-body`，修复滚动时误触发全量重建导致的「白屏/像整页重载」。
-- `src/bookhub/ui/web_bridge.py`：`UiBridge(QObject)` 前后端桥；`setPageSort`；`editCover` / `removeFromLibrary`；settings 含 `viewportBufferScreens` / `gridColumns` / `comicPlaceholderCopy` / `autoGenerateComicThumbs` / `comicThumbnailWorkers` / `scanReport`；`@Slot` 暴露 `getBootstrap/search/getSuggestions/getDetail/openResource/toggleFavorite/openCollection/closeCollection/getTags/getCollections/addTag/removeTag/createCollection/setCollectionMembership/removeFromCollection/editCover/removeFromLibrary/openFolder/setSetting/setThemeSettings/addRoot/removeRoot/openTextRules/getTextRules/previewTextRule/previewTextRulesMulti/saveTextRules/getTextRulePresets/setTextRulePresets/startScan/startThumbnailTask/reloadFonts/getErrorLogs`；`Signal` 推送 `resourcesChanged/toast/scanProgress/scanState/settingsChanged/errorLogsChanged/languageChanged/textRulesOpen`；内部持有 `LibraryViewModel`（库/文本双上下文）并把书籍/文本/漫画/收藏/合集统一构造为前端资源载荷；封面路径写入 scheme 白名单集合；Text Rules 样本路径沙箱于对应 text root。
-- `src/bookhub/library/repository.py`：`PRAGMA foreign_keys` + `busy_timeout`；删书/漫画与移根时清关联表；启动 orphan 清理；`comic_view_mode` 缺省为 `pagination`；`viewport_buffer_screens` 缺省 3（允许 3–6）；`grid_columns` 缺省 6（允许 4/5/6/7/8/10/12，限制每行封面数）。
+- `src/bookhub/ui/web_window.py`：当前主窗口 `WebAppWindow`；承载 `QWebEngineView` + `QWebChannel`，注册 `app://` scheme handler，装配 `UiBridge`；`page.setBackgroundColor` 与主题日/夜底色同步，减轻 Windows 焦点切回时 Chromium 清屏闪白；`web_zoom_factor` 启动 `setZoomFactor` 恢复并以轮询+debounce 写回 `app_settings`；负责后端编排——扫描/缩略图 worker、原生 `QFileDialog` 添加根目录与编辑封面（书籍+漫画；漫画写 `manual:` fingerprint 防自动缩略图覆盖）、`remove_from_library`（仅删库记录不删磁盘）、`open_text_rules` 转交 Bridge 打开 Web 面板（不再 `exec` 原生 `TextRuleDialog`）、字体与设置写库（含 `text_encoding_preference`）；扫描完成 Toast 计入 `comic_added_count`，冲突日志优先写 `incoming_path`（含漫画同名冲突）；忙时再点扫描/缩略图会 Toast，并通过 `scanState.kind` 推送忙碌态。
+- `src/bookhub/ui/web/js/app.js`：单一 SPA 壳（侧栏/顶栏/详情常驻）；`#importBtn` → `addRoot("library")`；切页只重建 `#contentArea`；`scheduleRenderPage` + `renderGen` 可取消过期渲染；主内容区封面网格/合集/表格/漫画瀑布流与分页均走视口窗口化（`getBufferScreens`/`getGridColumns`/`measureCoverGridMetrics`/`visibleIndexRange` + `virt-spacer` + scroll/ResizeObserver rAF 合并）；可见 range 未变时跳过 DOM 重建，避免无效重建；`gridColumns` 限制每行封面数以放大单卡占屏、降低同屏解码量；`State.scrollPos` 切页恢复 scrollTop；收藏/漫画 `pageHeadTools` 排序控件；设置含 `viewportBufferScreens`（3–6）与 `gridColumns`（4–12）、`comic_title_conflict_policy` 下拉（都留/跳过新人/保留较新）、`textEncodingPreference` 下拉（简体优先/繁体优先/自动），并在 hash 字段内提示 Fast 漏检风险；路径与扫描任务合并到“路径与扫描”页，旧 `tasks` 状态自动归一到 `paths`；设置删路径确认模态；Settings 文本根「Rules」走 Web Text Rules 面板；Tasks 扫描摘要（字段兼容别名并计入漫画新增）；扫描/缩略图忙碌时禁用顶栏与 Settings 全部相关按钮；漫画性能三项开关；右键/详情支持漫画编辑封面与「从书库移除」；页面路由与网格/列表/漫画/合集渲染、详情栏、搜索建议、设置页、Quick Add/合集模态、日/夜主题引擎；全局拦截 Chromium 默认右键。
+- `src/bookhub/ui/web/js/text_rules.js`：Text Rules 宽屏遮罩三栏编辑器（字段/规则链/步骤/预览）；防抖单样本预览、多样本预览、内置模板、用户预设、常用正则与帮助抽屉；经 Bridge 读写 `rules_json`。`renderTextRulesPanel()` 仅在 `openTextRulesPanel` 打开时构建一次性外壳（`.tr-overlay`/`.tr-host`/header/footer，带入场动画）；此后所有编辑（字段切换、规则/步骤增删移动、source/类别/类型 change、模板/预设）改调用 `renderTrBody()` 仅重建 `.tr-body` 三栏内容并保存/恢复各栏 `scrollTop`，不再重播入场动画；`installTrWheelGuard` 在 host 上拦截落在 `<select>` 的滚轮事件（Windows 悬停滚轮会静默改变原生 select 值并触发 change），`preventDefault` 后手动转发 `deltaY` 给 `.tr-col`/`.tr-drawer-body`，修复滚动时误触发全量重建导致的「白屏/像整页重载」；预览 diag 展示 `detectedEncoding` 与置信度。
+- `src/bookhub/ui/web_bridge.py`：`UiBridge(QObject)` 前后端桥；内置英文回退含“Paths & Scan”与 Fast 指纹风险提示；`setPageSort`；`editCover` / `removeFromLibrary`；settings 含 `viewportBufferScreens` / `gridColumns` / `comicPlaceholderCopy` / `autoGenerateComicThumbs` / `comicThumbnailWorkers` / `comic_title_conflict_policy` / `textEncodingPreference` / `scanReport`；`@Slot` 暴露 `getBootstrap/search/getSuggestions/getDetail/openResource/toggleFavorite/openCollection/closeCollection/getTags/getCollections/addTag/removeTag/createCollection/setCollectionMembership/removeFromCollection/editCover/removeFromLibrary/openFolder/setSetting/setThemeSettings/addRoot/removeRoot/openTextRules/getTextRules/previewTextRule/previewTextRulesMulti/saveTextRules/getTextRulePresets/setTextRulePresets/startScan/startThumbnailTask/reloadFonts/getErrorLogs`；`Signal` 推送 `resourcesChanged/toast/scanProgress/scanState/settingsChanged/errorLogsChanged/languageChanged/textRulesOpen`；内部持有 `LibraryViewModel`（库/文本双上下文）并把书籍/文本/漫画/收藏/合集统一构造为前端资源载荷；封面路径写入 scheme 白名单集合；Text Rules 样本路径沙箱于对应 text root；预览载荷透传 `detectedEncoding` / `encodingConfidence`。
+- `src/bookhub/library/repository.py`：`PRAGMA foreign_keys` + `busy_timeout`；删书/漫画与移根时清关联表；启动 orphan 清理；`hash_strategy` 缺省与非法值回退均为 `quick`；`comic_view_mode` 缺省为 `pagination`；`viewport_buffer_screens` 缺省 3（允许 3–6）；`grid_columns` 缺省 6（允许 4/5/6/7/8/10/12，限制每行封面数）；`comic_title_conflict_policy` 缺省 `skip_incoming`；`text_encoding_preference` 缺省 `simplified`。
 - `src/bookhub/ui/web_scheme.py`：`app://` 自定义 URL scheme；`register_app_scheme()`（须在 QApplication 前调用）、`to_local_path()`（`file://`/裸路径归一化）、`AppSchemeHandler`（`app://app/*` 服务 `web/` 静态资源；`app://img/x?p=` 仅服务白名单封面图，越权拒绝）。
 - `src/bookhub/ui/web/index.html`：玻璃拟态 UI 骨架（侧栏含 Import Books、顶栏/主区/详情栏/遮罩/toast/右键菜单挂载点），通过 `app://` 加载 css 与 js。
 - `src/bookhub/ui/web/css/app.css`：玻璃拟态样式与动效；`.content-split` `user-select:none`（避免拖选干扰封面操作）；视口虚拟列表 `.virt-spacer-top/bottom`；`.content-split` / spacer / grid 设 `overflow-anchor: none`，禁用 Chromium 滚动锚定以防与 spacer 同步形成反馈环；Text Rules `.tr-overlay` / `.tr-host` 三栏宽屏面板与抽屉样式；`.tr-col` / `.tr-drawer-body` 设 `overflow-anchor: none`，对齐 `.content-split` 已验证约束，避免与 `renderTrBody()` 局部重建形成滚动锚定反馈；网格 `.book-card .cover` / `.mini-cover` 与详情 `.detail-cover-slot` 均 `object-fit: contain`（兼容非 2:3）；`.context-menu` 用 `width: max-content` 按文案收缩（避免子项 `width:100%` 相对视口撑满）；快添列表「添加/已添加」与 `.path-add-btn` 半透明 hover。
@@ -172,6 +172,9 @@ src/
 - `src/bookhub/ui/viewmodels/library_viewmodel.py`：Library/Text 资源查询过滤、字段前缀搜索（`title:`/`author:`/`tag:`）、视图模式、搜索建议状态。
 
 ## 4. 当前关键实现（简要）
+- 2026-07-18 Quick 默认与设置合并：新装/`hash_strategy` 非法回退改为 `quick`；Settings 指纹字段增加 Fast 漏检提示；「路径」与「扫描与任务」合并为「路径与扫描」（保留 `paths` ID，旧 `tasks` 归一）；旧用户已持久化 Fast 不强制迁移；见 `decision-20260718-001`。
+- 2026-07-17 TXT 编码偏好：`text_encoding_preference`（simplified|traditional|auto，默认简体）；64KB 探测 + 简/繁排名 + 双候选回退；规则预览 diag 显示 `detectedEncoding`/置信度；见 `decision-20260717-002`。
+- 2026-07-17 Text 指纹跳过 / 漫画同名策略：`scan_text_roots` 与 Library 共用 Settings `hash_strategy` 跳过未变更 TXT（无 thumb 要求）；同 `comic_root` 同标题按 `comic_title_conflict_policy`（默认 `skip_incoming`）分支；Settings 下拉可配。
 - 2026-07-16 漫画格式 / Missed 清理 / indexer 契约靠拢：COMIC 扩展 gif/bmp/tiff（GIF 首帧封面）；删除 Missed 恢复 API 与文案，启动 purge `is_missing=1`；indexer-contract/agent 改为描述全量遍历+局部跳过。
 - 2026-07-16 TXT 编码 / 忙时 Scan / README 漫画边界：`text_encoding` 统一探测；忙碌态禁用全部 Scan/缩略图按钮并 Toast；README 标明文件夹漫画预期、不支持 CBZ/CBR。
 - 2026-07-16 扫描反馈对齐：Toast/摘要计入 `comic_added_count`；`to_summary` 输出历史别名键；冲突日志优先 `incoming_path`；Settings 展示 skipped / comic added。

@@ -179,6 +179,10 @@ function runTextRulePreview() {
     resultEl.textContent = d.success ? (d.value || "(empty)") : (d.error || d.value || "(failed)");
     if (diagEl) {
       const bits = [];
+      if (d.detectedEncoding) {
+        const conf = (typeof d.encodingConfidence === "number") ? d.encodingConfidence.toFixed(2) : "";
+        bits.push("encoding: " + d.detectedEncoding + (conf ? " (" + conf + ")" : ""));
+      }
       if (d.warning) bits.push(d.warning);
       if (d.failedStep) bits.push("failed: " + d.failedStep);
       if (d.txtFirstLine) bits.push("first line: " + d.txtFirstLine);

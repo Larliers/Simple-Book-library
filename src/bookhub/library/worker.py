@@ -3,7 +3,7 @@ from __future__ import annotations
 """Background library scan orchestration.
 
 Maps to Agent-rule/contracts/indexer-contract.md:
-full root walk per run + local skips (library fingerprints, comic folder snapshots);
+full root walk per run + local skips (library/text fingerprints, comic folder snapshots);
 no last_checkpoint/next_checkpoint engine.
 """
 
@@ -12,7 +12,11 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Signal
 
 from bookhub.library.models import (
-    HASH_STRATEGY_SIZE_MTIME,
+    COMIC_TITLE_CONFLICT_POLICIES,
+    COMIC_TITLE_CONFLICT_SKIP_INCOMING,
+    HASH_STRATEGY_QUICK,
+    TEXT_ENCODING_PREFERENCES,
+    TEXT_ENCODING_SIMPLIFIED,
     ComicScanRequest,
     ScanRequest,
     TextScanRequest,
@@ -41,6 +45,8 @@ class ScanWorker(QThread):
         comic_thumbnail_workers_used: int,
         trigger: str,
         scope: str = "all",
+        comic_title_conflict_policy: str = COMIC_TITLE_CONFLICT_SKIP_INCOMING,
+        text_encoding_preference: str = TEXT_ENCODING_SIMPLIFIED,
     ) -> None:
         super().__init__()
         self._db_path = Path(db_path)
@@ -53,10 +59,20 @@ class ScanWorker(QThread):
         self._hash_strategy = (
             hash_strategy
             if hash_strategy in {"sha256", "size_mtime", "quick"}
-            else HASH_STRATEGY_SIZE_MTIME
+            else HASH_STRATEGY_QUICK
         )
         self._comic_placeholder_copy_enabled = bool(comic_placeholder_copy_enabled)
         self._comic_thumbnail_workers_used = max(1, int(comic_thumbnail_workers_used))
+        self._comic_title_conflict_policy = (
+            comic_title_conflict_policy
+            if comic_title_conflict_policy in COMIC_TITLE_CONFLICT_POLICIES
+            else COMIC_TITLE_CONFLICT_SKIP_INCOMING
+        )
+        self._text_encoding_preference = (
+            text_encoding_preference
+            if text_encoding_preference in TEXT_ENCODING_PREFERENCES
+            else TEXT_ENCODING_SIMPLIFIED
+        )
         self._trigger = trigger
         self._scope = str(scope or "all").strip().lower()
 
@@ -87,6 +103,8 @@ class ScanWorker(QThread):
                     roots=self._comic_roots,
                     max_depth=5,
                     placeholder_copy_enabled=self._comic_placeholder_copy_enabled,
+                    title_conflict_policy=self._comic_title_conflict_policy,
+                    encoding_preference=self._text_encoding_preference,
                 )
                 comic_result = scan_comic_roots(repository, comic_request, progress_cb=progress_cb)
             else:
@@ -102,6 +120,8 @@ class ScanWorker(QThread):
                         if str(item.get("path") or "").strip()
                     ],
                     preview_chars=self._text_preview_chars,
+                    hash_strategy=self._hash_strategy,  # type: ignore[arg-type]
+                    encoding_preference=self._text_encoding_preference,
                 )
                 text_result = scan_text_roots(repository, text_request, progress_cb=progress_cb)
             else:
@@ -124,8 +144,12 @@ class ScanWorker(QThread):
             )
             summary["comic_thumbnail_downscaled_count"] = summary["comic_large_image_downscaled_count"]
             merged_conflicts = list(summary.get("name_conflicts", []))
+            merged_conflicts.extend(list(comic_summary.get("name_conflicts", [])))
             merged_conflicts.extend(list(text_summary.get("name_conflicts", [])))
             summary["name_conflicts"] = merged_conflicts
+            summary["skipped_unchanged_count"] = int(summary.get("skipped_unchanged_count", 0) or 0) + int(
+                text_summary.get("skipped_unchanged_count", 0) or 0
+            )
             summary["text_added_count"] = int(text_summary.get("text_added_count", 0) or 0)
             summary["text_updated_count"] = int(text_summary.get("text_updated_count", 0) or 0)
             summary["text_scanned_files"] = int(text_summary.get("text_scanned_files", 0) or 0)

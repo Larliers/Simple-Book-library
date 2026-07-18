@@ -11,9 +11,13 @@ from uuid import uuid4
 
 from bookhub.library.error_logs import append_scan_log
 from bookhub.library.models import (
+    COMIC_TITLE_CONFLICT_POLICIES,
+    COMIC_TITLE_CONFLICT_SKIP_INCOMING,
     HASH_STRATEGIES,
-    HASH_STRATEGY_SIZE_MTIME,
+    HASH_STRATEGY_QUICK,
     DEFAULT_TEXT_PREVIEW_CHARS,
+    TEXT_ENCODING_PREFERENCES,
+    TEXT_ENCODING_SIMPLIFIED,
     TEXT_PREVIEW_CHAR_OPTIONS,
     HashStrategy,
 )
@@ -275,7 +279,11 @@ class LibraryRepository:
         if self.get_setting("scan_depth", None) is None:
             self.set_setting("scan_depth", 2)
         if self.get_setting("hash_strategy", None) is None:
-            self.set_setting("hash_strategy", HASH_STRATEGY_SIZE_MTIME)
+            self.set_setting("hash_strategy", HASH_STRATEGY_QUICK)
+        if self.get_setting("comic_title_conflict_policy", None) is None:
+            self.set_setting("comic_title_conflict_policy", COMIC_TITLE_CONFLICT_SKIP_INCOMING)
+        if self.get_setting("text_encoding_preference", None) is None:
+            self.set_setting("text_encoding_preference", TEXT_ENCODING_SIMPLIFIED)
         if self.get_setting("card_spacing", None) is None:
             self.set_setting("card_spacing", DEFAULT_CARD_SPACING)
         if self.get_setting("topbar_search_font_size", None) is None:
@@ -365,14 +373,34 @@ class LibraryRepository:
         self.set_setting("scan_depth", min(3, max(1, int(depth))))
 
     def get_hash_strategy(self) -> HashStrategy:
-        strategy = str(self.get_setting("hash_strategy", HASH_STRATEGY_SIZE_MTIME))
+        strategy = str(self.get_setting("hash_strategy", HASH_STRATEGY_QUICK))
         if strategy not in HASH_STRATEGIES:
-            strategy = HASH_STRATEGY_SIZE_MTIME
+            strategy = HASH_STRATEGY_QUICK
         return strategy  # type: ignore[return-value]
 
     def set_hash_strategy(self, strategy: str) -> None:
-        normalized = strategy if strategy in HASH_STRATEGIES else HASH_STRATEGY_SIZE_MTIME
+        normalized = strategy if strategy in HASH_STRATEGIES else HASH_STRATEGY_QUICK
         self.set_setting("hash_strategy", normalized)
+
+    def get_comic_title_conflict_policy(self) -> str:
+        policy = str(self.get_setting("comic_title_conflict_policy", COMIC_TITLE_CONFLICT_SKIP_INCOMING))
+        if policy not in COMIC_TITLE_CONFLICT_POLICIES:
+            return COMIC_TITLE_CONFLICT_SKIP_INCOMING
+        return policy
+
+    def set_comic_title_conflict_policy(self, policy: str) -> None:
+        normalized = policy if policy in COMIC_TITLE_CONFLICT_POLICIES else COMIC_TITLE_CONFLICT_SKIP_INCOMING
+        self.set_setting("comic_title_conflict_policy", normalized)
+
+    def get_text_encoding_preference(self) -> str:
+        value = str(self.get_setting("text_encoding_preference", TEXT_ENCODING_SIMPLIFIED))
+        if value not in TEXT_ENCODING_PREFERENCES:
+            return TEXT_ENCODING_SIMPLIFIED
+        return value
+
+    def set_text_encoding_preference(self, preference: str) -> None:
+        normalized = preference if preference in TEXT_ENCODING_PREFERENCES else TEXT_ENCODING_SIMPLIFIED
+        self.set_setting("text_encoding_preference", normalized)
 
     def get_card_spacing(self) -> int:
         raw = self.get_setting("card_spacing", DEFAULT_CARD_SPACING)
@@ -825,6 +853,33 @@ class LibraryRepository:
             ).fetchone()
         return dict(row) if row else None
 
+    def find_comic_title_conflict(
+        self,
+        comic_root: str,
+        title: str,
+        incoming_path: str,
+    ) -> dict[str, Any] | None:
+        """Same comic_root + same title (case-insensitive), different path."""
+        normalized_root = self.normalize_path(comic_root)
+        normalized_incoming = self.normalize_path(incoming_path)
+        title_text = str(title or "").strip()
+        if not normalized_root or not title_text:
+            return None
+        with self._connection() as conn:
+            row = conn.execute(
+                """
+                SELECT id, path, title, comic_root, folder_mtime, folder_modified_at
+                FROM comics
+                WHERE comic_root = ?
+                  AND lower(title) = lower(?)
+                  AND is_missing = 0
+                  AND path != ?
+                LIMIT 1
+                """,
+                (normalized_root, title_text, normalized_incoming),
+            ).fetchone()
+        return dict(row) if row else None
+
     def delete_book_by_id(self, book_id: int) -> None:
         with self._connection() as conn:
             self._purge_book_links(conn, [int(book_id)])
@@ -888,6 +943,30 @@ class LibraryRepository:
             mapped[path_value] = {
                 "path": path_value,
                 "thumbnail_path": row["thumbnail_path"],
+                "fingerprint_sha256": row["fingerprint_sha256"] or "",
+                "fingerprint_size_mtime": row["fingerprint_size_mtime"] or "",
+                "fingerprint_quick": row["fingerprint_quick"] or "",
+            }
+        return mapped
+
+    def map_text_novels_for_scan(self, roots: list[str]) -> dict[str, dict[str, Any]]:
+        """Lightweight path→fingerprint map for Text Novel incremental scan."""
+        with self._connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT path, fingerprint_sha256, fingerprint_size_mtime, fingerprint_quick
+                FROM books
+                WHERE is_missing = 0
+                  AND COALESCE(resource_type, '') = 'text_novel'
+                """
+            ).fetchall()
+        mapped: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            path_value = str(row["path"] or "")
+            if not path_value or not self._path_in_roots(path_value, roots):
+                continue
+            mapped[path_value] = {
+                "path": path_value,
                 "fingerprint_sha256": row["fingerprint_sha256"] or "",
                 "fingerprint_size_mtime": row["fingerprint_size_mtime"] or "",
                 "fingerprint_quick": row["fingerprint_quick"] or "",

@@ -93,8 +93,12 @@ class WebBridgeSmokeTests(unittest.TestCase):
             "settings.comic.placeholder_copy",
             "settings.delete_confirm_title",
             "settings.scan_summary_title",
+            "settings.hash.hint",
+            "settings.nav.paths",
         ):
             self.assertIn(key, strings)
+        self.assertIn("Fast", strings["settings.hash.hint"])
+        self.assertIn("Paths", strings["settings.nav.paths"])
 
     def test_set_page_sort_favorites(self) -> None:
         bridge = self._make_bridge()
@@ -109,6 +113,7 @@ class WebBridgeSmokeTests(unittest.TestCase):
         self.assertIn("autoGenerateComicThumbs", settings)
         self.assertIn("comicThumbnailWorkers", settings)
         self.assertIn("scanReport", settings)
+        self.assertEqual(settings.get("hashStrategy"), "quick")
 
     def test_edit_cover_slot_exists(self) -> None:
         bridge = self._make_bridge()
@@ -195,6 +200,20 @@ class WebBridgeSmokeTests(unittest.TestCase):
         converted = to_local_path("file:///C:/tmp/cover.webp")
         self.assertIsNotNone(converted)
         self.assertTrue(converted.lower().endswith("cover.webp"))
+
+
+class SettingsUiStructureTests(unittest.TestCase):
+    def test_app_js_merges_paths_and_tasks(self) -> None:
+        app_js = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('["paths", "settings.nav.paths"]', app_js)
+        self.assertNotIn('["tasks", "settings.nav.tasks"]', app_js)
+        self.assertIn("renderSettingsPaths(panel)", app_js)
+        self.assertIn("renderSettingsTasks(panel)", app_js)
+        self.assertIn('State._settingsSection === "tasks"', app_js)
+        self.assertIn("settings.hash.hint", app_js)
+        self.assertIn("scanProgressBar", app_js)
+        self.assertIn("scanProgressLabel", app_js)
+        self.assertIn("scanSummaryBox", app_js)
 
 
 if __name__ == "__main__":

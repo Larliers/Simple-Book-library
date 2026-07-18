@@ -19,7 +19,7 @@ A local Windows desktop library app for your personal collection. Scan PDF / EPU
 | **Text Novel** | TXT (auto-detects UTF-8 / GBK, etc.) | List view, text preview, custom import rule chains |
 | **Collections** | — | Custom reading lists |
 | **Favorites** | Books + comics | Unified favorites entry |
-| **Settings** | — | Paths, scan options, fonts, thumbnails, error logs |
+| **Settings** | — | Paths & Scan, fonts, thumbnails, error logs |
 
 ### Import
 
@@ -31,7 +31,9 @@ Notes:
 
 - Library scan depth is configurable (about 1–3 levels).
 - Comics (**by design**): aimed at readers who store pages as images, one folder per volume. A leaf folder of jpg/jpeg/png/webp/gif/bmp/tiff becomes one comic; the title is the folder name. GIF covers use the **first frame** as a static image. A fast placeholder cover appears first, then compressed thumbnails are generated in the background. **CBZ / CBR / ZIP comic archives are not supported.**
-- TXT: encoding is auto-detected (UTF-8, GBK/GB18030, etc.); **text rules** extract title, author, series, and tags from the filename or body; novels land in Text Novel, not the main Library list.
+- TXT: encoding is auto-detected (UTF-8, GBK/GB18030, Big5, etc.); Settings “Text encoding preference” (Simplified first / Traditional first / Auto; default Simplified) steers simplified/traditional ranking; **text rules** extract title, author, series, and tags from the filename or body; novels land in Text Novel, not the main Library list. On rescan, unchanged files are skipped using the same fingerprint strategy as Library (Settings “Fingerprint strategy”; **new installs default to Quick**/first 4MB; Fast only compares size+mtime and may miss content-only changes; Text has no thumbnail requirement).
+- Settings “Paths & Scan” combines root folders with scan/thumbnail tasks (no separate Tasks nav item).
+- Comic same-title conflicts within one comic root: configurable in Settings (default skip incoming; or keep both / prefer newer).
 - Missing source files are logged and removed from the library.
 - Same name + extension under different paths: import is skipped and logged.
 

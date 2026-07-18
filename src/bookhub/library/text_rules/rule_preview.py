@@ -4,8 +4,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from bookhub.library.models import DEFAULT_TEXT_PREVIEW_CHARS, TEXT_FILE_EXTENSION
-from bookhub.library.text_encoding import read_text_file, read_text_first_line
+from bookhub.library.models import DEFAULT_TEXT_PREVIEW_CHARS, TEXT_ENCODING_SIMPLIFIED, TEXT_FILE_EXTENSION
+from bookhub.library.text_encoding import read_text_file_detailed, read_text_first_line
 from bookhub.library.text_rules.rule_models import ImportRule, RuleContext, RuleResult
 from bookhub.library.text_rules.rule_engine import apply_rule_chain
 
@@ -15,6 +15,9 @@ class RulePreviewSample:
     file_path: str
     txt_first_line: str
     txt_head_text: str
+    detected_encoding: str = "utf-8"
+    encoding_confidence: float = 1.0
+    encoding_fallback: bool = False
 
 
 def find_first_txt_file(root_path: str) -> str | None:
@@ -31,14 +34,20 @@ def find_first_txt_file(root_path: str) -> str | None:
     return None
 
 
-def read_txt_preview_sample(file_path: str, preview_chars: int = DEFAULT_TEXT_PREVIEW_CHARS) -> RulePreviewSample | None:
+def read_txt_preview_sample(
+    file_path: str,
+    preview_chars: int = DEFAULT_TEXT_PREVIEW_CHARS,
+    *,
+    preference: str = TEXT_ENCODING_SIMPLIFIED,
+) -> RulePreviewSample | None:
     path = Path(str(file_path or ""))
     if not path.exists() or not path.is_file():
         return None
 
     safe_limit = max(100, int(preview_chars or DEFAULT_TEXT_PREVIEW_CHARS))
-    first_line = read_text_first_line(path)
-    head_text = read_text_file(path, max_chars=safe_limit).strip()
+    detailed = read_text_file_detailed(path, max_chars=safe_limit, preference=preference)
+    first_line = read_text_first_line(path, preference=preference)
+    head_text = detailed.text.strip()
     if not first_line and not head_text:
         # Distinguish empty file from unreadable: still return sample for empty UTF-ish files.
         try:
@@ -47,6 +56,9 @@ def read_txt_preview_sample(file_path: str, preview_chars: int = DEFAULT_TEXT_PR
                     file_path=str(path.resolve(strict=False)),
                     txt_first_line="",
                     txt_head_text="",
+                    detected_encoding=detailed.encoding or "utf-8",
+                    encoding_confidence=detailed.confidence,
+                    encoding_fallback=detailed.fallback_used,
                 )
         except OSError:
             return None
@@ -54,12 +66,18 @@ def read_txt_preview_sample(file_path: str, preview_chars: int = DEFAULT_TEXT_PR
             file_path=str(path.resolve(strict=False)),
             txt_first_line="",
             txt_head_text="",
+            detected_encoding=detailed.encoding or "utf-8",
+            encoding_confidence=detailed.confidence,
+            encoding_fallback=detailed.fallback_used,
         )
 
     return RulePreviewSample(
         file_path=str(path.resolve(strict=False)),
         txt_first_line=first_line,
         txt_head_text=head_text,
+        detected_encoding=detailed.encoding or "utf-8",
+        encoding_confidence=detailed.confidence,
+        encoding_fallback=detailed.fallback_used,
     )
 
 

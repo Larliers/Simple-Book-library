@@ -1065,7 +1065,6 @@ const SETTINGS_SECTIONS = [
   ["general", "settings.nav.general"],
   ["appearance", "settings.nav.appearance"],
   ["paths", "settings.nav.paths"],
-  ["tasks", "settings.nav.tasks"],
   ["errors", "settings.nav.errors"],
 ];
 
@@ -1085,6 +1084,7 @@ function renderSettings() {
   const panel = elem("div");
   panel.style.minWidth = "0";
   if (!State._settingsSection) State._settingsSection = "general";
+  else if (State._settingsSection === "tasks") State._settingsSection = "paths";
   SETTINGS_SECTIONS.forEach(([id, key]) => {
     const btn = elem("button", State._settingsSection === id ? "active" : null, t(key));
     btn.addEventListener("click", () => { State._settingsSection = id; renderSettings(); });
@@ -1097,8 +1097,10 @@ function renderSettings() {
   const section = State._settingsSection;
   if (section === "general") renderSettingsGeneral(panel);
   else if (section === "appearance") renderSettingsAppearance(panel);
-  else if (section === "paths") renderSettingsPaths(panel);
-  else if (section === "tasks") renderSettingsTasks(panel);
+  else if (section === "paths") {
+    renderSettingsPaths(panel);
+    renderSettingsTasks(panel);
+  }
   else renderSettingsErrors(panel);
 }
 
@@ -1155,7 +1157,21 @@ function renderSettingsGeneral(panel) {
   grid.appendChild(selectField("settings.language", "language", [["en", "English"], ["zh-cn", "简体中文"]], s.language));
   grid.appendChild(selectField("settings.search_font", "searchFontSize", [[12,"12"],[15,"15"],[18,"18"],[20,"20"]], s.searchFontSize));
   grid.appendChild(selectField("settings.scan_depth", "scanDepth", [[1,"1"],[2,"2"],[3,"3"]], s.scanDepth));
-  grid.appendChild(selectField("settings.hash", "hashStrategy", [["size_mtime", t("settings.hash.fast", "Fast")], ["sha256", t("settings.hash.strict", "Strict")], ["quick", t("settings.hash.quick", "Quick")]], s.hashStrategy));
+  const hashField = selectField("settings.hash", "hashStrategy", [["size_mtime", t("settings.hash.fast", "Fast")], ["sha256", t("settings.hash.strict", "Strict")], ["quick", t("settings.hash.quick", "Quick")]], s.hashStrategy);
+  const hashHint = elem("p", "small-note", t("settings.hash.hint", "Fast may miss content changes; use Quick or Strict for important libraries."));
+  hashHint.style.margin = "6px 0 0";
+  hashField.appendChild(hashHint);
+  grid.appendChild(hashField);
+  grid.appendChild(selectField("settings.comic_title_conflict", "comicTitleConflictPolicy", [
+    ["skip_incoming", t("settings.comic_title_conflict.skip_incoming", "Skip incoming")],
+    ["keep_both", t("settings.comic_title_conflict.keep_both", "Keep both")],
+    ["prefer_newer", t("settings.comic_title_conflict.prefer_newer", "Prefer newer")],
+  ], s.comicTitleConflictPolicy || "skip_incoming"));
+  grid.appendChild(selectField("settings.text_encoding_preference", "textEncodingPreference", [
+    ["simplified", t("settings.text_encoding.simplified", "Simplified first")],
+    ["traditional", t("settings.text_encoding.traditional", "Traditional first")],
+    ["auto", t("settings.text_encoding.auto", "Auto")],
+  ], s.textEncodingPreference || "simplified"));
   grid.appendChild(selectField("settings.card_spacing", "cardSpacing", [[10,"10"],[14,"14"],[18,"18"],[22,"22"]], s.cardSpacing));
   grid.appendChild(selectField("settings.text_preview_chars", "textPreviewChars", [[500,"500"],[1000,"1000"],[2000,"2000"]], s.textPreviewChars));
   grid.appendChild(selectField("settings.comic_view_mode", "comicViewMode", [["waterfall", t("settings.comic_view_waterfall", "Waterfall")],["pagination", t("settings.comic_view_pagination", "Pagination")]], s.comicViewMode));
