@@ -25,6 +25,7 @@ class ThumbnailTaskWorker(QThread):
         task_kind: str,
         task_scope: str,
         comic_workers: int | None = None,
+        preview_dir: str | Path | None = None,
     ) -> None:
         super().__init__()
         self._db_path = Path(db_path)
@@ -32,10 +33,15 @@ class ThumbnailTaskWorker(QThread):
         self._task_kind = task_kind
         self._task_scope = task_scope
         self._comic_workers = comic_workers
+        self._preview_dir = Path(preview_dir) if preview_dir is not None else None
 
     def run(self) -> None:
         try:
-            repository = LibraryRepository(self._db_path, self._scan_report_path)
+            repository = LibraryRepository(
+                self._db_path,
+                self._scan_report_path,
+                preview_dir=self._preview_dir,
+            )
             progress_cb = lambda current, total, label: self.progress.emit(current, total, label)
             if self._task_scope == "library":
                 if self._task_kind == "cleanup":

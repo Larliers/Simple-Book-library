@@ -7,10 +7,40 @@ import os
 from PIL import Image
 
 from bookhub.library.media_sanitizer import sanitize_image_for_ui
+from bookhub.library.formats.registry import get_library_format_handler
 from bookhub.library.metadata import regenerate_thumbnail_for_record
 from bookhub.library.models import ThumbnailTaskResult
+from bookhub.library.formats.cbz import read_cbz_cover_bytes
+from bookhub.library.preview_cache_migrate import safe_unlink_under_preview
 from bookhub.library.preview_paths import build_preview_path, is_preview_variant_uri, uri_to_path
 from bookhub.library.repository import LibraryRepository
+
+
+def _materialize_comic_cover_file(preview_dir: Path, record: dict[str, object]) -> Path | None:
+    """Resolve a readable cover file path for folder comics or CBZ archives."""
+    cover_key = str(record.get("cover_image_path") or "")
+    comic_path = Path(str(record.get("path") or ""))
+    if comic_path.suffix.lower() == ".cbz" and "::" in cover_key:
+        member = cover_key.split("::", 1)[1]
+        original_path = build_preview_path(
+            preview_root=preview_dir,
+            resource_type="comic",
+            variant="original",
+            source_key=cover_key,
+            extension=Path(member).suffix or ".jpg",
+        )
+        if original_path.exists() and original_path.is_file():
+            return original_path
+        _name, cover_bytes, _count = read_cbz_cover_bytes(comic_path)
+        if not cover_bytes:
+            return None
+        original_path.parent.mkdir(parents=True, exist_ok=True)
+        original_path.write_bytes(cover_bytes)
+        return original_path
+    source = Path(cover_key)
+    if source.exists() and source.is_file():
+        return source
+    return None
 
 
 def build_thumbnail_output_path(preview_dir: Path, source_path: str) -> Path:
@@ -40,7 +70,10 @@ def cleanup_library_thumbnails(
         thumb_file = uri_to_path(record.get("thumbnail_path"))
         try:
             if thumb_file is not None:
-                thumb_file.unlink(missing_ok=True)
+                if not safe_unlink_under_preview(thumb_file, repository.preview_dir):
+                    result.failed += 1
+                    result.errors.append(f"Refused delete outside preview dir: {thumb_file}")
+                    continue
             result.succeeded += 1
         except OSError as exc:
             result.failed += 1
@@ -79,7 +112,7 @@ def regenerate_library_thumbnails(
             result.skipped += 1
             continue
 
-        if extension not in {".pdf", ".epub"}:
+        if get_library_format_handler(source, extension) is None:
             result.skipped += 1
             continue
 
@@ -133,8 +166,12 @@ def cleanup_comic_thumbnails(
         )
         try:
             for candidate in (thumb_file, original_file, compressed_file):
-                if candidate is not None:
-                    candidate.unlink(missing_ok=True)
+                if candidate is None:
+                    continue
+                if not safe_unlink_under_preview(candidate, repository.preview_dir):
+                    result.failed += 1
+                    result.errors.append(f"Refused delete outside preview dir: {candidate}")
+                    continue
             result.succeeded += 1
         except OSError as exc:
             result.failed += 1
@@ -213,10 +250,7 @@ def regenerate_comic_thumbnails(
             )
             original_path = payload.get("original_path")
             if isinstance(original_path, str) and original_path.strip():
-                try:
-                    Path(original_path).unlink(missing_ok=True)
-                except OSError:
-                    pass
+                safe_unlink_under_preview(Path(original_path), repository.preview_dir)
             result.succeeded += 1
     return result
 
@@ -233,11 +267,22 @@ def _cover_fingerprint(path: Path) -> str:
     return f"{int(stat.st_size)}:{int(stat.st_mtime)}"
 
 
-def _should_regenerate_comic_record(record: dict[str, object], *, only_missing: bool) -> bool:
-    source_path = str(record.get("cover_image_path") or "")
-    source = Path(source_path)
-    if not source.exists() or not source.is_file():
-        return True
+def _should_regenerate_comic_record(
+    record: dict[str, object],
+    *,
+    only_missing: bool,
+    preview_dir: Path | None = None,
+) -> bool:
+    cover_key = str(record.get("cover_image_path") or "")
+    comic_path = Path(str(record.get("path") or ""))
+    is_cbz = comic_path.suffix.lower() == ".cbz" and "::" in cover_key
+    if is_cbz:
+        if not comic_path.exists() or not comic_path.is_file():
+            return True
+    else:
+        source = Path(cover_key)
+        if not source.exists() or not source.is_file():
+            return True
     if not only_missing:
         return True
 
@@ -253,6 +298,18 @@ def _should_regenerate_comic_record(record: dict[str, object], *, only_missing: 
     stored_fingerprint = str(record.get("cover_fingerprint") or "")
     if stored_fingerprint.startswith("manual:"):
         return False
+    if is_cbz:
+        try:
+            from bookhub.library.metadata import file_size_mtime_token
+
+            member = cover_key.split("::", 1)[1]
+            current_fingerprint = f"{member}:{file_size_mtime_token(comic_path)}"
+        except OSError:
+            return True
+        if not stored_fingerprint or stored_fingerprint != current_fingerprint:
+            return True
+        return False
+    source = Path(cover_key)
     try:
         current_fingerprint = _cover_fingerprint(source)
     except OSError:
@@ -263,24 +320,24 @@ def _should_regenerate_comic_record(record: dict[str, object], *, only_missing: 
 
 
 def _render_comic_thumbnail(preview_dir: Path, record: dict[str, object]) -> dict[str, str]:
-    source_path = str(record.get("cover_image_path") or "")
-    source = Path(source_path)
+    cover_key = str(record.get("cover_image_path") or "")
     thumbnail_uri = str(record.get("thumbnail_path") or "")
-    if not source.exists() or not source.is_file():
+    source = _materialize_comic_cover_file(preview_dir, record)
+    if source is None:
         return {"status": "skipped"}
 
     output_path = build_preview_path(
         preview_root=preview_dir,
         resource_type="comic",
         variant="compressed",
-        source_key=source_path,
+        source_key=cover_key,
         extension=".webp",
     )
     original_path = build_preview_path(
         preview_root=preview_dir,
         resource_type="comic",
         variant="original",
-        source_key=source_path,
+        source_key=cover_key,
         extension=source.suffix,
     )
     sanitized_source = output_path.with_suffix(".comic_cover_sanitized.png")
@@ -292,10 +349,18 @@ def _render_comic_thumbnail(preview_dir: Path, record: dict[str, object]) -> dic
             img.thumbnail((420, 620))
             output_path.parent.mkdir(parents=True, exist_ok=True)
             img.save(output_path, format="WEBP", quality=80, method=4)
+        comic_path = Path(str(record.get("path") or ""))
+        if comic_path.suffix.lower() == ".cbz" and "::" in cover_key:
+            from bookhub.library.metadata import file_size_mtime_token
+
+            member = cover_key.split("::", 1)[1]
+            cover_fingerprint = f"{member}:{file_size_mtime_token(comic_path)}"
+        else:
+            cover_fingerprint = _cover_fingerprint(source)
         return {
             "status": "ok",
             "thumbnail_uri": output_path.resolve(strict=False).as_uri(),
-            "cover_fingerprint": _cover_fingerprint(source),
+            "cover_fingerprint": cover_fingerprint,
             "original_path": str(original_path),
         }
     except Exception as exc:  # noqa: BLE001

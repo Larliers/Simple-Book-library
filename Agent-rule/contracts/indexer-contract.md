@@ -8,8 +8,8 @@
 ```text
 scan_roots / comic_roots / text_roots
         → ScanWorker (QThread)
-            → scan_roots        # PDF/EPUB；hash_strategy 指纹跳过
-            → scan_comic_roots  # 叶子图片文件夹；folder_size_mtime 快照跳过；同 comic_root 标题冲突按策略
+            → scan_roots        # PDF/EPUB/HTML/MD/FB2/DOCX；hash_strategy 指纹跳过
+            → scan_comic_roots  # 叶子图片文件夹 + CBZ；folder/file snapshot 跳过；同 comic_root 标题冲突按策略
             → scan_text_roots   # TXT + 规则链；同 hash_strategy 指纹跳过；text_encoding_preference 读入
         → SQLite upsert / 失踪则删除
         → scan_report.json + Scan_error_logs
@@ -18,8 +18,8 @@ scan_roots / comic_roots / text_roots
 ## Scan Semantics
 - **遍历模式**：每次扫描对配置根目录做**全量遍历**。
 - **局部跳过（非 checkpoint API）**：
-  - Library：按有效 `hash_strategy`（`size_mtime` / `quick` / `sha256`）比对已存指纹；未变且缩略图仍在则跳过元数据/封面。
-  - Comic：默认按 Settings `comic_scan_strategy`=`snapshot` 用 `folder_size_mtime`（及封面指纹）判断文件夹是否未变；`full` 禁用 `folder_size_mtime` 短路并**重读旁注 TXT**；同一 `comic_root` 下同标题（叶子文件夹名）冲突按 `comic_title_conflict_policy` 处理；旁注 TXT 经 `text_encoding` 按偏好读入。
+  - Library：按有效 `hash_strategy`（`size_mtime` / `quick` / `sha256`）比对已存指纹；未变且缩略图仍在则跳过元数据/封面。支持扩展：`.pdf .epub .html .htm .md .markdown .fb2 .fb2.zip .docx`。封面优先内嵌图，否则标题占位卡（HTML 不做浏览器整页渲染）。docx/fb2.zip 经 zip 安全上限校验。
+  - Comic：叶子图片文件夹用 `folder_size_mtime`；**CBZ** 用文件 `size:mtime` 快照与封面成员指纹；`full` 禁用快照短路（文件夹另重读旁注 TXT）；同一 `comic_root` 下同标题冲突按 `comic_title_conflict_policy` 处理。失踪清理同时接受目录或文件源。
   - Text：按与 Library 相同的有效 `hash_strategy` 比对已存指纹；未变则跳过规则链与 upsert（无缩略图要求）；TXT 正文经 `text_encoding` 按偏好读入。
 - **目录级策略覆盖**（Settings `per_root_scan_strategy_enabled`，默认关）：
   - **关**：Library/Text 统一用全局 `hash_strategy`；Comic 统一用全局 `comic_scan_strategy`；各根表 `scan_strategy` 列仍持久化覆盖值但不生效。

@@ -64,11 +64,11 @@ class ScanPdfDegradeTests(unittest.TestCase):
             with (
                 mock.patch("bookhub.library.scanner._probe_pdf_backend", return_value=(True, None)),
                 mock.patch(
-                    "bookhub.library.scanner._extract_metadata_by_extension",
+                    "bookhub.library.scanner.extract_metadata_by_extension",
                     return_value=ParsedMetadata(title="Mock Title", author="Mock Author"),
                 ) as metadata_mock,
                 mock.patch(
-                    "bookhub.library.scanner._build_thumbnail_by_extension",
+                    "bookhub.library.scanner.build_thumbnail_by_extension",
                     return_value="file:///mock-thumb.webp",
                 ) as thumb_mock,
             ):

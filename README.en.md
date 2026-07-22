@@ -2,11 +2,11 @@
 
 [English](README.en.md) | [中文](README.md)
 
-A local Windows desktop library app for your personal collection. Scan PDF / EPUB books, comic image folders, and TXT novels into one library, browse cover grids, and open items with your system default apps.
+A local Windows desktop library app for your personal collection. Scan PDF / EPUB / HTML / Markdown / FB2 / DOCX books, comic image folders and CBZ archives, and TXT novels into one library, browse cover grids, and open items with your system default apps.
 
 ## Who is this for?
 
-- You want one place for local PDFs, EPUBs, comic folders, and TXT novels
+- You want one place for local PDFs, EPUBs, HTML, Markdown, FB2, DOCX, comic folders/CBZ, and TXT novels
 - You prefer folder-based scanning over adding files one by one
 - You need tags, collections, favorites, and import rules for TXT metadata
 
@@ -14,8 +14,8 @@ A local Windows desktop library app for your personal collection. Scan PDF / EPU
 
 | Section | Formats | What you can do |
 |---------|---------|-----------------|
-| **Library** | PDF, EPUB | Grid / list view, detail pane, tags, search |
-| **Comic** | **Leaf image folders** (jpg / jpeg / png / webp / gif / bmp / tiff) | One folder = one volume; title = folder name; GIF covers use the first frame; waterfall or paginated layout |
+| **Library** | PDF, EPUB, HTML/HTM, Markdown, FB2/FB2.ZIP, DOCX | Grid / list view, detail pane, tags, search; covers prefer embedded images, else a title placeholder card |
+| **Comic** | **Leaf image folders** (jpg / jpeg / png / webp / gif / bmp / tiff) and **CBZ** | One folder or CBZ = one volume; title = folder/file name; GIF covers use the first frame; waterfall or paginated layout |
 | **Text Novel** | TXT (auto-detects UTF-8 / GBK, etc.) | List view, text preview, custom import rule chains |
 | **Collections** | — | Custom reading lists |
 | **Favorites** | Books + comics | Unified favorites entry |
@@ -30,7 +30,8 @@ A local Windows desktop library app for your personal collection. Scan PDF / EPU
 Notes:
 
 - Library scan depth is configurable (about 1–3 levels).
-- Comics (**by design**): aimed at readers who store pages as images, one folder per volume. A leaf folder of jpg/jpeg/png/webp/gif/bmp/tiff becomes one comic; the title is the folder name. GIF covers use the **first frame** as a static image. A fast placeholder cover appears first, then compressed thumbnails are generated in the background. **CBZ / CBR / ZIP comic archives are not supported.**
+- Library document formats: HTML/HTM, Markdown, FB2/FB2.ZIP, and DOCX share the Library scan and cover-cache pipeline with PDF/EPUB. HTML/Markdown use a local embedded image when available, otherwise a title placeholder card (no full-page browser render).
+- Comics: a leaf folder of jpg/jpeg/png/webp/gif/bmp/tiff, or a **CBZ** archive, becomes one volume; the title is the folder name or CBZ stem. GIF covers use the **first frame**. A fast placeholder appears first, then compressed thumbnails generate in the background. **CBR and other archive types remain unsupported.**
 - TXT: encoding is auto-detected (UTF-8, GBK/GB18030, Big5, etc.); Settings “Text encoding preference” (Simplified first / Traditional first / Auto; default Simplified) steers simplified/traditional ranking; **text rules** extract title, author, series, and tags from the filename or body; novels land in Text Novel, not the main Library list. On rescan, unchanged files are skipped using the same fingerprint strategy as Library (Settings “Fingerprint strategy”; **new installs default to Quick**/first 4MB; Fast only compares size+mtime and may miss content-only changes; Text has no thumbnail requirement).
 - Settings “Paths & Scan” combines root folders with scan/thumbnail tasks (no separate Tasks nav item).
 - **Per-directory scan strategy** (optional): enable “Assign scan strategy to different paths” on Paths & Scan to set a strategy per Library / Comic / Text root (unset = inherit global). When disabled, every root uses the global strategy (Library/Text: “Fingerprint strategy”; comics: “Comic scan strategy”); saved per-root overrides are kept but not applied. Library/Text overrides: Fast / Quick / Strict; comic overrides: directory snapshot (fast) / full rescan each time (strict)—full disables folder snapshot short-circuit and re-reads sidecar TXT notes.
@@ -60,7 +61,7 @@ Everything stays on your machine — nothing is uploaded:
 | Path | Purpose |
 |------|---------|
 | `src/sql/library.db` | SQLite library database |
-| `img_preview/` | Cover thumbnail cache |
+| `img_preview/` (default) | Cover thumbnail cache; changeable under Settings → Paths & Scan (migrate / rewire index / switch only) |
 | `src/Scan_error_logs/` | Scan conflicts, missing-file removals, etc. |
 | `src/fonts/` | Optional custom fonts (reload from Settings) |
 
@@ -109,7 +110,7 @@ $env:PYTHONPATH="src"
 ## Limitations
 
 - Import is **scan-from-configured-roots only**; you cannot drop a single file into the library.
-- The Comic section manages **image folders only** — CBZ/CBR archives are not supported.
+- The Comic section supports **image folders** and **CBZ**; CBR and other archives remain unsupported.
 - Opening files depends on OS file associations (PDF reader, image viewer, etc.).
 - Scan and thumbnail jobs are mutually exclusive; large first-time scans can take a while.
 - If PyMuPDF is missing or unavailable, PDFs can still be indexed, but metadata and covers may be incomplete (with a warning).

@@ -21,22 +21,22 @@ from PIL import Image
 
 from bookhub.library.metadata import (
     build_metadata_tags,
+    build_thumbnail_by_extension,
     compute_fingerprints,
-    extract_epub_metadata,
-    extract_pdf_metadata,
+    extract_metadata_by_extension,
     extension_lower,
     file_name,
-    generate_epub_thumbnail,
-    generate_pdf_thumbnail,
+    file_size_mtime_token,
 )
 from bookhub.library.error_logs import append_scan_log
+from bookhub.library.formats.cbz import read_cbz_cover_bytes
 from bookhub.library.models import (
+    COMIC_ARCHIVE_EXTENSIONS,
     COMIC_IMAGE_EXTENSIONS,
     COMIC_SCAN_STRATEGY_FULL,
     COMIC_TITLE_CONFLICT_POLICIES,
     COMIC_TITLE_CONFLICT_PREFER_NEWER,
     COMIC_TITLE_CONFLICT_SKIP_INCOMING,
-    SUPPORTED_EXTENSIONS,
     ComicScanRequest,
     HashStrategy,
     ScanConflict,
@@ -44,6 +44,7 @@ from bookhub.library.models import (
     ScanResult,
     TEXT_FILE_EXTENSION,
     TextScanRequest,
+    is_supported_library_file,
     resolve_comic_scan_strategy,
     resolve_library_hash_strategy,
 )
@@ -89,23 +90,6 @@ def _thumbnail_path_for(repo: LibraryRepository, normalized_path: str) -> Path:
         source_key=normalized_path,
         extension=".webp",
     )
-
-
-def _extract_metadata_by_extension(file_path: Path, extension: str):
-    if extension == ".pdf":
-        return extract_pdf_metadata(file_path)
-    return extract_epub_metadata(file_path)
-
-
-def _build_thumbnail_by_extension(
-    file_path: Path,
-    extension: str,
-    output_path: Path,
-    title_fallback: str,
-) -> str:
-    if extension == ".pdf":
-        return generate_pdf_thumbnail(file_path, output_path)
-    return generate_epub_thumbnail(file_path, output_path, title_fallback)
 
 
 def _probe_pdf_backend() -> tuple[bool, str | None]:
@@ -193,18 +177,20 @@ def _remove_missing_comics_in_scope(repository: LibraryRepository, roots: list[s
         if not path_value:
             continue
         source = Path(path_value)
-        if source.exists() and source.is_dir():
+        # Folder comics require a directory; CBZ archives require a file.
+        if source.exists() and (source.is_dir() or source.is_file()):
             continue
         comic_id = repository.get_comic_int_id(str(record.get("resource_id") or ""))
         if comic_id is None:
             continue
         stale_ids.append(comic_id)
         title = str(record.get("title") or "Unknown")
+        kind = "comic_archive" if source.suffix.lower() in COMIC_ARCHIVE_EXTENSIONS else "comic_folder"
         _log_missing_entry(
-            resource_type="comic_folder",
+            resource_type=kind,
             title=title,
             path_value=path_value,
-            reason="source folder missing during scan",
+            reason="source missing during scan",
         )
     return repository.delete_comics_by_ids(stale_ids)
 
@@ -356,6 +342,68 @@ def _collect_leaf_comic_candidates(
     return leaf, scanned_dirs
 
 
+def _collect_cbz_candidates(root: Path, max_depth: int) -> list[Path]:
+    found: list[Path] = []
+    root_parts = len(root.parts)
+    for current_dir, dir_names, file_names in os.walk(root):
+        current_path = Path(current_dir)
+        relative_depth = len(current_path.parts) - root_parts
+        if relative_depth >= max_depth:
+            dir_names[:] = []
+            continue
+        for name in file_names:
+            if Path(name).suffix.lower() in COMIC_ARCHIVE_EXTENSIONS:
+                found.append(current_path / name)
+    found.sort(key=lambda item: str(item).lower())
+    return found
+
+
+def _apply_comic_title_conflict(
+    repository: LibraryRepository,
+    result: ScanResult,
+    *,
+    title_conflict_policy: str,
+    comic_root: str,
+    title: str,
+    incoming_path: str,
+    incoming_mtime: int,
+    existing_by_path: dict[str, dict[str, Any]],
+) -> bool:
+    """Return True if incoming should be skipped."""
+    conflict = repository.find_comic_title_conflict(comic_root, title, incoming_path)
+    if not conflict:
+        return False
+    conflict_item = ScanConflict(
+        file_name=title,
+        incoming_path=incoming_path,
+        existing_path=str(conflict.get("path") or ""),
+        existing_title=str(conflict.get("title") or title),
+    )
+    result.name_conflicts.append(conflict_item)
+    if title_conflict_policy == COMIC_TITLE_CONFLICT_SKIP_INCOMING:
+        result.comic_errors.append(
+            f"Comic title conflict skipped (incoming): {incoming_path} vs {conflict_item.existing_path}"
+        )
+        return True
+    if title_conflict_policy == COMIC_TITLE_CONFLICT_PREFER_NEWER:
+        existing_mtime = max(
+            int(conflict.get("folder_modified_at") or 0),
+            int(conflict.get("folder_mtime") or 0),
+        )
+        if incoming_mtime <= existing_mtime:
+            result.comic_errors.append(
+                f"Comic title conflict kept existing (newer/equal): {conflict_item.existing_path}"
+            )
+            return True
+        old_id = int(conflict.get("id") or 0)
+        old_path = str(conflict.get("path") or "")
+        if old_id > 0:
+            repository.delete_comics_by_ids([old_id])
+        if old_path:
+            existing_by_path.pop(old_path, None)
+    return False
+
+
 _RASTERIZE_COVER_EXTENSIONS = {".gif", ".bmp", ".tif", ".tiff"}
 
 
@@ -442,20 +490,9 @@ def _emit_scan_progress(
     if progress_cb is None:
         return
     snapshot = result.to_summary()
-    progress_cb(current, total, label, snapshot)
-
-
-def _count_library_scan_files(roots: list[str], scan_depth: int) -> int:
-    total = 0
-    for raw_root in roots:
-        root = Path(raw_root)
-        if not root.exists() or not root.is_dir():
-            continue
-        try:
-            total += sum(1 for _ in _iter_files_with_depth(root, scan_depth))
-        except OSError:
-            continue
-    return total
+    # Library scans no longer pre-walk the tree just to count files. Keep the
+    # existing progress contract usable by reporting completed work so far.
+    progress_cb(current, max(current, total), label, snapshot)
 
 
 def _count_text_scan_files(roots: list[TextScanRoot]) -> int:
@@ -600,44 +637,18 @@ def scan_comic_roots(
                 "image_count": image_count,
                 "info_text": info_text,
             }
-            conflict = repository.find_comic_title_conflict(
-                normalized_root,
-                folder_path.name,
-                normalized_folder,
-            )
-            if conflict:
-                conflict_item = ScanConflict(
-                    file_name=folder_path.name,
-                    incoming_path=normalized_folder,
-                    existing_path=str(conflict.get("path") or ""),
-                    existing_title=str(conflict.get("title") or folder_path.name),
-                )
-                result.name_conflicts.append(conflict_item)
-                if title_conflict_policy == COMIC_TITLE_CONFLICT_SKIP_INCOMING:
-                    result.comic_errors.append(
-                        f"Comic title conflict skipped (incoming): {normalized_folder} vs {conflict_item.existing_path}"
-                    )
-                    _emit_scan_progress(progress_cb, index, total, normalized_folder, result)
-                    continue
-                if title_conflict_policy == COMIC_TITLE_CONFLICT_PREFER_NEWER:
-                    existing_mtime = max(
-                        int(conflict.get("folder_modified_at") or 0),
-                        int(conflict.get("folder_mtime") or 0),
-                    )
-                    incoming_mtime = max(int(folder_modified_at or 0), int(folder_mtime or 0))
-                    if incoming_mtime <= existing_mtime:
-                        result.comic_errors.append(
-                            f"Comic title conflict kept existing (newer/equal): {conflict_item.existing_path}"
-                        )
-                        _emit_scan_progress(progress_cb, index, total, normalized_folder, result)
-                        continue
-                    old_id = int(conflict.get("id") or 0)
-                    old_path = str(conflict.get("path") or "")
-                    if old_id > 0:
-                        repository.delete_comics_by_ids([old_id])
-                    if old_path:
-                        existing_by_path.pop(old_path, None)
-                # keep_both: log conflict above, then upsert incoming as usual
+            if _apply_comic_title_conflict(
+                repository,
+                result,
+                title_conflict_policy=title_conflict_policy,
+                comic_root=normalized_root,
+                title=folder_path.name,
+                incoming_path=normalized_folder,
+                incoming_mtime=max(int(folder_modified_at or 0), int(folder_mtime or 0)),
+                existing_by_path=existing_by_path,
+            ):
+                _emit_scan_progress(progress_cb, index, total, normalized_folder, result)
+                continue
             inserted = repository.upsert_comic(payload)
             if inserted:
                 result.comic_added_count += 1
@@ -653,6 +664,127 @@ def scan_comic_roots(
                 "info_text": info_text,
             }
             _emit_scan_progress(progress_cb, index, total, normalized_folder, result)
+
+        # CBZ archives under the same comic root (file = one comic).
+        cbz_files = _collect_cbz_candidates(root, max_depth=max_depth)
+        for cbz_index, cbz_path in enumerate(cbz_files, start=1):
+            result.comic_detected_folders += 1
+            normalized_cbz = repository.normalize_path(cbz_path)
+            normalized_root = repository.normalize_path(root)
+            title = cbz_path.stem
+            try:
+                archive_snapshot = file_size_mtime_token(cbz_path)
+                archive_mtime = int(cbz_path.stat().st_mtime)
+            except OSError as exc:
+                result.comic_errors.append(f"CBZ stat failed for {normalized_cbz}: {exc}")
+                continue
+
+            existing = existing_by_path.get(normalized_cbz)
+            existing_thumb = str(existing.get("thumbnail_path") or "") if isinstance(existing, dict) else ""
+            existing_fingerprint = str(existing.get("cover_fingerprint") or "") if isinstance(existing, dict) else ""
+            existing_snapshot = str(existing.get("folder_size_mtime") or "") if isinstance(existing, dict) else ""
+            thumb_file = uri_to_path(existing_thumb)
+            has_valid_thumb = bool(thumb_file and thumb_file.exists() and thumb_file.is_file())
+            snapshot_unchanged = bool(existing) and existing_snapshot == archive_snapshot
+            if comic_scan_strategy == COMIC_SCAN_STRATEGY_FULL:
+                snapshot_unchanged = False
+
+            cover_key = str(existing.get("cover_image_path") or "") if isinstance(existing, dict) else ""
+            cover_name = cover_key.split("::", 1)[1] if "::" in cover_key else ""
+            image_count = int(existing.get("image_count") or 0) if isinstance(existing, dict) else 0
+            cover_bytes: bytes | None = None
+            can_reuse_archive = snapshot_unchanged and has_valid_thumb and bool(cover_name) and image_count > 0
+            if not can_reuse_archive:
+                cover_name, cover_bytes, image_count = read_cbz_cover_bytes(cbz_path)
+                if not cover_name or not cover_bytes or image_count <= 0:
+                    result.comic_errors.append(f"CBZ has no readable cover image: {normalized_cbz}")
+                    continue
+                cover_key = f"{normalized_cbz}::{cover_name}"
+            current_fingerprint = f"{cover_name}:{archive_snapshot}"
+            need_regenerate = (
+                existing is None
+                or not existing_thumb
+                or not has_valid_thumb
+                or not current_fingerprint
+                or existing_fingerprint != current_fingerprint
+                or not snapshot_unchanged
+            )
+
+            thumbnail_path = existing_thumb or None
+            if need_regenerate and placeholder_copy_enabled:
+                placeholder_path = build_preview_path(
+                    preview_root=repository.preview_dir,
+                    resource_type="comic",
+                    variant="original",
+                    source_key=cover_key,
+                    extension=Path(cover_name).suffix or ".jpg",
+                )
+                temp_cover = placeholder_path.with_name(placeholder_path.stem + ".cbz_src" + (Path(cover_name).suffix or ".jpg"))
+                try:
+                    temp_cover.parent.mkdir(parents=True, exist_ok=True)
+                    temp_cover.write_bytes(cover_bytes or b"")
+                    effective_placeholder_path, downscaled = _copy_or_downscale_comic_placeholder(
+                        temp_cover,
+                        placeholder_path,
+                        max_decode_bytes=max_image_decode_bytes,
+                    )
+                    thumbnail_path = effective_placeholder_path.resolve(strict=False).as_uri()
+                    result.comic_placeholder_copied_count += 1
+                    if downscaled:
+                        result.comic_large_image_downscaled_count += 1
+                except OSError as exc:
+                    result.comic_errors.append(f"CBZ placeholder copy failed for {normalized_cbz}: {exc}")
+                    thumbnail_path = existing_thumb or None
+                finally:
+                    try:
+                        temp_cover.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+
+            if need_regenerate:
+                result.comic_thumbnail_enqueued_count += 1
+
+            if _apply_comic_title_conflict(
+                repository,
+                result,
+                title_conflict_policy=title_conflict_policy,
+                comic_root=normalized_root,
+                title=title,
+                incoming_path=normalized_cbz,
+                incoming_mtime=archive_mtime,
+                existing_by_path=existing_by_path,
+            ):
+                _emit_scan_progress(progress_cb, cbz_index, len(cbz_files), normalized_cbz, result)
+                continue
+
+            payload = {
+                "path": normalized_cbz,
+                "title": title,
+                "comic_root": normalized_root,
+                "cover_image_path": cover_key,
+                "thumbnail_path": thumbnail_path,
+                "cover_fingerprint": current_fingerprint,
+                "folder_size_mtime": archive_snapshot,
+                "folder_mtime": archive_mtime,
+                "folder_modified_at": archive_mtime,
+                "image_count": image_count,
+                "info_text": None,
+            }
+            inserted = repository.upsert_comic(payload)
+            if inserted:
+                result.comic_added_count += 1
+            else:
+                result.comic_updated_count += 1
+            existing_by_path[normalized_cbz] = {
+                "path": normalized_cbz,
+                "thumbnail_path": thumbnail_path,
+                "cover_fingerprint": current_fingerprint,
+                "folder_size_mtime": archive_snapshot,
+                "folder_mtime": archive_mtime,
+                "folder_modified_at": archive_mtime,
+                "info_text": None,
+            }
+            _emit_scan_progress(progress_cb, cbz_index, len(cbz_files), normalized_cbz, result)
 
     if result.comic_large_image_downscaled_count > 0:
         result.warnings.append(
@@ -816,7 +948,8 @@ def scan_roots(
         result.removed_missing_book_count += removed_missing
     pdf_backend_ok, pdf_backend_reason = _probe_pdf_backend()
     skipped_pdf_backend_count = 0
-    total_files = _count_library_scan_files(scanned_roots, scan_depth)
+    # Avoid a preliminary full tree walk solely for a progress denominator.
+    total_files = 0
     existing_by_path = repository.map_library_books_for_scan(scanned_roots)
 
     for root_spec in request.roots:
@@ -834,7 +967,7 @@ def scan_roots(
         for file_path in _iter_files_with_depth(root, scan_depth):
             result.scanned_files += 1
             extension = extension_lower(file_path)
-            if extension not in SUPPORTED_EXTENSIONS:
+            if not is_supported_library_file(file_path):
                 result.ignored_unsupported += 1
                 result.unsupported_files.append(str(file_path.resolve(strict=False)))
                 _emit_scan_progress(progress_cb, result.scanned_files, total_files, str(file_path), result)
@@ -878,7 +1011,7 @@ def scan_roots(
                 skipped_pdf_backend_count += 1
             else:
                 try:
-                    metadata = _extract_metadata_by_extension(file_path, extension)
+                    metadata = extract_metadata_by_extension(file_path, extension)
                 except Exception as exc:  # noqa: BLE001
                     result.errors.append(f"Metadata failed for {normalized_path}: {exc}")
                     metadata = None
@@ -893,7 +1026,7 @@ def scan_roots(
             thumbnail_path: str | None = None
             if not should_skip_pdf_backend:
                 try:
-                    thumbnail_path = _build_thumbnail_by_extension(
+                    thumbnail_path = build_thumbnail_by_extension(
                         file_path=file_path,
                         extension=extension,
                         output_path=thumb_out,

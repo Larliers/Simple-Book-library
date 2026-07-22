@@ -1253,6 +1253,7 @@ function themeSelectField(labelKey, prop, options, current) {
 
 function renderSettingsPaths(panel) {
   const s = State.settings;
+  panel.appendChild(buildPreviewCacheCard());
   const strategyCard = settingCard(null);
   strategyCard.appendChild(switchField("settings.per_root_strategy", "perRootScanStrategyEnabled", s.perRootScanStrategyEnabled));
   const strategyHint = elem("p", "small-note", t("settings.per_root_strategy.hint", "When enabled, set a scan strategy for each root; when disabled, global strategies apply (saved overrides are kept)."));
@@ -1291,6 +1292,86 @@ function normalizeRootList(roots) {
       };
     }
     return { path: String(item), scan_strategy: "" };
+  });
+}
+
+function buildPreviewCacheCard() {
+  const s = State.settings;
+  const card = settingCard(t("settings.cache.title", "Thumbnail cache folder"));
+  card.appendChild(elem("p", "small-note", t(
+    "settings.cache.hint",
+    "Covers are stored here. Default is the project img_preview folder. Changing location can migrate files or only update the index."
+  )));
+  const pathRow = elem("div", "path-row");
+  const effective = String(s.previewCacheDirEffective || s.previewCacheDirDefault || "");
+  const pathLabel = elem("span", "path-text", effective);
+  if (s.previewCacheDirIsDefault) {
+    pathLabel.textContent = effective + " " + t("settings.cache.default_note", "(using default)");
+  }
+  pathRow.appendChild(pathLabel);
+  card.appendChild(pathRow);
+  const actions = elem("div", "modal-actions");
+  actions.style.justifyContent = "flex-start";
+  actions.style.marginTop = "10px";
+  const changeBtn = elem("button", "ghost-btn", t("settings.cache.change", "Change…"));
+  changeBtn.addEventListener("click", () => {
+    State.bridge.browsePreviewCacheDir((chosen) => {
+      const path = String(chosen || "");
+      if (!path) return;
+      openPreviewCacheConfirmModal(path);
+    });
+  });
+  const resetBtn = elem("button", "ghost-btn", t("settings.cache.reset", "Use default"));
+  resetBtn.addEventListener("click", () => openPreviewCacheConfirmModal(""));
+  resetBtn.disabled = !!s.previewCacheDirIsDefault;
+  actions.appendChild(changeBtn);
+  actions.appendChild(resetBtn);
+  card.appendChild(actions);
+  return card;
+}
+
+function openPreviewCacheConfirmModal(newPath) {
+  const s = State.settings;
+  const oldPath = String(s.previewCacheDirEffective || "");
+  const defaultPath = String(s.previewCacheDirDefault || "");
+  const targetPath = String(newPath || "");
+  const displayNew = targetPath || defaultPath;
+  if (targetPath && oldPath && targetPath.replace(/[\\/]+$/, "").toLowerCase() === oldPath.replace(/[\\/]+$/, "").toLowerCase()) {
+    showToast(t("settings.cache.confirm_title", "Change cache folder"), t("settings.cache.same_path", "That folder is already in use."), "warning");
+    return;
+  }
+  openModal((modal, close) => {
+    modalHeader(modal, t("settings.cache.confirm_title", "Change cache folder"), close);
+    modal.appendChild(elem("p", "small-note", fmt(t("settings.cache.confirm_from", "From:\n{old}"), { old: oldPath })));
+    modal.appendChild(elem("p", "small-note", fmt(t("settings.cache.confirm_to", "To:\n{new}"), { new: displayNew + (targetPath ? "" : " " + t("settings.cache.default_note", "(using default)")) })));
+    modal.appendChild(elem("p", "small-note", t(
+      "settings.cache.confirm_structure",
+      "If you move files yourself, keep subfolders: book|comic|text_novel / original|compressed."
+    )));
+    const actions = elem("div", "modal-actions");
+    actions.style.flexWrap = "wrap";
+    const cancel = elem("button", "ghost-btn", t("common.cancel", "Cancel"));
+    cancel.addEventListener("click", close);
+    const migrate = elem("button", "primary-btn", t("settings.cache.mode.migrate", "Migrate automatically (copy + update index)"));
+    migrate.addEventListener("click", () => {
+      State.bridge.setPreviewCacheDir(targetPath, "migrate");
+      close();
+    });
+    const rewire = elem("button", "ghost-btn", t("settings.cache.mode.rewire", "I already moved files (update index only)"));
+    rewire.addEventListener("click", () => {
+      State.bridge.setPreviewCacheDir(targetPath, "rewire_only");
+      close();
+    });
+    const switchOnly = elem("button", "ghost-btn", t("settings.cache.mode.switch", "Switch only (rebuild thumbnails later)"));
+    switchOnly.addEventListener("click", () => {
+      State.bridge.setPreviewCacheDir(targetPath, "switch_only");
+      close();
+    });
+    actions.appendChild(cancel);
+    actions.appendChild(migrate);
+    actions.appendChild(rewire);
+    actions.appendChild(switchOnly);
+    modal.appendChild(actions);
   });
 }
 

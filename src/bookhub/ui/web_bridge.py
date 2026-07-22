@@ -186,6 +186,30 @@ def _web_strings() -> dict[str, str]:
         ("settings.roots.scan_strategy_hint", "Choose a scan strategy for this directory"),
         ("settings.roots.scan_strategy.title", "Directory scan strategy"),
         ("settings.scan_strategy.inherit", "Inherit global"),
+        ("settings.cache.title", "Thumbnail cache folder"),
+        ("settings.cache.hint", "Covers are stored here. Default is the project img_preview folder. Changing location can migrate files or only update the index."),
+        ("settings.cache.effective", "Current folder"),
+        ("settings.cache.default_note", "(using default)"),
+        ("settings.cache.change", "Change…"),
+        ("settings.cache.reset", "Use default"),
+        ("settings.cache.browse_title", "Select thumbnail cache folder"),
+        ("settings.cache.confirm_title", "Change cache folder"),
+        ("settings.cache.confirm_from", "From:\n{old}"),
+        ("settings.cache.confirm_to", "To:\n{new}"),
+        ("settings.cache.confirm_structure", "If you move files yourself, keep subfolders: book|comic|text_novel / original|compressed."),
+        ("settings.cache.mode.migrate", "Migrate automatically (copy + update index)"),
+        ("settings.cache.mode.rewire", "I already moved files (update index only)"),
+        ("settings.cache.mode.switch", "Switch only (rebuild thumbnails later)"),
+        ("settings.cache.busy", "A cache directory change is already running."),
+        ("settings.cache.working_title", "Updating cache folder"),
+        ("settings.cache.working_msg", "Please wait…"),
+        ("settings.cache.done_title", "Cache folder updated"),
+        ("settings.cache.done_migrate", "Copied {copied} files and updated {rewritten} index paths. Old cache folder was kept."),
+        ("settings.cache.done_rewire", "Index updated ({rewritten} paths). Keep the same folder structure under the new path."),
+        ("settings.cache.done_switch", "Cache folder updated. Rebuild thumbnails if covers are missing."),
+        ("settings.cache.failed_title", "Cache folder update failed"),
+        ("settings.cache.failed_msg", "Could not change cache folder."),
+        ("settings.cache.same_path", "That folder is already in use."),
         ("text.rules.title", "Text Rules"),
         ("text.rules.root", "Path: {path}"),
         ("text.rules.fields", "Fields"),
@@ -460,6 +484,8 @@ class UiBridge(QObject):
 
     # ---- bootstrap / settings -----------------------------------------
     def _settings_payload(self) -> dict[str, Any]:
+        from bookhub.library.data_paths import DEFAULT_PREVIEW_DIR
+
         repo = self._repo
         return {
             "language": repo.get_language_code(),
@@ -489,6 +515,10 @@ class UiBridge(QObject):
             "libraryRoots": repo.list_roots_with_strategy(),
             "comicRoots": repo.list_comic_roots_with_strategy(),
             "textRoots": repo.list_text_roots_with_rules(),
+            "previewCacheDir": repo.get_preview_cache_dir_setting(),
+            "previewCacheDirEffective": str(repo.get_preview_dir_effective()),
+            "previewCacheDirDefault": str(DEFAULT_PREVIEW_DIR.resolve(strict=False)),
+            "previewCacheDirIsDefault": not bool(repo.get_preview_cache_dir_setting()),
             "theme": self._theme_payload(),
             "scanReport": repo.read_scan_report(),
         }
@@ -806,6 +836,17 @@ class UiBridge(QObject):
             self.emit_toast(tr("common.error", "Error"), str(exc), "warning")
             return
         self.push_settings()
+
+    @Slot(result=str)
+    def browsePreviewCacheDir(self) -> str:
+        if self._host is not None and hasattr(self._host, "browse_preview_cache_dir"):
+            return str(self._host.browse_preview_cache_dir() or "")
+        return ""
+
+    @Slot(str, str)
+    def setPreviewCacheDir(self, path: str, mode: str) -> None:
+        if self._host is not None and hasattr(self._host, "apply_preview_cache_dir"):
+            self._host.apply_preview_cache_dir(str(path or ""), str(mode or "migrate"))
 
     @Slot(str)
     def openTextRules(self, root_path: str) -> None:

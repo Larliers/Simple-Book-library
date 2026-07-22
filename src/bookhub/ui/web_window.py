@@ -16,6 +16,8 @@ _WEB_BG_NIGHT = QColor("#101925")
 from bookhub.i18n import language_manager, tr
 from bookhub.library import LibraryRepository, ScanWorker, ThumbnailTaskWorker
 from bookhub.library.error_logs import append_conflict_if_new, read_latest_log_text
+from bookhub.library.preview_cache_worker import PreviewCacheMigrateWorker
+from bookhub.library.preview_paths import ensure_preview_structure
 from bookhub.ui.resources.font_runtime import (
     DEFAULT_PROJECT_FONTS_DIR,
     resolve_effective_font,
@@ -52,6 +54,7 @@ class WebAppWindow(QMainWindow):
         self._project_font_families: list[str] = []
         self._scan_worker: ScanWorker | None = None
         self._thumbnail_worker: ThumbnailTaskWorker | None = None
+        self._preview_cache_worker: PreviewCacheMigrateWorker | None = None
         self._active_thumbnail_task_kind: str | None = None
         self._active_thumbnail_task_scope: str | None = None
         self._pending_auto_comic_thumbnail = False
@@ -319,11 +322,11 @@ class WebAppWindow(QMainWindow):
 
             from PIL import Image as _Image
 
-            from bookhub.library.repository import DEFAULT_PREVIEW_DIR
-
-            DEFAULT_PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+            preview_dir = repo.preview_dir
+            preview_dir.mkdir(parents=True, exist_ok=True)
+            ensure_preview_structure(preview_dir)
             name_hash = _hashlib.md5(str(src).encode("utf-8", errors="replace")).hexdigest()[:16]
-            out_path = DEFAULT_PREVIEW_DIR / f"cover_{name_hash}.webp"
+            out_path = preview_dir / f"cover_{name_hash}.webp"
 
             img = _Image.open(str(src))
             img = img.convert("RGB")
@@ -333,11 +336,11 @@ class WebAppWindow(QMainWindow):
             import hashlib as _hashlib
             import shutil as _shutil
 
-            from bookhub.library.repository import DEFAULT_PREVIEW_DIR
-
-            DEFAULT_PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+            preview_dir = repo.preview_dir
+            preview_dir.mkdir(parents=True, exist_ok=True)
+            ensure_preview_structure(preview_dir)
             name_hash = _hashlib.md5(str(src).encode("utf-8", errors="replace")).hexdigest()[:16]
-            out_path = DEFAULT_PREVIEW_DIR / f"cover_{name_hash}{src.suffix.lower()}"
+            out_path = preview_dir / f"cover_{name_hash}{src.suffix.lower()}"
             _shutil.copy2(str(src), str(out_path))
 
         except Exception as exc:
@@ -446,6 +449,7 @@ class WebAppWindow(QMainWindow):
             text_encoding_preference=repo.get_text_encoding_preference(),
             trigger="manual_" + scope,
             scope=scope,
+            preview_dir=repo.preview_dir,
         )
         worker.scan_completed.connect(self._on_scan_completed)
         worker.scan_failed.connect(self._on_scan_failed)
@@ -560,6 +564,7 @@ class WebAppWindow(QMainWindow):
             task_kind=task_kind,
             task_scope=scope,
             comic_workers=repo.get_comic_thumbnail_workers() if scope == "comic" else None,
+            preview_dir=repo.preview_dir,
         )
         worker.progress.connect(self._on_thumbnail_progress)
         worker.completed.connect(self._on_thumbnail_completed)
@@ -594,3 +599,114 @@ class WebAppWindow(QMainWindow):
         self._thumbnail_worker = None
         self._active_thumbnail_task_kind = None
         self._active_thumbnail_task_scope = None
+
+    # ---- preview cache directory --------------------------------------
+    def browse_preview_cache_dir(self) -> str:
+        directory = QFileDialog.getExistingDirectory(
+            self,
+            tr("settings.cache.browse_title", "Select thumbnail cache folder"),
+            str(self._repository.preview_dir),
+        )
+        return directory or ""
+
+    def apply_preview_cache_dir(self, path: str, mode: str) -> None:
+        if self._scan_worker is not None and self._scan_worker.isRunning():
+            self._bridge.emit_toast(
+                tr("scan.busy_title", "Busy"),
+                tr("scan.busy_scan_msg", "A scan is already running. Please wait."),
+                "warning",
+            )
+            return
+        if self._thumbnail_worker is not None and self._thumbnail_worker.isRunning():
+            self._bridge.emit_toast(
+                tr("scan.busy_title", "Busy"),
+                tr("scan.busy_thumb_msg", "A thumbnail task is running. Please wait."),
+                "warning",
+            )
+            return
+        if self._preview_cache_worker is not None and self._preview_cache_worker.isRunning():
+            self._bridge.emit_toast(
+                tr("scan.busy_title", "Busy"),
+                tr("settings.cache.busy", "A cache directory change is already running."),
+                "warning",
+            )
+            return
+
+        repo = self._repository
+        self._bridge.emit_toast(
+            tr("settings.cache.working_title", "Updating cache folder"),
+            tr("settings.cache.working_msg", "Please wait…"),
+            "info",
+        )
+        worker = PreviewCacheMigrateWorker(
+            db_path=repo.db_path,
+            scan_report_path=repo.scan_report_path,
+            preview_dir=repo.preview_dir,
+            new_path=path,
+            mode=mode,
+        )
+        worker.completed.connect(self._on_preview_cache_completed)
+        worker.failed.connect(self._on_preview_cache_failed)
+        worker.finished.connect(self._on_preview_cache_finished)
+        self._preview_cache_worker = worker
+        worker.start()
+
+    def _on_preview_cache_completed(self, summary_obj: object) -> None:
+        from pathlib import Path as _Path
+
+        summary = summary_obj if isinstance(summary_obj, dict) else {}
+        if not summary.get("ok"):
+            errors = summary.get("errors") or []
+            message = "; ".join(str(item) for item in errors) if errors else tr(
+                "settings.cache.failed_msg", "Could not change cache folder."
+            )
+            self._bridge.emit_toast(
+                tr("settings.cache.failed_title", "Cache folder update failed"),
+                message,
+                "warning",
+            )
+            return
+
+        new_root = _Path(str(summary.get("new_root") or self._repository.preview_dir))
+        self._repository.preview_dir = new_root
+        ensure_preview_structure(new_root)
+        self._bridge.reload_data()
+        self._bridge.push_resources()
+        self._bridge.push_settings()
+
+        warning = str(summary.get("warning") or "").strip()
+        mode = str(summary.get("mode") or "")
+        copied = int(summary.get("copied_files", 0) or 0)
+        rewritten = int(summary.get("rewritten_uris", 0) or 0)
+        if mode == "switch_only":
+            msg = tr(
+                "settings.cache.done_switch",
+                "Cache folder updated. Rebuild thumbnails if covers are missing.",
+            )
+        elif mode == "rewire_only":
+            msg = tr(
+                "settings.cache.done_rewire",
+                "Index updated ({rewritten} paths). Keep the same folder structure under the new path.",
+            ).format(rewritten=rewritten)
+        else:
+            msg = tr(
+                "settings.cache.done_migrate",
+                "Copied {copied} files and updated {rewritten} index paths. Old cache folder was kept.",
+            ).format(copied=copied, rewritten=rewritten)
+        if warning:
+            msg = f"{msg}\n{warning}"
+        self._bridge.emit_toast(
+            tr("settings.cache.done_title", "Cache folder updated"),
+            msg,
+            "warning" if warning else "info",
+        )
+
+    def _on_preview_cache_failed(self, message: str) -> None:
+        self._bridge.emit_toast(
+            tr("settings.cache.failed_title", "Cache folder update failed"),
+            message,
+            "warning",
+        )
+
+    def _on_preview_cache_finished(self) -> None:
+        self._preview_cache_worker = None

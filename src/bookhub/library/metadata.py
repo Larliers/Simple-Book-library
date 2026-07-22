@@ -266,6 +266,29 @@ def generate_epub_thumbnail(file_path: Path, output_path: Path, title_fallback: 
     return _save_thumbnail_image(placeholder, output_path)
 
 
+def extract_metadata_by_extension(file_path: Path, extension: str | None = None):
+    from bookhub.library.formats.registry import get_library_format_handler
+
+    handler = get_library_format_handler(file_path, extension)
+    if handler is None:
+        raise RuntimeError(f"Unsupported extension for metadata extraction: {extension or extension_lower(file_path)}")
+    return handler.extract_metadata(file_path)
+
+
+def build_thumbnail_by_extension(
+    file_path: Path,
+    extension: str,
+    output_path: Path,
+    title_fallback: str,
+) -> str:
+    from bookhub.library.formats.registry import get_library_format_handler
+
+    handler = get_library_format_handler(file_path, extension)
+    if handler is None:
+        raise RuntimeError(f"Unsupported extension for thumbnail generation: {extension}")
+    return handler.build_thumbnail(file_path, output_path, title_fallback)
+
+
 def regenerate_thumbnail_for_record(
     *,
     extension: str,
@@ -275,12 +298,7 @@ def regenerate_thumbnail_for_record(
 ) -> str:
     file_path = Path(source_path)
     target_path = Path(output_path)
-    ext = extension.lower()
-    if ext == ".pdf":
-        return generate_pdf_thumbnail(file_path, target_path)
-    if ext == ".epub":
-        return generate_epub_thumbnail(file_path, target_path, title_fallback)
-    raise RuntimeError(f"Unsupported extension for thumbnail regeneration: {extension}")
+    return build_thumbnail_by_extension(file_path, extension, target_path, title_fallback)
 
 
 def file_size_mtime_token(file_path: Path) -> str:
@@ -289,6 +307,11 @@ def file_size_mtime_token(file_path: Path) -> str:
 
 
 def extension_lower(file_path: Path) -> str:
+    name = file_path.name.lower()
+    from bookhub.library.models import FB2_ZIP_SUFFIX
+
+    if name.endswith(FB2_ZIP_SUFFIX):
+        return FB2_ZIP_SUFFIX
     return file_path.suffix.lower()
 
 

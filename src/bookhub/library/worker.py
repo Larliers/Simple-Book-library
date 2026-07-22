@@ -49,10 +49,12 @@ class ScanWorker(QThread):
         scope: str = "all",
         comic_title_conflict_policy: str = COMIC_TITLE_CONFLICT_SKIP_INCOMING,
         text_encoding_preference: str = TEXT_ENCODING_SIMPLIFIED,
+        preview_dir: str | Path | None = None,
     ) -> None:
         super().__init__()
         self._db_path = Path(db_path)
         self._scan_report_path = Path(scan_report_path)
+        self._preview_dir = Path(preview_dir) if preview_dir is not None else None
         self._roots = list(roots)
         self._comic_roots = list(comic_roots)
         self._text_roots = list(text_roots)
@@ -80,7 +82,11 @@ class ScanWorker(QThread):
 
     def run(self) -> None:
         try:
-            repository = LibraryRepository(self._db_path, self._scan_report_path)
+            repository = LibraryRepository(
+                self._db_path,
+                self._scan_report_path,
+                preview_dir=self._preview_dir,
+            )
             progress_cb = lambda current, total, label, snapshot: self.progress.emit(
                 int(current),
                 int(total),

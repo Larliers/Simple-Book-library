@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from bookhub.library.data_paths import DEFAULT_PREVIEW_DIR, resolve_preview_dir
 from bookhub.library.error_logs import append_scan_log
 from bookhub.library.models import (
     COMIC_SCAN_STRATEGIES,
@@ -41,7 +42,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SRC_ROOT = PROJECT_ROOT / "src"
 DEFAULT_DB_PATH = SRC_ROOT / "sql" / "library.db"
 DEFAULT_SCAN_REPORT_PATH = SRC_ROOT / "sql" / "scan_report.json"
-DEFAULT_PREVIEW_DIR = PROJECT_ROOT / "img_preview"
 
 
 def now_utc_iso() -> str:
@@ -85,18 +85,82 @@ def _normalize_cover_selected_border_color(value: str | None) -> str:
 
 
 class LibraryRepository:
-    def __init__(self, db_path: str | Path | None = None, scan_report_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        db_path: str | Path | None = None,
+        scan_report_path: str | Path | None = None,
+        preview_dir: str | Path | None = None,
+    ) -> None:
         self.db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
         self.scan_report_path = Path(scan_report_path) if scan_report_path else DEFAULT_SCAN_REPORT_PATH
-        self.preview_dir = DEFAULT_PREVIEW_DIR
+        self._preview_dir_override = Path(preview_dir) if preview_dir is not None else None
+        self.preview_dir = DEFAULT_PREVIEW_DIR.resolve(strict=False)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.scan_report_path.parent.mkdir(parents=True, exist_ok=True)
-        self.preview_dir.mkdir(parents=True, exist_ok=True)
-        ensure_preview_structure(self.preview_dir)
         self._init_db()
         self._init_collections_tables()
         self._ensure_defaults()
+        self._apply_preview_dir_from_settings_or_override()
         self.purge_marked_missing_records()
+
+    def _apply_preview_dir_from_settings_or_override(self) -> None:
+        if self._preview_dir_override is not None:
+            resolved, _used_default = resolve_preview_dir(str(self._preview_dir_override), create=True)
+        else:
+            raw = self.get_preview_cache_dir_setting()
+            resolved, _used_default = resolve_preview_dir(raw or None, create=True)
+        self.preview_dir = resolved
+        ensure_preview_structure(self.preview_dir)
+
+    def get_preview_cache_dir_setting(self) -> str:
+        raw = self.get_setting("preview_cache_dir", "")
+        return str(raw or "").strip()
+
+    def set_preview_cache_dir(self, path: str | None) -> None:
+        text = str(path or "").strip()
+        self.set_setting("preview_cache_dir", text)
+
+    def get_preview_dir_effective(self) -> Path:
+        return self.preview_dir.resolve(strict=False)
+
+    def iter_thumbnail_uris(self, *, limit: int | None = None) -> list[str]:
+        uris: list[str] = []
+        with self._connection() as conn:
+            book_sql = "SELECT thumbnail_path FROM books WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ''"
+            comic_sql = "SELECT thumbnail_path FROM comics WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ''"
+            if limit is not None and limit > 0:
+                book_sql += f" LIMIT {int(limit)}"
+                comic_sql += f" LIMIT {int(limit)}"
+            for row in conn.execute(book_sql).fetchall():
+                uris.append(str(row["thumbnail_path"]))
+            for row in conn.execute(comic_sql).fetchall():
+                uris.append(str(row["thumbnail_path"]))
+        return uris
+
+    def rewrite_thumbnail_uris_for_root_move(self, old_root: Path, new_root: Path) -> int:
+        """Rewrite books/comics thumbnail_path URIs that live under old_root to new_root."""
+        from bookhub.library.preview_cache_migrate import rewire_thumbnail_uri
+
+        rewritten = 0
+        old_resolved = Path(old_root).resolve(strict=False)
+        new_resolved = Path(new_root).resolve(strict=False)
+        with self._connection() as conn:
+            for table in ("books", "comics"):
+                rows = conn.execute(
+                    f"SELECT id, thumbnail_path FROM {table} "  # noqa: S608
+                    "WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ''"
+                ).fetchall()
+                for row in rows:
+                    old_uri = str(row["thumbnail_path"] or "")
+                    new_uri = rewire_thumbnail_uri(old_uri, old_resolved, new_resolved)
+                    if new_uri is None or new_uri == old_uri:
+                        continue
+                    conn.execute(
+                        f"UPDATE {table} SET thumbnail_path = ?, updated_at = ? WHERE id = ?",  # noqa: S608
+                        (new_uri, now_utc_iso(), int(row["id"])),
+                    )
+                    rewritten += 1
+        return rewritten
 
     def purge_marked_missing_records(self) -> int:
         """Delete legacy is_missing=1 rows (product rule: missing sources are removed, not restored)."""
@@ -353,6 +417,8 @@ class LibraryRepository:
             self.set_setting("comic_sort_order_main", "folder_mtime_desc")
         if self.get_setting("comic_sort_order_fav", None) is None:
             self.set_setting("comic_sort_order_fav", "folder_mtime_desc")
+        if self.get_setting("preview_cache_dir", None) is None:
+            self.set_setting("preview_cache_dir", "")
         with self._connection() as conn:
             self._cleanup_orphan_links(conn)
 

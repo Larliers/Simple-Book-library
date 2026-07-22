@@ -20,6 +20,38 @@
 }
 ```
 
+## 格式模块（2026-07-18）
+
+### library_format_extractors
+```json
+{
+  "module_name": "library_format_extractors",
+  "owner_agent": "indexer-agent",
+  "status": "active",
+  "purpose": "Library 新格式元数据与封面提取（html/md/fb2/docx）",
+  "input": ["file_path", "extension"],
+  "output": ["ParsedMetadata", "thumbnail_file_uri"],
+  "upstream": ["scanner.scan_roots"],
+  "downstream": ["LibraryRepository.upsert_book", "thumbnail_tasks"],
+  "notes": "formats/registry.py 为后缀、元数据提取与缩略图生成的唯一注册入口（延迟导入）；HTML 不做浏览器整页渲染；依赖 python-docx==1.1.2 / lxml==6.1.1"
+}
+```
+
+### comic_cbz_scanner
+```json
+{
+  "module_name": "comic_cbz_scanner",
+  "owner_agent": "indexer-agent",
+  "status": "active",
+  "purpose": "在 comic root 内识别 CBZ 归档为一本漫画并生成封面占位",
+  "input": ["comic_roots", "comic_scan_strategy", "title_conflict_policy"],
+  "output": ["comic upsert payload", "scan_metrics"],
+  "upstream": ["ScanWorker"],
+  "downstream": ["LibraryRepository.upsert_comic", "thumbnail_generator"],
+  "notes": "path 为 CBZ 文件；cover_image_path 形如 path::member；CBR 非目标"
+}
+```
+
 ## 初始模块示例
 
 ### comic_folder_scanner

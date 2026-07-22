@@ -3,8 +3,10 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 import sys
+from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -162,6 +164,49 @@ class ComicPreviewPipelineTests(unittest.TestCase):
             self.assertEqual(img.mode, "RGB")
             # First GIF frame is red.
             self.assertEqual(img.getpixel((40, 50))[:3], (255, 0, 0))
+
+    def test_unchanged_cbz_reuses_cached_cover_without_opening_archive(self) -> None:
+        comic_root = self.tmp_path / "comic_root"
+        comic_root.mkdir()
+        page = self.tmp_path / "001.png"
+        Image.new("RGB", (80, 120), color=(40, 70, 100)).save(page)
+        archive = comic_root / "cached.cbz"
+        with zipfile.ZipFile(archive, "w") as zip_file:
+            zip_file.write(page, "001.png")
+        request = ComicScanRequest(roots=[ComicScanRoot(path=str(comic_root))], placeholder_copy_enabled=True)
+        first = scan_comic_roots(self.repo, request)
+        self.assertEqual(first.comic_added_count, 1)
+
+        with patch("bookhub.library.scanner.read_cbz_cover_bytes", side_effect=AssertionError("archive should not reopen")):
+            second = scan_comic_roots(self.repo, request)
+
+        self.assertEqual(second.comic_errors, [])
+        self.assertEqual(second.comic_thumbnail_enqueued_count, 0)
+
+    def test_regeneration_never_deletes_worker_path_outside_preview(self) -> None:
+        comic_root = self.tmp_path / "comic_root"
+        chapter = comic_root / "chapter"
+        chapter.mkdir(parents=True)
+        Image.new("RGB", (80, 120), color=(20, 60, 90)).save(chapter / "001.png")
+        scan_comic_roots(
+            self.repo,
+            ComicScanRequest(roots=[ComicScanRoot(path=str(comic_root))], placeholder_copy_enabled=False),
+        )
+        outside = self.tmp_path / "outside.png"
+        outside.write_bytes(b"must remain")
+        safe_thumbnail = (self.repo.preview_dir / "comic" / "compressed" / "safe.webp").as_uri()
+        payload = {
+            "status": "ok",
+            "thumbnail_uri": safe_thumbnail,
+            "cover_fingerprint": "test",
+            "original_path": str(outside),
+        }
+
+        with patch("bookhub.library.thumbnail_tasks._render_comic_thumbnail", return_value=payload):
+            result = regenerate_comic_thumbnails(self.repo, workers=1)
+
+        self.assertEqual(result.succeeded, 1)
+        self.assertTrue(outside.exists())
 
 
 if __name__ == "__main__":

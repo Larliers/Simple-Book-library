@@ -39,8 +39,8 @@ def _fake_thumbnail(
 def _patched_library_scan(metadata: ParsedMetadata):
     with (
         mock.patch("bookhub.library.scanner._probe_pdf_backend", return_value=(True, None)),
-        mock.patch("bookhub.library.scanner._extract_metadata_by_extension", return_value=metadata),
-        mock.patch("bookhub.library.scanner._build_thumbnail_by_extension", side_effect=_fake_thumbnail),
+        mock.patch("bookhub.library.scanner.extract_metadata_by_extension", return_value=metadata),
+        mock.patch("bookhub.library.scanner.build_thumbnail_by_extension", side_effect=_fake_thumbnail),
     ):
         yield
 

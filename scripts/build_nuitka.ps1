@@ -13,18 +13,26 @@ $CacheDir = Join-Path $ProjectRoot "build\nuitka-cache"
 $SitePackages = Join-Path $ProjectRoot ".venv\Lib\site-packages"
 $FitzPackage = Join-Path $SitePackages "fitz"
 $PyMuPDFPackage = Join-Path $SitePackages "pymupdf"
+$DocxPackage = Join-Path $SitePackages "docx"
+$LxmlPackage = Join-Path $SitePackages "lxml"
 
 if (-not (Test-Path $Python)) {
     throw "Missing virtualenv Python: $Python"
 }
 if (-not (Test-Path $Icon)) {
-    throw "Missing exe icon: $Icon"
+    throw "Missing app icon: $Icon"
 }
 if (-not (Test-Path $FitzPackage)) {
     throw "Missing PyMuPDF compatibility package: $FitzPackage"
 }
 if (-not (Test-Path $PyMuPDFPackage)) {
     throw "Missing PyMuPDF package: $PyMuPDFPackage"
+}
+if (-not (Test-Path $DocxPackage)) {
+    throw "Missing python-docx package: $DocxPackage"
+}
+if (-not (Test-Path $LxmlPackage)) {
+    throw "Missing lxml package: $LxmlPackage"
 }
 
 $ModeArgs = @("--standalone")
@@ -50,6 +58,8 @@ $ArgsList = @(
     "--include-qt-plugins=all",
     "--include-raw-dir=$FitzPackage=fitz",
     "--include-raw-dir=$PyMuPDFPackage=pymupdf",
+    "--include-package=docx",
+    "--include-package=lxml",
     "--nofollow-import-to=fitz",
     "--nofollow-import-to=pymupdf",
     "--nofollow-import-to=pymupdf.*",

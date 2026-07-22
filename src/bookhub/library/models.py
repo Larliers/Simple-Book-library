@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal
 
 HASH_STRATEGY_SHA256 = "sha256"
@@ -25,9 +26,21 @@ ThumbnailTaskKind = Literal["cleanup", "regenerate", "regenerate_missing"]
 ScanScope = Literal["library", "comic", "text", "all"]
 ThumbnailScope = Literal["library", "comic"]
 
-SUPPORTED_EXTENSIONS = (".pdf", ".epub")
+# Backwards-compatible export. Runtime support checks delegate to the registry
+# below, avoiding a package-initialization cycle with formats.cbz.
+SUPPORTED_EXTENSIONS = (
+    ".pdf", ".epub", ".html", ".htm", ".md", ".markdown", ".fb2", ".fb2.zip", ".docx",
+)
 COMIC_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff")
+COMIC_ARCHIVE_EXTENSIONS = (".cbz",)
 TEXT_FILE_EXTENSION = ".txt"
+FB2_ZIP_SUFFIX = ".fb2.zip"
+
+
+def is_supported_library_file(path: str | Path) -> bool:
+    from bookhub.library.formats.registry import is_supported_library_file as _is_supported
+
+    return _is_supported(path)
 DEFAULT_TEXT_PREVIEW_CHARS = 1200
 TEXT_PREVIEW_CHAR_OPTIONS = (600, 1200, 2000, 4000)
 
@@ -76,7 +89,7 @@ class FingerprintBundle:
 class ScanConflict:
     file_name: str
     existing_path: str
-    existing_title: str
+    existing_title: str = ""
     incoming_path: str = ""
 
     def as_dict(self) -> dict[str, str]:

@@ -1,0 +1,3 @@
+[2026-07-18 20:12:58] missing_removed | type=comic_archive | title=MyComic | path=C:\Users\83023\AppData\Local\Temp\tmpkvq0fh5h\comics\MyComic.cbz | reason=source missing during scan
+[2026-07-18 20:13:11] missing_removed | type=comic_archive | title=MyComic | path=C:\Users\83023\AppData\Local\Temp\tmpbimt6xbo\comics\MyComic.cbz | reason=source missing during scan
+[2026-07-18 20:14:35] missing_removed | type=comic_archive | title=MyComic | path=C:\Users\83023\AppData\Local\Temp\tmp5_dzs5hv\comics\MyComic.cbz | reason=source missing during scan

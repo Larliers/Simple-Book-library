@@ -5,5 +5,7 @@ loguru==0.7.2
 python-dotenv==1.0.1
 PyMuPDF==1.24.10
 charset-normalizer==3.4.0
+python-docx==1.1.2
+lxml==6.1.1
 Nuitka==4.1.2
 # Dev / tests: see requirements-dev.txt (pytest)
