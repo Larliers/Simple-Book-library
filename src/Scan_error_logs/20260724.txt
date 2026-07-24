@@ -1,0 +1,17 @@
+[2026-07-24 12:00:08] conflict=chs | source=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\chs | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.11\Comic\CHS
+[2026-07-24 12:00:08] conflict=eng | source=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\eng | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.11\Comic\ENG
+[2026-07-24 12:00:08] conflict=no text | source=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\no text | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.11\Comic\NO TEXT
+[2026-07-24 12:00:08] conflict=CHS | source=F:\Censored\Censored\BZ\BZ\Lingdong\2024.11\Comic\CHS | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\chs
+[2026-07-24 12:00:08] conflict=ENG | source=F:\Censored\Censored\BZ\BZ\Lingdong\2024.11\Comic\ENG | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\eng
+[2026-07-24 12:00:08] conflict=NO TEXT | source=F:\Censored\Censored\BZ\BZ\Lingdong\2024.11\Comic\NO TEXT | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\no text
+[2026-07-24 12:00:08] conflict=CHS | source=F:\Censored\Censored\BZ\BZ\Lingdong\2024年7月\Comic\CHS | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\chs
+[2026-07-24 12:00:08] conflict=ENG | source=F:\Censored\Censored\BZ\BZ\Lingdong\2024年7月\Comic\ENG | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\eng
+[2026-07-24 12:00:08] conflict=NO TEXT | source=F:\Censored\Censored\BZ\BZ\Lingdong\2024年7月\Comic\NO TEXT | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\no text
+[2026-07-24 12:00:08] conflict=CHS | source=F:\Censored\Censored\BZ\BZ\Lingdong\[Lindong] 2023 November - Chief Bogo\JPG\CHS | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\chs
+[2026-07-24 12:00:08] conflict=ENG | source=F:\Censored\Censored\BZ\BZ\Lingdong\[Lindong] 2023 November - Chief Bogo\JPG\ENG | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\eng
+[2026-07-24 12:00:08] conflict=CHS | source=F:\Censored\Censored\BZ\BZ\Lingdong\Bakal, Ornn, Boar\8\BAKAL\CHS | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\chs
+[2026-07-24 12:00:08] conflict=ENG | source=F:\Censored\Censored\BZ\BZ\Lingdong\Bakal, Ornn, Boar\8\BAKAL\ENG | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\eng
+[2026-07-24 12:00:08] conflict=NO TEXT | source=F:\Censored\Censored\BZ\BZ\Lingdong\Bakal, Ornn, Boar\8\BAKAL\NO TEXT | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\no text
+[2026-07-24 12:00:08] conflict=CHS | source=F:\Censored\Censored\BZ\BZ\Lingdong\Lindong Forging Desires comic and animations\comic\CHS | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\chs
+[2026-07-24 12:00:08] conflict=ENG | source=F:\Censored\Censored\BZ\BZ\Lingdong\Lindong Forging Desires comic and animations\comic\ENG | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\eng
+[2026-07-24 12:00:08] conflict=NO TEXT | source=F:\Censored\Censored\BZ\BZ\Lingdong\Lindong Forging Desires comic and animations\comic\NO TEXT | existing=F:\Censored\Censored\BZ\BZ\Lingdong\2024.06\comic\no text

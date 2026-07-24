@@ -10,7 +10,7 @@ from bookhub.library.media_sanitizer import sanitize_image_for_ui
 from bookhub.library.formats.registry import get_library_format_handler
 from bookhub.library.metadata import regenerate_thumbnail_for_record
 from bookhub.library.models import ThumbnailTaskResult
-from bookhub.library.formats.cbz import read_cbz_cover_bytes
+from bookhub.library.formats.cbz import prepare_cbz_for_external_viewer, read_cbz_cover_bytes
 from bookhub.library.preview_cache_migrate import safe_unlink_under_preview
 from bookhub.library.preview_paths import build_preview_path, is_preview_variant_uri, uri_to_path
 from bookhub.library.repository import LibraryRepository
@@ -37,6 +37,18 @@ def _materialize_comic_cover_file(preview_dir: Path, record: dict[str, object]) 
         original_path.parent.mkdir(parents=True, exist_ok=True)
         original_path.write_bytes(cover_bytes)
         return original_path
+    source = Path(cover_key)
+    if source.exists() and source.is_file():
+        return source
+    return None
+
+
+def resolve_comic_open_path(preview_dir: Path, record: dict[str, object]) -> Path | None:
+    """Return a local image path suitable for external open (folder comic or CBZ)."""
+    cover_key = str(record.get("cover_image_path") or "")
+    comic_path = Path(str(record.get("path") or ""))
+    if comic_path.suffix.lower() == ".cbz":
+        return prepare_cbz_for_external_viewer(comic_path, preview_dir)
     source = Path(cover_key)
     if source.exists() and source.is_file():
         return source

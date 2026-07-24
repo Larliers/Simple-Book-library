@@ -14,6 +14,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from bookhub.library.formats.zip_safety import ZipBombError, open_zip_safely  # noqa: E402
+from bookhub.library.formats.cbz import prepare_cbz_for_external_viewer  # noqa: E402
 from bookhub.library.metadata import (  # noqa: E402
     build_thumbnail_by_extension,
     extract_metadata_by_extension,
@@ -195,6 +196,29 @@ class ComicCbzTests(unittest.TestCase):
             )
             self.assertGreaterEqual(removed.removed_missing_comic_count, 1)
             self.assertEqual(repo.list_comics(include_missing=False), [])
+
+    def test_prepare_cbz_for_external_viewer_extracts_pages_for_viewer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            page_one = base / "001.png"
+            page_two = base / "002.png"
+            _write_png(page_one, color=(200, 80, 80))
+            _write_png(page_two, color=(80, 200, 80))
+            cbz = base / "MyComic.cbz"
+            with zipfile.ZipFile(cbz, "w") as zf:
+                zf.write(page_one, "001.png")
+                zf.write(page_two, "002.png")
+            preview = base / "preview"
+            first_page = prepare_cbz_for_external_viewer(cbz, preview)
+            self.assertIsNotNone(first_page)
+            assert first_page is not None
+            self.assertTrue(first_page.exists())
+            self.assertEqual(first_page.name, "001.png")
+            normalized = str(first_page).replace("\\", "/").lower()
+            self.assertIn("/comic/read/", normalized)
+            cache_dir = first_page.parent
+            self.assertTrue((cache_dir / "002.png").is_file())
+            self.assertTrue((cache_dir / ".cbz_source").is_file())
 
 
 if __name__ == "__main__":

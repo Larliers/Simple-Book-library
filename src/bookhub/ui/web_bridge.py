@@ -11,6 +11,7 @@ from urllib.parse import quote
 from PySide6.QtCore import QObject, Signal, Slot
 
 from bookhub.i18n import tr
+from bookhub.library.thumbnail_tasks import resolve_comic_open_path
 from bookhub.ui.viewmodels.library_viewmodel import LibraryViewModel
 from bookhub.ui.web_scheme import to_local_path
 
@@ -649,8 +650,16 @@ class UiBridge(QObject):
         detail = self._detail_for(page, resource_id)
         if not detail:
             return
-        target = detail.get("coverImage") or detail.get("path") if page in {PAGE_COMIC, PAGE_COMIC_FAV} else detail.get("path")
-        self._open_external(str(target or ""))
+        if page in {PAGE_COMIC, PAGE_COMIC_FAV}:
+            record = {
+                "path": detail.get("path") or "",
+                "cover_image_path": detail.get("coverImage") or "",
+            }
+            resolved = resolve_comic_open_path(self._repo.preview_dir, record)
+            target = str(resolved) if resolved else str(detail.get("path") or "")
+        else:
+            target = str(detail.get("path") or "")
+        self._open_external(target)
 
     def _open_external(self, path: str) -> None:
         file_path = Path(path).expanduser()

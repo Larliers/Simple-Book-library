@@ -5,7 +5,9 @@ import os
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -18,7 +20,9 @@ try:
     from PySide6.QtWidgets import QApplication
 
     from bookhub.library import LibraryRepository
-    from bookhub.ui.web_bridge import UiBridge, NAV_ITEMS
+    from bookhub.library.models import ComicScanRequest, ComicScanRoot
+    from bookhub.library.scanner import scan_comic_roots
+    from bookhub.ui.web_bridge import PAGE_COMIC, UiBridge, NAV_ITEMS
     from bookhub.ui.web_scheme import WEB_ROOT, to_local_path
 
     QT_AVAILABLE = True
@@ -212,6 +216,79 @@ class WebBridgeSmokeTests(unittest.TestCase):
         converted = to_local_path("file:///C:/tmp/cover.webp")
         self.assertIsNotNone(converted)
         self.assertTrue(converted.lower().endswith("cover.webp"))
+
+    def test_open_resource_cbz_resolves_materialized_cover_path(self) -> None:
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "comics"
+            root.mkdir()
+            page = base / "001.png"
+            Image.new("RGB", (80, 120), color=(200, 80, 80)).save(page, format="PNG")
+            cbz = root / "MyComic.cbz"
+            with zipfile.ZipFile(cbz, "w") as zf:
+                zf.write(page, "001.png")
+            preview = base / "preview"
+            repo = LibraryRepository(db_path=str(base / "library.db"), preview_dir=preview)
+            repo.add_comic_root(root)
+            scan_comic_roots(
+                repo,
+                ComicScanRequest(roots=[ComicScanRoot(path=str(root))], max_depth=3, placeholder_copy_enabled=True),
+            )
+            comics = repo.list_comics(include_missing=False)
+            self.assertEqual(len(comics), 1)
+            bridge = UiBridge(repo, set())
+            opened: list[str] = []
+
+            def capture_open(path: str) -> None:
+                opened.append(path)
+
+            with patch.object(bridge, "_open_external", side_effect=capture_open):
+                bridge.openResource(PAGE_COMIC, str(comics[0]["resource_id"]))
+
+            self.assertEqual(len(opened), 1)
+            opened_path = Path(opened[0])
+            self.assertTrue(opened_path.exists())
+            self.assertTrue(opened_path.is_file())
+            self.assertNotIn("::", opened[0])
+            self.assertEqual(opened_path.name, "001.png")
+            normalized = opened[0].replace("\\", "/").lower()
+            self.assertIn("/comic/read/", normalized)
+            self.assertTrue((opened_path.parent / "001.png").is_file())
+
+    def test_open_resource_folder_comic_uses_source_image(self) -> None:
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            comic_dir = base / "MyFolderComic"
+            comic_dir.mkdir()
+            cover = comic_dir / "001.png"
+            Image.new("RGB", (80, 120), color=(120, 160, 200)).save(cover, format="PNG")
+            preview = base / "preview"
+            repo = LibraryRepository(db_path=str(base / "library.db"), preview_dir=preview)
+            normalized = repo.normalize_path(comic_dir)
+            repo.upsert_comic(
+                {
+                    "path": normalized,
+                    "title": "MyFolderComic",
+                    "cover_image_path": str(cover),
+                    "image_count": 1,
+                }
+            )
+            comics = repo.list_comics(include_missing=False)
+            self.assertEqual(len(comics), 1)
+            bridge = UiBridge(repo, set())
+            opened: list[str] = []
+
+            def capture_open(path: str) -> None:
+                opened.append(path)
+
+            with patch.object(bridge, "_open_external", side_effect=capture_open):
+                bridge.openResource(PAGE_COMIC, str(comics[0]["resource_id"]))
+
+            self.assertEqual(opened, [str(cover)])
 
 
 class SettingsUiStructureTests(unittest.TestCase):
