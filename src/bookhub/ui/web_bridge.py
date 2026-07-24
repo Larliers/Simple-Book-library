@@ -8,9 +8,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from PySide6.QtCore import QObject, Signal, Slot
+from PySide6.QtCore import QObject, QUrl, Signal, Slot
+from PySide6.QtGui import QDesktopServices
 
 from bookhub.i18n import tr
+from bookhub.version import APP_VERSION
 from bookhub.library.thumbnail_tasks import resolve_comic_open_path
 from bookhub.ui.viewmodels.library_viewmodel import LibraryViewModel
 from bookhub.ui.web_scheme import to_local_path
@@ -276,6 +278,19 @@ def _web_strings() -> dict[str, str]:
         ("settings.tasks.regen_comic", "Regenerate Comic Thumbnails"),
         ("settings.tasks.reload_fonts", "Reload Fonts"),
         ("settings.errors.refresh", "Refresh"),
+        ("settings.about.title", "About"),
+        ("settings.about.version", "Current version: {version}"),
+        ("settings.about.check_update", "Check for updates"),
+        ("settings.about.checking", "Checking…"),
+        ("settings.about.up_to_date", "Up to date"),
+        ("settings.about.up_to_date_msg", "You are running the latest release."),
+        ("settings.about.update_available", "Update available"),
+        ("settings.about.update_msg", "A new version {latestVersion} is available.\nYou are on {currentVersion}."),
+        ("settings.about.go_github", "Go to GitHub"),
+        ("settings.about.later", "Later"),
+        ("settings.about.error", "Update check failed"),
+        ("settings.about.busy_title", "Busy"),
+        ("settings.about.busy_msg", "An update check is already running."),
         ("add_tag.title", "Add Tag"),
         ("empty.default", "Nothing here yet."),
     ]
@@ -291,6 +306,7 @@ class UiBridge(QObject):
     errorLogsChanged = Signal(str)
     languageChanged = Signal(str)
     textRulesOpen = Signal(str)
+    updateCheckResult = Signal(str)
 
     def __init__(self, repository, allowed_images: set[str], parent=None) -> None:
         super().__init__(parent)
@@ -528,6 +544,7 @@ class UiBridge(QObject):
             "theme": self._theme_payload(),
             "uiSkin": self._ui_skin(),
             "scanReport": repo.read_scan_report(),
+            "appVersion": APP_VERSION,
         }
 
     _VALID_UI_SKINS = frozenset({"glass", "vaporwave"})
@@ -1117,3 +1134,17 @@ class UiBridge(QObject):
     def getErrorLogs(self) -> str:
         from bookhub.library.error_logs import read_latest_log_text
         return read_latest_log_text()
+
+    @Slot()
+    def checkForUpdates(self) -> None:
+        if self._host is not None and hasattr(self._host, "check_for_updates"):
+            self._host.check_for_updates()
+
+    @Slot(str)
+    def openExternalUrl(self, url: str) -> None:
+        target = str(url or "").strip()
+        if not target.startswith("https://github.com/"):
+            self.emit_toast(tr("settings.about.error", "Update check failed"), tr("open.failed_msg", "File or folder not found."), "warning")
+            return
+        if not QDesktopServices.openUrl(QUrl(target)):
+            self.emit_toast(tr("settings.about.error", "Update check failed"), target, "warning")

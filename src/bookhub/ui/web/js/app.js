@@ -83,8 +83,36 @@ function wireSignals() {
   b.toast.connect((json) => { const d = safeParse(json); if (d) showToast(d.title, d.message, d.kind); });
   b.scanProgress.connect((json) => { const d = safeParse(json); if (d) updateScanProgress(d); });
   b.scanState.connect((json) => { const d = safeParse(json); if (d) updateScanState(d); });
-  b.settingsChanged.connect((json) => { const d = safeParse(json); if (d) { State.settings = d; if (d.theme) applyThemeConfig(d.theme); if (State.currentPage === "settings") renderSettings(); } });
+  b.settingsChanged.connect((json) => {
+    const d = safeParse(json);
+    if (!d) return;
+    State.settings = d;
+    if (d.theme) applyThemeConfig(d.theme);
+    if (d.uiSkin) State.uiSkin = normalizeUiSkin(d.uiSkin);
+    if (State.currentPage === "settings") renderSettings();
+  });
   b.errorLogsChanged.connect((text) => { const box = document.getElementById("errorLogBox"); if (box) box.textContent = text; });
+  if (b.updateCheckResult && b.updateCheckResult.connect) {
+    b.updateCheckResult.connect((json) => {
+      const d = safeParse(json);
+      if (!d) return;
+      resetUpdateCheckButton();
+      if (d.status === "update_available") openUpdateModal(d);
+      else if (d.status === "up_to_date") {
+        showToast(
+          t("settings.about.up_to_date", "Up to date"),
+          t("settings.about.up_to_date_msg", "You are running the latest release."),
+          "info"
+        );
+      } else {
+        showToast(
+          t("settings.about.error", "Update check failed"),
+          d.message || t("settings.about.error", "Update check failed"),
+          "warning"
+        );
+      }
+    });
+  }
   if (typeof wireTextRulesSignal === "function") wireTextRulesSignal(b);
 }
 
@@ -1213,6 +1241,62 @@ function renderSettingsGeneral(panel) {
   toggles.appendChild(switchField("settings.comic.auto_thumb_after_scan", "autoGenerateComicThumbs", s.autoGenerateComicThumbs));
   card.appendChild(toggles);
   panel.appendChild(card);
+  renderSettingsAbout(panel);
+}
+
+function renderSettingsAbout(panel) {
+  const s = State.settings;
+  const card = settingCard(t("settings.about.title", "About"));
+  card.appendChild(elem("p", "small-note", fmt(
+    t("settings.about.version", "Current version: {version}"),
+    { version: String(s.appVersion || "—") }
+  )));
+  const actions = elem("div", "detail-actions");
+  actions.style.marginTop = "10px";
+  const checkBtn = elem("button", "ghost-btn", t("settings.about.check_update", "Check for updates"));
+  checkBtn.setAttribute("data-update-check-btn", "1");
+  checkBtn.addEventListener("click", () => {
+    if (checkBtn.disabled) return;
+    State._updateCheckBtn = checkBtn;
+    checkBtn.disabled = true;
+    checkBtn.textContent = t("settings.about.checking", "Checking…");
+    State.bridge.checkForUpdates();
+  });
+  actions.appendChild(checkBtn);
+  card.appendChild(actions);
+  panel.appendChild(card);
+}
+
+function resetUpdateCheckButton() {
+  const btn = State._updateCheckBtn || document.querySelector("[data-update-check-btn]");
+  if (!btn) return;
+  btn.disabled = false;
+  btn.textContent = t("settings.about.check_update", "Check for updates");
+  State._updateCheckBtn = null;
+}
+
+function openUpdateModal(data) {
+  openModal((modal, close) => {
+    modalHeader(modal, t("settings.about.update_available", "Update available"), close);
+    modal.appendChild(elem("p", "small-note", fmt(
+      t("settings.about.update_msg", "A new version {latestVersion} is available.\nYou are on {currentVersion}."),
+      {
+        latestVersion: String(data.latestVersion || ""),
+        currentVersion: String(data.currentVersion || ""),
+      }
+    )));
+    const actions = elem("div", "modal-actions");
+    const later = elem("button", "ghost-btn", t("settings.about.later", "Later"));
+    later.addEventListener("click", close);
+    const go = elem("button", "primary-btn", t("settings.about.go_github", "Go to GitHub"));
+    go.addEventListener("click", () => {
+      if (data.url) State.bridge.openExternalUrl(String(data.url));
+      close();
+    });
+    actions.appendChild(later);
+    actions.appendChild(go);
+    modal.appendChild(actions);
+  });
 }
 
 function renderSettingsAppearance(panel) {
@@ -1656,6 +1740,9 @@ function setUiSkin(skin) {
   const normalized = normalizeUiSkin(skin);
   if (normalized === State.uiSkin || !State.bridge) return;
   State.bridge.setUiSkin(normalized);
+  State.uiSkin = normalized;
+  if (State.settings) State.settings.uiSkin = normalized;
+  if (State.currentPage === "settings") renderSettings();
   showToast(
     t("toast.ui_skin_restart_required", "Restart required"),
     t("settings.ui_skin.restart_hint", "Please restart the app to apply the new UI style."),

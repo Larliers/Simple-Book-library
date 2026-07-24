@@ -5,6 +5,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$AppVersion = (Select-String -Path (Join-Path $ProjectRoot "src\bookhub\version.py") -Pattern 'APP_VERSION = "(.+)"').Matches[0].Groups[1].Value
 $Python = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 $Entry = Join-Path $ProjectRoot "src\main.py"
 $Icon = Join-Path $ProjectRoot "src\assets\app_icon_bookcase.ico"
@@ -51,6 +52,8 @@ $ArgsList = @(
     "--lto=no",
     "--windows-console-mode=disable",
     "--windows-icon-from-ico=$Icon",
+    "--product-version=$AppVersion",
+    "--file-version=$AppVersion",
     "--output-dir=$OutputDir",
     "--include-data-dir=src\assets=assets",
     "--include-data-dir=src\bookhub\i18n\locales=bookhub\i18n\locales",

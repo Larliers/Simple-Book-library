@@ -21,6 +21,7 @@ from bookhub.i18n import language_manager, tr
 from bookhub.library import LibraryRepository, ScanWorker, ThumbnailTaskWorker
 from bookhub.library.error_logs import append_conflict_if_new, read_latest_log_text
 from bookhub.library.preview_cache_worker import PreviewCacheMigrateWorker
+from bookhub.library.update_check_worker import UpdateCheckWorker
 from bookhub.library.preview_paths import ensure_preview_structure
 from bookhub.ui.resources.font_runtime import (
     DEFAULT_PROJECT_FONTS_DIR,
@@ -59,6 +60,7 @@ class WebAppWindow(QMainWindow):
         self._scan_worker: ScanWorker | None = None
         self._thumbnail_worker: ThumbnailTaskWorker | None = None
         self._preview_cache_worker: PreviewCacheMigrateWorker | None = None
+        self._update_check_worker: UpdateCheckWorker | None = None
         self._active_thumbnail_task_kind: str | None = None
         self._active_thumbnail_task_scope: str | None = None
         self._pending_auto_comic_thumbnail = False
@@ -716,3 +718,23 @@ class WebAppWindow(QMainWindow):
 
     def _on_preview_cache_finished(self) -> None:
         self._preview_cache_worker = None
+
+    def check_for_updates(self) -> None:
+        if self._update_check_worker is not None and self._update_check_worker.isRunning():
+            self._bridge.emit_toast(
+                tr("settings.about.busy_title", "Busy"),
+                tr("settings.about.busy_msg", "An update check is already running."),
+                "warning",
+            )
+            return
+        worker = UpdateCheckWorker(parent=self)
+        worker.finished.connect(self._on_update_check_finished)
+        worker.finished.connect(self._on_update_check_worker_finished)
+        self._update_check_worker = worker
+        worker.start()
+
+    def _on_update_check_finished(self, result_json: str) -> None:
+        self._bridge.updateCheckResult.emit(result_json)
+
+    def _on_update_check_worker_finished(self) -> None:
+        self._update_check_worker = None

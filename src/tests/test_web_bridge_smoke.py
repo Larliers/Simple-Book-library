@@ -150,6 +150,17 @@ class WebBridgeSmokeTests(unittest.TestCase):
         self.assertFalse(settings["perRootScanStrategyEnabled"])
         self.assertEqual(settings["comicScanStrategy"], "snapshot")
 
+    def test_settings_payload_includes_app_version(self) -> None:
+        bridge = self._make_bridge()
+        settings = json.loads(bridge.getBootstrap())["settings"]
+        self.assertIn("appVersion", settings)
+        self.assertTrue(str(settings["appVersion"]).strip())
+
+    def test_update_check_slots_exist(self) -> None:
+        bridge = self._make_bridge()
+        self.assertTrue(callable(getattr(bridge, "checkForUpdates", None)))
+        self.assertTrue(callable(getattr(bridge, "openExternalUrl", None)))
+
     def test_edit_cover_slot_exists(self) -> None:
         bridge = self._make_bridge()
         self.assertTrue(callable(getattr(bridge, "editCover", None)))
@@ -326,6 +337,11 @@ class SettingsUiStructureTests(unittest.TestCase):
         self.assertIn("scanProgressBar", app_js)
         self.assertIn("scanProgressLabel", app_js)
         self.assertIn("scanSummaryBox", app_js)
+
+    def test_set_ui_skin_updates_active_segment(self) -> None:
+        app_js = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("State.uiSkin = normalized;", app_js)
+        self.assertIn("if (State.currentPage === \"settings\") renderSettings();", app_js)
 
 
 if __name__ == "__main__":
