@@ -12,6 +12,10 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 # Match CSS --bg-0 so Chromium clear-on-activate does not flash pure white.
 _WEB_BG_DAY = QColor("#eef5f7")
 _WEB_BG_NIGHT = QColor("#101925")
+_WEB_BG_BY_SKIN = {
+    "glass": {"day": _WEB_BG_DAY, "night": _WEB_BG_NIGHT},
+    "vaporwave": {"day": QColor("#251742"), "night": QColor("#180935")},
+}
 
 from bookhub.i18n import language_manager, tr
 from bookhub.library import LibraryRepository, ScanWorker, ThumbnailTaskWorker
@@ -102,8 +106,10 @@ class WebAppWindow(QMainWindow):
         if self._repository.get_scan_on_startup():
             QTimer.singleShot(400, lambda: self.start_scan("all"))
 
-    def set_web_page_background(self, theme: str) -> None:
-        color = _WEB_BG_NIGHT if theme == "night" else _WEB_BG_DAY
+    def set_web_page_background(self, skin: str, theme: str) -> None:
+        normalized_skin = skin if skin in _WEB_BG_BY_SKIN else "glass"
+        normalized_theme = "night" if theme == "night" else "day"
+        color = _WEB_BG_BY_SKIN[normalized_skin][normalized_theme]
         self._view.page().setBackgroundColor(color)
 
     @staticmethod

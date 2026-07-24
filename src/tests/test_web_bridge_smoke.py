@@ -64,8 +64,31 @@ class WebBridgeSmokeTests(unittest.TestCase):
         self.assertEqual(theme["mode"], "night")
         self.assertEqual(theme["nightStart"], "21:30")
 
+    def test_ui_skin_persist(self) -> None:
+        bridge = self._make_bridge()
+        self.assertEqual(json.loads(bridge.getBootstrap())["settings"]["uiSkin"], "glass")
+        bridge.setUiSkin("vaporwave")
+        self.assertEqual(json.loads(bridge.getBootstrap())["settings"]["uiSkin"], "vaporwave")
+        bridge.setUiSkin("invalid")
+        self.assertEqual(json.loads(bridge.getBootstrap())["settings"]["uiSkin"], "vaporwave")
+
     def test_web_assets_present(self) -> None:
-        for rel in ("index.html", "css/app.css", "js/app.js", "js/qwebchannel.js"):
+        for rel in (
+            "index.html",
+            "css/app.css",
+            "css/base.css",
+            "css/skins/glass/tokens.css",
+            "css/skins/glass/components.css",
+            "css/skins/vaporwave/fonts.css",
+            "css/skins/vaporwave/tokens.css",
+            "css/skins/vaporwave/background.css",
+            "css/skins/vaporwave/layout.css",
+            "css/skins/vaporwave/components.css",
+            "js/app.js",
+            "js/qwebchannel.js",
+            "fonts/Sora-Regular.woff2",
+            "fonts/SpaceMono-Regular.woff2",
+        ):
             self.assertTrue((WEB_ROOT / rel).is_file(), f"missing web asset: {rel}")
 
     def test_collection_rename_delete_roundtrip(self) -> None:

@@ -1,6 +1,6 @@
 ﻿# src 结构说明书（精简且完整）
 
-更新时间：2026-07-18
+更新时间：2026-07-24
 
 ## 1. 文档目标
 - 保留字符串式文件路径结构。
@@ -8,6 +8,29 @@
 - 作为 `src/` 结构与职责的当前事实文档。
 
 ## 2. 字符串式文件路径结构
+
+### 2.1 UI 设计原型（Dev_Document，非运行时）
+```text
+Simple-Book-library-Dev_Document/UI/
+├─ 新UI/
+│  └─ glassmorphism-ui.html          # Glassmorphism 交互画板（单文件内联 CSS/JS）
+├─ Changable_vaporwave_ui/           # 蒸汽波风格静态预览（与 glassmorphism DOM 对等、CSS 独立）
+│  ├─ vaporwave-ui.html              # 入口页：全组件预览 + vw-scene 背景（大气渐变 + 扫描线）
+│  ├─ fonts/                         # Sora/Space Mono woff2（本地，OFL）
+│  ├─ css/
+│  │  ├─ vaporwave-fonts.css         # @font-face 本地字体
+│  │  ├─ vaporwave-tokens.css        # 色板/字体/阴影 CSS 变量（参考 karsyymiras.cc）
+│  │  ├─ vaporwave-background.css   # 大气渐变 + CRT 扫描线（无太阳/透视网格）
+│  │  ├─ vaporwave-layout.css       # app-shell 四列网格与响应式断点
+│  │  └─ vaporwave-components.css    # 侧栏/顶栏/卡片/表格/弹窗/设置/Text Rules 等组件重皮肤
+│  ├─ real-dom-preview.html          # 真实 DOM 镜像验证页：1:1 复刻运行时 index.html/app.js 结构并直连 src 生产 CSS，浏览器内验证皮肤排版（Library/Settings/Modal/Toast/TextRules + 皮肤/昼夜切换），不参与打包
+│  └─ js/
+│     └─ preview.js                 # 视图/Settings·Dialogs·States 面板切换与 Text Rules 假交互
+├─ 旧UI-1.0/                         # 早期 PNG 截图
+└─ 旧UI-2.0/                         # 旧版 HTML/PNG 史料
+```
+
+### 2.2 运行时源码（src）
 ```text
 src/
 ├─ main.py
@@ -163,14 +186,23 @@ src/
 
 ### 3.5 UI 主组件（bookhub/ui）
 - `src/bookhub/ui/__init__.py`：UI 包导出入口。
-- `src/bookhub/ui/web_window.py`：当前主窗口 `WebAppWindow`；承载 `QWebEngineView` + `QWebChannel`，注册 `app://` scheme handler，装配 `UiBridge`；`page.setBackgroundColor` 与主题日/夜底色同步，减轻 Windows 焦点切回时 Chromium 清屏闪白；`web_zoom_factor` 启动 `setZoomFactor` 恢复并以轮询+debounce 写回 `app_settings`；负责后端编排——扫描/缩略图 worker（传入 `preview_dir`）、`PreviewCacheMigrateWorker` 换缓存目录、原生 `QFileDialog` 添加根目录/选缓存目录与编辑封面（写入 `repo.preview_dir`；漫画写 `manual:` fingerprint）、`remove_from_library`（仅删库记录不删磁盘）、`open_text_rules` 转交 Bridge 打开 Web 面板、字体与设置写库（含 `text_encoding_preference`、`perRootScanStrategyEnabled`、`comicScanStrategy`）；扫描完成 Toast 计入 `comic_added_count`，冲突日志优先写 `incoming_path`；忙时再点扫描/缩略图/换缓存会 Toast，并通过 `scanState.kind` 推送忙碌态。
-- `src/bookhub/ui/web/js/app.js`：单一 SPA 壳（侧栏/顶栏/详情常驻）；`#importBtn` → `addRoot("library")`；切页只重建 `#contentArea`；`scheduleRenderPage` + `renderGen` 可取消过期渲染；主内容区封面网格/合集/表格/漫画瀑布流与分页均走视口窗口化（`getBufferScreens`/`getGridColumns`/`measureCoverGridMetrics`/`visibleIndexRange` + `virt-spacer` + scroll/ResizeObserver rAF 合并）；可见 range 未变时跳过 DOM 重建，避免无效重建；`gridColumns` 限制每行封面数以放大单卡占屏、降低同屏解码量；`State.scrollPos` 切页恢复 scrollTop；收藏/漫画 `pageHeadTools` 排序控件；设置含 `viewportBufferScreens`（3–6）与 `gridColumns`（4–12）、`comic_title_conflict_policy` 下拉（都留/跳过新人/保留较新）、`textEncodingPreference` 下拉（简体优先/繁体优先/自动）、General 页 `comicScanStrategy` 下拉（snapshot/full），并在 hash 字段内提示 Fast 漏检风险；路径与扫描任务合并到“路径与扫描”页——顶栏缩略图缓存目录卡片（更改/恢复默认 + `openPreviewCacheConfirmModal` 三模式：migrate/rewire_only/switch_only）、`perRootScanStrategyEnabled` 开关，开启后三类根目录卡片旁「扫描策略」按钮 + `openRootScanStrategyModal` 弹窗（继承全局 / 各类型合法覆盖），经 `setRootScanStrategy` 写库；旧 `tasks` 状态自动归一到 `paths`；设置删路径确认模态；Settings 文本根「Rules」走 Web Text Rules 面板；Tasks 扫描摘要（字段兼容别名并计入漫画新增）；扫描/缩略图忙碌时禁用顶栏与 Settings 全部相关按钮；漫画性能三项开关；右键/详情支持漫画编辑封面与「从书库移除」；页面路由与网格/列表/漫画/合集渲染、详情栏、搜索建议、设置页、Quick Add/合集模态、日/夜主题引擎；全局拦截 Chromium 默认右键。
+- `src/bookhub/ui/web_window.py`：当前主窗口 `WebAppWindow`；`set_web_page_background(skin, theme)` 按 skin×theme 同步底色；`web_zoom_factor` 启动 `setZoomFactor` 恢复并以轮询+debounce 写回 `app_settings`；负责后端编排——扫描/缩略图 worker（传入 `preview_dir`）、`PreviewCacheMigrateWorker` 换缓存目录、原生 `QFileDialog` 添加根目录/选缓存目录与编辑封面（写入 `repo.preview_dir`；漫画写 `manual:` fingerprint）、`remove_from_library`（仅删库记录不删磁盘）、`open_text_rules` 转交 Bridge 打开 Web 面板、字体与设置写库（含 `text_encoding_preference`、`perRootScanStrategyEnabled`、`comicScanStrategy`）；扫描完成 Toast 计入 `comic_added_count`，冲突日志优先写 `incoming_path`；忙时再点扫描/缩略图/换缓存会 Toast，并通过 `scanState.kind` 推送忙碌态。
+- `src/bookhub/ui/web/js/app.js`：单一 SPA 壳；`loadSkinStylesheets`/`setUiSkin` UI 皮肤（Glass/Vaporwave）切换与 vw-scene 挂载（切换后持久化并 Toast 提示重启软件）；`#importBtn` → `addRoot("library")`；切页只重建 `#contentArea`；`scheduleRenderPage` + `renderGen` 可取消过期渲染；主内容区封面网格/合集/表格/漫画瀑布流与分页均走视口窗口化（`getBufferScreens`/`getGridColumns`/`measureCoverGridMetrics`/`visibleIndexRange` + `virt-spacer` + scroll/ResizeObserver rAF 合并）；可见 range 未变时跳过 DOM 重建，避免无效重建；`gridColumns` 限制每行封面数以放大单卡占屏、降低同屏解码量；`State.scrollPos` 切页恢复 scrollTop；收藏/漫画 `pageHeadTools` 排序控件；设置含 `viewportBufferScreens`（3–6）与 `gridColumns`（4–12）、`comic_title_conflict_policy` 下拉（都留/跳过新人/保留较新）、`textEncodingPreference` 下拉（简体优先/繁体优先/自动）、General 页 `comicScanStrategy` 下拉（snapshot/full），并在 hash 字段内提示 Fast 漏检风险；路径与扫描任务合并到“路径与扫描”页——顶栏缩略图缓存目录卡片（更改/恢复默认 + `openPreviewCacheConfirmModal` 三模式：migrate/rewire_only/switch_only）、`perRootScanStrategyEnabled` 开关，开启后三类根目录卡片旁「扫描策略」按钮 + `openRootScanStrategyModal` 弹窗（继承全局 / 各类型合法覆盖），经 `setRootScanStrategy` 写库；旧 `tasks` 状态自动归一到 `paths`；设置删路径确认模态；Settings 文本根「Rules」走 Web Text Rules 面板；Tasks 扫描摘要（字段兼容别名并计入漫画新增）；扫描/缩略图忙碌时禁用顶栏与 Settings 全部相关按钮；漫画性能三项开关；右键/详情支持漫画编辑封面与「从书库移除」；页面路由与网格/列表/漫画/合集渲染、详情栏、搜索建议、设置页、Quick Add/合集模态、日/夜主题引擎；全局拦截 Chromium 默认右键。
 - `src/bookhub/ui/web/js/text_rules.js`：Text Rules 宽屏遮罩三栏编辑器（字段/规则链/步骤/预览）；防抖单样本预览、多样本预览、内置模板、用户预设、常用正则与帮助抽屉；经 Bridge 读写 `rules_json`。`renderTextRulesPanel()` 仅在 `openTextRulesPanel` 打开时构建一次性外壳（`.tr-overlay`/`.tr-host`/header/footer，带入场动画）；此后所有编辑（字段切换、规则/步骤增删移动、source/类别/类型 change、模板/预设）改调用 `renderTrBody()` 仅重建 `.tr-body` 三栏内容并保存/恢复各栏 `scrollTop`，不再重播入场动画；`installTrWheelGuard` 在 host 上拦截落在 `<select>` 的滚轮事件（Windows 悬停滚轮会静默改变原生 select 值并触发 change），`preventDefault` 后手动转发 `deltaY` 给 `.tr-col`/`.tr-drawer-body`，修复滚动时误触发全量重建导致的「白屏/像整页重载」；预览 diag 展示 `detectedEncoding` 与置信度。
-- `src/bookhub/ui/web_bridge.py`：`UiBridge(QObject)` 前后端桥；内置英文回退含“Paths & Scan”、缓存目录与 Fast 指纹风险提示；`setPageSort`；`editCover` / `removeFromLibrary`；settings 含 `previewCacheDir` / `previewCacheDirEffective` / `previewCacheDirDefault` / `perRootScanStrategyEnabled` / `comicScanStrategy` / `viewportBufferScreens` / `gridColumns` / `comicPlaceholderCopy` / `autoGenerateComicThumbs` / `comicThumbnailWorkers` / `comic_title_conflict_policy` / `textEncodingPreference` / `scanReport`；`browsePreviewCacheDir` / `setPreviewCacheDir(path, mode)`；根列表经 `list_roots_with_strategy` / `list_comic_roots_with_strategy` / `list_text_roots_with_rules` 下发 `scan_strategy`；`@Slot setRootScanStrategy(kind, path, strategy)` 写三表覆盖（空串归 NULL）；`openResource` 对漫画页经 `resolve_comic_open_path` 解析首张图片后再外部打开（CBZ 解压全部页到阅读缓存并唤起系统默认看图软件）；`@Slot` 暴露 `getBootstrap/search/getSuggestions/getDetail/openResource/toggleFavorite/openCollection/closeCollection/getTags/getCollections/addTag/removeTag/createCollection/setCollectionMembership/removeFromCollection/editCover/removeFromLibrary/openFolder/setSetting/setThemeSettings/addRoot/removeRoot/openTextRules/getTextRules/previewTextRule/previewTextRulesMulti/saveTextRules/getTextRulePresets/setTextRulePresets/startScan/startThumbnailTask/reloadFonts/getErrorLogs`；`Signal` 推送 `resourcesChanged/toast/scanProgress/scanState/settingsChanged/errorLogsChanged/languageChanged/textRulesOpen`；内部持有 `LibraryViewModel`（库/文本双上下文）并把书籍/文本/漫画/收藏/合集统一构造为前端资源载荷；封面路径写入 scheme 白名单集合；Text Rules 样本路径沙箱于对应 text root；预览载荷透传 `detectedEncoding` / `encodingConfidence`。
+- `src/bookhub/ui/web_bridge.py`：`UiBridge(QObject)` 前后端桥；`ui_skin`（glass|vaporwave）读写与 `setUiSkin`；`setPageBackground(skin, theme)` 同步 WebEngine 底色；内置英文回退含“Paths & Scan”、缓存目录与 Fast 指纹风险提示；`setPageSort`；`editCover` / `removeFromLibrary`；settings 含 `previewCacheDir` / `previewCacheDirEffective` / `previewCacheDirDefault` / `perRootScanStrategyEnabled` / `comicScanStrategy` / `viewportBufferScreens` / `gridColumns` / `comicPlaceholderCopy` / `autoGenerateComicThumbs` / `comicThumbnailWorkers` / `comic_title_conflict_policy` / `textEncodingPreference` / `scanReport`；`browsePreviewCacheDir` / `setPreviewCacheDir(path, mode)`；根列表经 `list_roots_with_strategy` / `list_comic_roots_with_strategy` / `list_text_roots_with_rules` 下发 `scan_strategy`；`@Slot setRootScanStrategy(kind, path, strategy)` 写三表覆盖（空串归 NULL）；`openResource` 对漫画页经 `resolve_comic_open_path` 解析首张图片后再外部打开（CBZ 解压全部页到阅读缓存并唤起系统默认看图软件）；`@Slot` 暴露 `getBootstrap/search/getSuggestions/getDetail/openResource/toggleFavorite/openCollection/closeCollection/getTags/getCollections/addTag/removeTag/createCollection/setCollectionMembership/removeFromCollection/editCover/removeFromLibrary/openFolder/setSetting/setThemeSettings/addRoot/removeRoot/openTextRules/getTextRules/previewTextRule/previewTextRulesMulti/saveTextRules/getTextRulePresets/setTextRulePresets/startScan/startThumbnailTask/reloadFonts/getErrorLogs`；`Signal` 推送 `resourcesChanged/toast/scanProgress/scanState/settingsChanged/errorLogsChanged/languageChanged/textRulesOpen`；内部持有 `LibraryViewModel`（库/文本双上下文）并把书籍/文本/漫画/收藏/合集统一构造为前端资源载荷；封面路径写入 scheme 白名单集合；Text Rules 样本路径沙箱于对应 text root；预览载荷透传 `detectedEncoding` / `encodingConfidence`。
 - `src/bookhub/library/repository.py`：`PRAGMA foreign_keys` + `busy_timeout`；删书/漫画与移根时清关联表；启动 orphan 清理；`hash_strategy` 缺省与非法值回退均为 `quick`；`comic_view_mode` 缺省为 `pagination`；`viewport_buffer_screens` 缺省 3（允许 3–6）；`grid_columns` 缺省 6（允许 4/5/6/7/8/10/12，限制每行封面数）；`comic_title_conflict_policy` 缺省 `skip_incoming`；`text_encoding_preference` 缺省 `simplified`。
-- `src/bookhub/ui/web_scheme.py`：`app://` 自定义 URL scheme；`register_app_scheme()`（须在 QApplication 前调用）、`to_local_path()`（`file://`/裸路径归一化）、`AppSchemeHandler`（`app://app/*` 服务 `web/` 静态资源；`app://img/x?p=` 仅服务白名单封面图，越权拒绝）。
-- `src/bookhub/ui/web/index.html`：玻璃拟态 UI 骨架（侧栏含 Import Books、顶栏/主区/详情栏/遮罩/toast/右键菜单挂载点），通过 `app://` 加载 css 与 js。
-- `src/bookhub/ui/web/css/app.css`：玻璃拟态样式与动效；`.content-split` `user-select:none`（避免拖选干扰封面操作）；视口虚拟列表 `.virt-spacer-top/bottom`；`.content-split` / spacer / grid 设 `overflow-anchor: none`，禁用 Chromium 滚动锚定以防与 spacer 同步形成反馈环；Text Rules `.tr-overlay` / `.tr-host` 三栏宽屏面板与抽屉样式；`.tr-col` / `.tr-drawer-body` 设 `overflow-anchor: none`，对齐 `.content-split` 已验证约束，避免与 `renderTrBody()` 局部重建形成滚动锚定反馈；网格 `.book-card .cover` / `.mini-cover` 与详情 `.detail-cover-slot` 均 `object-fit: contain`（兼容非 2:3）；`.context-menu` 用 `width: max-content` 按文案收缩（避免子项 `width:100%` 相对视口撑满）；快添列表「添加/已添加」与 `.path-add-btn` 半透明 hover。
+- `src/bookhub/ui/web_scheme.py`：`app://` 自定义 URL scheme；`register_app_scheme()`（须在 QApplication 前调用）、`to_local_path()`（`file://`/裸路径归一化）、`AppSchemeHandler`（`app://app/*` 服务 `web/` 静态资源含 woff2 字体；`app://img/x?p=` 仅服务白名单封面图，越权拒绝）。
+- `src/bookhub/ui/web/index.html`：玻璃拟态 UI 骨架（侧栏含 Import Books、顶栏/主区/详情栏/遮罩/toast/右键菜单挂载点）；`data-ui-skin` + `data-theme` 双轴；`data-skin-link` 样式链由 `app.js` 按皮肤动态注入；`#vwSceneMount` 供蒸汽波 vw-scene 背景层。
+- `src/bookhub/ui/web/fonts/`：蒸汽波 Web 字体（Sora/Space Mono woff2 + OFL.txt）；经 `app://app/fonts/*` 与 `skins/vaporwave/fonts.css` @font-face 加载，不依赖 CDN。
+- `src/bookhub/ui/web/css/base.css`：布局/结构/动画（无 skin 色板）；glass 与 vaporwave 共用。
+- `src/bookhub/ui/web/css/app.css`：legacy 入口，`@import` glass bundle（兼容旧引用）。
+- `src/bookhub/ui/web/css/skins/glass/tokens.css`：玻璃拟态 day/night CSS 变量。
+- `src/bookhub/ui/web/css/skins/glass/components.css`：玻璃拟态组件样式（由原 app.css 拆出）。
+- `src/bookhub/ui/web/css/skins/vaporwave/fonts.css`：蒸汽波 @font-face，引用 `web/fonts/` 本地 woff2。
+- `src/bookhub/ui/web/css/skins/vaporwave/tokens.css`：蒸汽波 day/night token（Sora/Space Mono 语义变量）。
+- `src/bookhub/ui/web/css/skins/vaporwave/background.css`：vw-scene 大气渐变 + CRT 扫描线（已移除太阳/动态透视网格）；night 子选择器微调。
+- `src/bookhub/ui/web/css/skins/vaporwave/layout.css`：蒸汽波 z-index 层叠（不改生产 grid）。
+- `src/bookhub/ui/web/css/skins/vaporwave/components.css`：蒸汽波组件重皮肤；与 `skins/glass/components.css` 逐选择器对齐（129 类全覆盖，含四大面板 grid 落位/.glass/.modal/.settings-*/.tr-*/滚动条），布局性声明与 glass 一致，仅视觉层为蒸汽波语言（4px 硬偏移阴影、2px 霓虹描边、Space Mono、glitch/旋转 hover），零 backdrop-filter；原型专属类（dialog-card/panel/sort-control 等）已清除。
 - `src/bookhub/ui/web/js/qwebchannel.js`：Qt 官方 `qwebchannel.js` 原样内置（从 Qt 资源导出）。
 - `requirements-dev.txt`：开发/测试依赖（`pytest==8.3.5`）；运行依赖仍见根目录 `requirements.txt`。
 
@@ -192,6 +224,11 @@ src/
 - `src/bookhub/ui/viewmodels/library_viewmodel.py`：Library/Text 资源查询过滤、字段前缀搜索（`title:`/`author:`/`tag:`）、视图模式、搜索建议状态。
 
 ## 4. 当前关键实现（简要）
+- 2026-07-24 蒸汽波排版崩坏修复（P0）：`skins/vaporwave/components.css` 由原型逐字节复制版（1090 行，选择器对不上真实 DOM，四大面板丢失 grid 落位导致主区被挤进 320px 窄列）重写为与 glass 逐选择器对齐的 613 行版本；布局声明照抄 glass、视觉层保留蒸汽波语言；新增 `Changable_vaporwave_ui/real-dom-preview.html` 真实 DOM 镜像验证页，浏览器截图验收 Library/Settings/Modal/Toast/TextRules 与 day/night 全部正常。
+- 2026-07-24 蒸汽波背景精简：移除 vw-sun 条纹太阳与 vw-grid 动态透视网格，保留 atmosphere 渐变 + scanlines，减轻主内容区视觉干扰。
+- 2026-07-24 UI 皮肤切换（重启生效）：Settings Appearance Glass/Vaporwave 切换后 `setUiSkin` 持久化并 Toast 提示重启软件（不再 WebView 热重载）；蒸汽波字体内嵌于 `web/fonts/` + `skins/vaporwave/fonts.css`，离线可用。
+- 2026-07-24 UI 皮肤切换：Settings Appearance 增加 Glass/Vaporwave 分段切换；`ui_skin` 持久化至 `app_settings`；CSS 拆为 `base.css` + `skins/glass/*` + `skins/vaporwave/*` 独立 bundle；`data-ui-skin` 与 `data-theme` 正交；蒸汽波含 day/night token 与 vw-scene 背景层。
+- 2026-07-24 蒸汽波 UI 静态预览：新增 `Simple-Book-library-Dev_Document/UI/Changable_vaporwave_ui/`，DOM 结构与 `glassmorphism-ui.html` 对等，样式完全独立（Sora + Space Mono、霓虹硬阴影、透视网格背景）；含 Settings/Dialogs/Component States 底部预览区与 Text Rules 假交互；Night mode 控件仅静态展示；本次不涉及 `src/` 运行时皮肤切换。
 - 2026-07-18 目录级扫描策略：`per_root_scan_strategy_enabled`（默认关）；三表可空 `scan_strategy`；开时 Library/Text 覆盖 `hash_strategy`、Comic 覆盖 `snapshot|full`；关时全局 `hash_strategy` / `comic_scan_strategy`（默认 snapshot）生效且保留 DB 覆盖值；`full` 禁用漫画 `folder_size_mtime` 短路并重读旁注；UI 路径页开关 + 各根策略弹窗 + General 漫画全局下拉；见 `decision-20260718-002`。
 - 2026-07-18 Quick 默认与设置合并：新装/`hash_strategy` 非法回退改为 `quick`；Settings 指纹字段增加 Fast 漏检提示；「路径」与「扫描与任务」合并为「路径与扫描」（保留 `paths` ID，旧 `tasks` 归一）；旧用户已持久化 Fast 不强制迁移；见 `decision-20260718-001`。
 - 2026-07-17 TXT 编码偏好：`text_encoding_preference`（simplified|traditional|auto，默认简体）；64KB 探测 + 简/繁排名 + 双候选回退；规则预览 diag 显示 `detectedEncoding`/置信度；见 `decision-20260717-002`。

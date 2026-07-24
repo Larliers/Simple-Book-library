@@ -174,6 +174,11 @@ def _web_strings() -> dict[str, str]:
         ("theme.auto", "Auto"),
         ("theme.day", "Day"),
         ("theme.night", "Night"),
+        ("settings.ui_skin.title", "UI Style"),
+        ("settings.ui_skin.glass", "Glass"),
+        ("settings.ui_skin.vaporwave", "Vaporwave"),
+        ("settings.ui_skin.restart_hint", "Please restart the app to apply the new UI style."),
+        ("toast.ui_skin_restart_required", "Restart required"),
         ("settings.roots.library", "Library roots"),
         ("settings.roots.comic", "Comic roots"),
         ("settings.roots.text", "Text novel roots"),
@@ -521,8 +526,15 @@ class UiBridge(QObject):
             "previewCacheDirDefault": str(DEFAULT_PREVIEW_DIR.resolve(strict=False)),
             "previewCacheDirIsDefault": not bool(repo.get_preview_cache_dir_setting()),
             "theme": self._theme_payload(),
+            "uiSkin": self._ui_skin(),
             "scanReport": repo.read_scan_report(),
         }
+
+    _VALID_UI_SKINS = frozenset({"glass", "vaporwave"})
+
+    def _ui_skin(self) -> str:
+        skin = str(self._repo.get_setting("ui_skin", "glass") or "glass")
+        return skin if skin in self._VALID_UI_SKINS else "glass"
 
     def _theme_payload(self) -> dict[str, Any]:
         repo = self._repo
@@ -550,9 +562,19 @@ class UiBridge(QObject):
 
     @Slot(str)
     def setPageBackgroundTheme(self, theme: str) -> None:
+        self.setPageBackground(self._ui_skin(), theme)
+
+    @Slot(str, str)
+    def setPageBackground(self, skin: str, theme: str) -> None:
         host = getattr(self, "_host", None)
         if host is not None and hasattr(host, "set_web_page_background"):
-            host.set_web_page_background("night" if theme == "night" else "day")
+            host.set_web_page_background(skin, theme)
+
+    @Slot(str)
+    def setUiSkin(self, skin: str) -> None:
+        if skin not in self._VALID_UI_SKINS:
+            return
+        self._repo.set_setting("ui_skin", skin)
 
     def push_resources(self) -> None:
         self.resourcesChanged.emit(json.dumps({"pages": self._pages_payload()}, ensure_ascii=False))

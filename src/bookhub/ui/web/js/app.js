@@ -13,6 +13,7 @@ const State = {
   suggestOpen: false,
   theme: { mode: "auto", autoEnabled: true, nightStart: "22:00", dayResume: "07:00", checkFrequency: 5, transitionMinutes: 3 },
   themeTimer: null,
+  uiSkin: "glass",
   renderGen: 0,
   renderTimer: null,
   scrollPos: {},
@@ -23,6 +24,22 @@ const State = {
 
 const COMIC_PAGES = new Set(["comic", "comic_fav"]);
 const LIST_ONLY = new Set(["text_novel"]);
+
+const SKIN_STYLESHEETS = {
+  glass: [
+    "app://app/css/base.css",
+    "app://app/css/skins/glass/tokens.css",
+    "app://app/css/skins/glass/components.css",
+  ],
+  vaporwave: [
+    "app://app/css/base.css",
+    "app://app/css/skins/vaporwave/fonts.css",
+    "app://app/css/skins/vaporwave/tokens.css",
+    "app://app/css/skins/vaporwave/background.css",
+    "app://app/css/skins/vaporwave/layout.css",
+    "app://app/css/skins/vaporwave/components.css",
+  ],
+};
 
 function t(key, fallback) {
   const value = State.strings[key];
@@ -83,6 +100,8 @@ function loadBootstrap() {
     State.settings = data.settings || {};
     State.errorLogs = data.errorLogs || "";
     if (State.settings.theme) State.theme = Object.assign(State.theme, State.settings.theme);
+    if (State.settings.uiSkin) State.uiSkin = State.settings.uiSkin;
+    applyUiSkin(State.uiSkin);
     applyStaticStrings();
     applyFont();
     renderNav();
@@ -1208,6 +1227,20 @@ function renderSettingsAppearance(panel) {
   fontCard.appendChild(grid);
   panel.appendChild(fontCard);
 
+  const skinCard = settingCard(t("settings.ui_skin.title", "UI Style"));
+  skinCard.appendChild(elem("p", "small-note", t("settings.ui_skin.restart_hint", "Please restart the app to apply the new UI style.")));
+  const skinSeg = elem("div", "segmented");
+  [["glass", "settings.ui_skin.glass"], ["vaporwave", "settings.ui_skin.vaporwave"]].forEach(([skin, key]) => {
+    const btn = elem("button", State.uiSkin === skin ? "active" : null, t(key));
+    btn.addEventListener("click", () => { if (State.uiSkin !== skin) setUiSkin(skin); });
+    skinSeg.appendChild(btn);
+  });
+  const skinWrap = elem("div", "field");
+  skinWrap.appendChild(elem("label", null, t("settings.ui_skin.title", "UI Style")));
+  skinWrap.appendChild(skinSeg);
+  skinCard.appendChild(skinWrap);
+  panel.appendChild(skinCard);
+
   const themeCard = settingCard(t("settings.night.title", "Night mode"));
   themeCard.appendChild(elem("p", "small-note", t("settings.night.desc", "Read local time periodically and transition between day and night UI.")));
   const seg = elem("div", "segmented");
@@ -1581,6 +1614,55 @@ function renderSettingsErrors(panel) {
   panel.appendChild(card);
 }
 
+/* ---------- ui skin ---------- */
+function normalizeUiSkin(skin) {
+  return skin === "vaporwave" ? "vaporwave" : "glass";
+}
+
+function loadSkinStylesheets(skin) {
+  const normalized = normalizeUiSkin(skin);
+  document.querySelectorAll("link[data-skin-link]").forEach((node) => node.remove());
+  SKIN_STYLESHEETS[normalized].forEach((href) => {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = href;
+    link.setAttribute("data-skin-link", "");
+    document.head.appendChild(link);
+  });
+}
+
+function toggleVaporwaveScene(enabled) {
+  const mount = document.getElementById("vwSceneMount");
+  if (!mount) return;
+  clear(mount);
+  mount.hidden = !enabled;
+  if (!enabled) return;
+  const scene = document.createElement("div");
+  scene.className = "vw-scene";
+  scene.setAttribute("aria-hidden", "true");
+  scene.innerHTML = `<div class="vw-atmosphere"></div><div class="vw-scanlines"></div>`;
+  mount.appendChild(scene);
+}
+
+function applyUiSkin(skin) {
+  const normalized = normalizeUiSkin(skin);
+  State.uiSkin = normalized;
+  document.body.dataset.uiSkin = normalized;
+  loadSkinStylesheets(normalized);
+  toggleVaporwaveScene(normalized === "vaporwave");
+}
+
+function setUiSkin(skin) {
+  const normalized = normalizeUiSkin(skin);
+  if (normalized === State.uiSkin || !State.bridge) return;
+  State.bridge.setUiSkin(normalized);
+  showToast(
+    t("toast.ui_skin_restart_required", "Restart required"),
+    t("settings.ui_skin.restart_hint", "Please restart the app to apply the new UI style."),
+    "info"
+  );
+}
+
 /* ---------- theme engine ---------- */
 function persistTheme() {
   State.bridge.setThemeSettings(JSON.stringify(State.theme));
@@ -1612,9 +1694,10 @@ function computedTheme() {
 function applyTheme(theme, transitionMs) {
   document.documentElement.style.setProperty("--active-theme-transition-duration", transitionMs + "ms");
   document.body.dataset.theme = theme === "night" ? "night" : "day";
-  // Keep Qt WebEngine clear color in sync (avoids white flash on window activate).
   try {
-    if (State.bridge && State.bridge.setPageBackgroundTheme) {
+    if (State.bridge && State.bridge.setPageBackground) {
+      State.bridge.setPageBackground(State.uiSkin, theme === "night" ? "night" : "day");
+    } else if (State.bridge && State.bridge.setPageBackgroundTheme) {
       State.bridge.setPageBackgroundTheme(theme === "night" ? "night" : "day");
     }
   } catch (e) {}

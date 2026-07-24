@@ -1,0 +1,56 @@
+:root {
+  --active-theme-transition-duration: 420ms;
+  --bg-0: #eef5f7;
+  --bg-1: #dfeaf3;
+  --ink: #1a2533;
+  --muted: #607085;
+  --faint: #8795a8;
+  --line: rgba(255, 255, 255, 0.68);
+  --line-dark: rgba(100, 126, 154, 0.22);
+  --glass: rgba(255, 255, 255, 0.58);
+  --glass-strong: rgba(255, 255, 255, 0.78);
+  --glass-soft: rgba(255, 255, 255, 0.34);
+  --accent: #3977c2;
+  --accent-2: #11a5a2;
+  --danger: #bc4545;
+  --shadow: 0 22px 70px rgba(56, 76, 100, 0.18);
+  --shadow-soft: 0 12px 32px rgba(60, 82, 105, 0.12);
+  --radius: 10px;
+  --font: Inter, "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+  --body-background:
+    radial-gradient(circle at 14% 9%, rgba(255, 255, 255, 0.92) 0 10%, transparent 24%),
+    radial-gradient(circle at 90% 18%, rgba(154, 205, 224, 0.46) 0 9%, transparent 26%),
+    radial-gradient(circle at 72% 86%, rgba(255, 218, 160, 0.48) 0 8%, transparent 26%),
+    linear-gradient(135deg, var(--bg-0), var(--bg-1) 52%, #f6efe5);
+  --control-bg: rgba(255, 255, 255, 0.7);
+  --card-bg: rgba(255, 255, 255, 0.42);
+  --card-bg-soft: rgba(255, 255, 255, 0.3);
+  --hover-bg: rgba(255, 255, 255, 0.56);
+}
+
+body[data-theme="night"] {
+  --bg-0: #101925;
+  --bg-1: #162332;
+  --ink: #ede3d3;
+  --muted: #b8ad9f;
+  --faint: #8f9aad;
+  --line: rgba(255, 242, 221, 0.16);
+  --line-dark: rgba(255, 226, 190, 0.12);
+  --glass: rgba(19, 28, 40, 0.68);
+  --glass-strong: rgba(29, 39, 54, 0.82);
+  --glass-soft: rgba(24, 34, 48, 0.52);
+  --accent: #d2a45f;
+  --accent-2: #8fb8ac;
+  --danger: #e39a8f;
+  --shadow: 0 22px 70px rgba(0, 0, 0, 0.34);
+  --shadow-soft: 0 12px 32px rgba(0, 0, 0, 0.24);
+  --body-background:
+    radial-gradient(circle at 12% 8%, rgba(120, 98, 74, 0.34) 0 10%, transparent 24%),
+    radial-gradient(circle at 92% 18%, rgba(64, 90, 106, 0.36) 0 10%, transparent 27%),
+    radial-gradient(circle at 72% 88%, rgba(97, 70, 44, 0.28) 0 9%, transparent 26%),
+    linear-gradient(135deg, var(--bg-0), var(--bg-1) 54%, #1e1a16);
+  --control-bg: rgba(27, 38, 52, 0.78);
+  --card-bg: rgba(26, 37, 51, 0.62);
+  --card-bg-soft: rgba(20, 30, 43, 0.56);
+  --hover-bg: rgba(255, 231, 190, 0.1);
+}

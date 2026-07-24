@@ -1,0 +1,71 @@
+:root {
+  --active-theme-transition-duration: 420ms;
+  --vw-bg: #251742;
+  --vw-ink: #EADDFF;
+  --vw-muted: #DABFCC;
+  --vw-faint: #B967FF;
+  --vw-primary: #FF71CE;
+  --vw-primary-soft: #FFAEDC;
+  --vw-secondary: #98E1FF;
+  --vw-cyan: #01CDFE;
+  --vw-tertiary: #00E38E;
+  --vw-hard-shadow: #B967FF;
+  --vw-surface-low: #2a1848;
+  --vw-surface-mid: #30224D;
+  --vw-surface-high: #3B2D59;
+  --vw-surface-highest: #453366;
+  --vw-grid-dark: #04020E;
+  --vw-danger: #FF2DA6;
+
+  --bg-0: var(--vw-bg);
+  --bg-1: var(--vw-surface-mid);
+  --ink: var(--vw-ink);
+  --muted: var(--vw-muted);
+  --faint: var(--vw-faint);
+  --line: rgba(255, 113, 206, 0.4);
+  --line-dark: rgba(1, 205, 254, 0.28);
+  --glass: rgba(48, 34, 77, 0.72);
+  --glass-strong: rgba(55, 40, 88, 0.88);
+  --glass-soft: rgba(42, 28, 72, 0.62);
+  --accent: var(--vw-primary);
+  --accent-2: var(--vw-cyan);
+  --danger: var(--vw-danger);
+  --shadow: 4px 4px 0 var(--vw-hard-shadow);
+  --shadow-soft: 2px 2px 0 rgba(185, 103, 255, 0.55);
+  --shadow-glow: 0 0 18px rgba(255, 113, 206, 0.22);
+  --radius: 4px;
+  --font: "Sora", "Microsoft YaHei", "PingFang SC", sans-serif;
+  --font-mono: "Space Mono", "Consolas", monospace;
+  --control-bg: rgba(48, 34, 77, 0.92);
+  --card-bg: rgba(48, 34, 77, 0.78);
+  --card-bg-soft: rgba(42, 28, 72, 0.62);
+  --hover-bg: rgba(255, 113, 206, 0.14);
+  --body-background: var(--vw-bg);
+}
+
+body[data-theme="night"] {
+  --vw-bg: #180935;
+  --bg-0: #180935;
+  --bg-1: #21133E;
+  --accent-2: #98E1FF;
+  --glass: rgba(37, 23, 66, 0.82);
+  --glass-strong: rgba(37, 23, 66, 0.92);
+  --glass-soft: rgba(33, 19, 62, 0.72);
+  --control-bg: rgba(37, 23, 66, 0.94);
+  --card-bg: rgba(37, 23, 66, 0.82);
+  --card-bg-soft: rgba(33, 19, 62, 0.68);
+  --line: rgba(255, 113, 206, 0.32);
+  --shadow-glow: 0 0 14px rgba(255, 113, 206, 0.16);
+}
+
+::selection {
+  background: rgba(255, 113, 206, 0.38);
+  color: var(--vw-ink);
+}
+
+html { background-color: var(--bg-0); }
+
+body {
+  background: transparent;
+  overflow: hidden;
+}

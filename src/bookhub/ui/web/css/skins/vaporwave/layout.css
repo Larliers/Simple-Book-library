@@ -1,0 +1,13 @@
+/* Vaporwave skin: layer main UI above vw-scene without altering production grid. */
+.app-shell {
+  position: relative;
+  z-index: 10;
+}
+
+body[data-ui-skin="vaporwave"] .sidebar,
+body[data-ui-skin="vaporwave"] .topbar,
+body[data-ui-skin="vaporwave"] .main-stage,
+body[data-ui-skin="vaporwave"] .detail-panel {
+  position: relative;
+  z-index: 1;
+}

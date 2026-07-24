@@ -4,9 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Simple Book Library</title>
-  <link rel="stylesheet" href="app://app/css/app.css">
+  <link rel="stylesheet" href="app://app/css/base.css" data-skin-link>
+  <link rel="stylesheet" href="app://app/css/skins/glass/tokens.css" data-skin-link>
+  <link rel="stylesheet" href="app://app/css/skins/glass/components.css" data-skin-link>
 </head>
-<body data-theme="day">
+<body data-theme="day" data-ui-skin="glass">
+  <div id="vwSceneMount" hidden aria-hidden="true"></div>
   <main class="app-shell">
     <aside class="sidebar glass">
       <div class="brand">

@@ -1,0 +1,4 @@
+Sora and Space Mono are distributed under the SIL Open Font License (OFL) 1.1.
+See https://openfontlicense.org/ for the full license text.
+
+Source: Google Fonts (https://fonts.google.com/)
