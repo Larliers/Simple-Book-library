@@ -162,6 +162,18 @@
 .book-card {
   min-width: 0; border-radius: var(--radius); padding: 0; background: transparent; border: 0; cursor: pointer;
 }
+.cover-wrap { position: relative; width: 100%; }
+.format-badge {
+  position: absolute; top: 6px; left: 6px; z-index: 1;
+  pointer-events: none;
+  min-height: 18px; padding: 2px 6px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.02em;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  color: var(--ink);
+  box-shadow: 0 2px 6px rgba(48, 66, 90, 0.18);
+}
 .book-card .cover {
   width: 100%; aspect-ratio: 2 / 3; display: block; object-fit: contain; border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.6); background: #e8eef5;

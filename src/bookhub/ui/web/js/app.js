@@ -453,10 +453,11 @@ function mountVirtualCoverGrid(area, items, page, withMeta, gen, buildCard) {
 }
 
 function renderGrid(area, items, page, isCollectionDetail, gen) {
+  const showFormatBadge = page === "library" || page === "favorites" || isCollectionDetail;
   mountVirtualCoverGrid(area, items, page, false, gen, (item) => {
     const card = elem("article", "book-card");
     if (State.selected[page] === item.id) card.classList.add("selected");
-    card.appendChild(buildCover(item, "cover"));
+    card.appendChild(buildCoverSlot(item, "cover", showFormatBadge));
     card.addEventListener("click", () => selectResource(page, item.id, card));
     card.addEventListener("dblclick", () => State.bridge.openResource(page, item.id));
     card.addEventListener("contextmenu", (e) => { e.preventDefault(); openContextMenu(e, page, item, isCollectionDetail); });
@@ -579,6 +580,35 @@ function renderTable(area, items, page) {
   };
 
   area._virtCleanup = attachVirtualWindow(area, gen, page, sync);
+}
+
+const FORMAT_BADGE_LABELS = {
+  ".pdf": "PDF",
+  ".epub": "EPUB",
+  ".html": "HTML",
+  ".htm": "HTML",
+  ".md": "MD",
+  ".markdown": "MD",
+  ".fb2": "FB2",
+  ".fb2.zip": "FB2",
+  ".docx": "DOCX",
+};
+
+function formatBadgeLabel(item) {
+  const ext = String(item.extension || "").trim().toLowerCase();
+  if (ext && FORMAT_BADGE_LABELS[ext]) return FORMAT_BADGE_LABELS[ext];
+  const type = String(item.type || "").trim();
+  if (type && type !== "book" && type !== "text_novel") return type.toUpperCase();
+  return "";
+}
+
+function buildCoverSlot(item, cls, showFormatBadge) {
+  if (!showFormatBadge) return buildCover(item, cls);
+  const wrap = elem("div", "cover-wrap");
+  wrap.appendChild(buildCover(item, cls));
+  const label = formatBadgeLabel(item);
+  if (label) wrap.appendChild(elem("span", "format-badge", label));
+  return wrap;
 }
 
 function buildCover(item, cls) {

@@ -349,6 +349,8 @@ class UiBridge(QObject):
             language=record.get("language"),
             is_missing=bool(record.get("is_missing")),
             info_text=str(record.get("info_text") or "") or None,
+            file_name=record.get("file_name") or "",
+            extension=record.get("extension") or "",
         )
 
     # ---- cover url -----------------------------------------------------
@@ -395,6 +397,7 @@ class UiBridge(QObject):
             "meta": " · ".join(meta_parts),
             "info": str(row.get("info_text") or "") or "",
             "fileName": row.get("file_name") or "",
+            "extension": row.get("extension") or "",
         }
 
     def _comic_payload(self, row: dict[str, Any]) -> dict[str, Any]:
@@ -429,6 +432,7 @@ class UiBridge(QObject):
             "meta": " · ".join(meta_parts),
             "info": item.info_text or "",
             "fileName": item.file_name or "",
+            "extension": item.extension or "",
         }
 
     # ---- page payloads -------------------------------------------------

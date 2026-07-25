@@ -51,6 +51,26 @@ class WebBridgeSmokeTests(unittest.TestCase):
         page_keys = {page for page, _, _ in NAV_ITEMS}
         self.assertEqual(set(payload["pages"].keys()), page_keys)
 
+    def test_library_payload_includes_extension(self) -> None:
+        bridge = self._make_bridge()
+        with tempfile.TemporaryDirectory() as tmp:
+            sample = Path(tmp) / "sample.epub"
+            sample.write_bytes(b"")
+            bridge._repo.upsert_book(
+                {
+                    "path": str(sample),
+                    "title": "Sample EPUB",
+                    "file_name": "sample.epub",
+                    "extension": ".epub",
+                    "resource_type": "epub",
+                    "tags_json": "[]",
+                }
+            )
+            bridge.reload_data()
+            items = json.loads(bridge.getBootstrap())["pages"]["library"]["items"]
+            book = next(item for item in items if item.get("title") == "Sample EPUB")
+            self.assertEqual(book.get("extension"), ".epub")
+
     def test_search_returns_json_payload(self) -> None:
         bridge = self._make_bridge()
         result = json.loads(bridge.search("library", "nonexistent-query-xyz"))
@@ -337,6 +357,9 @@ class SettingsUiStructureTests(unittest.TestCase):
         self.assertIn("scanProgressBar", app_js)
         self.assertIn("scanProgressLabel", app_js)
         self.assertIn("scanSummaryBox", app_js)
+        self.assertIn("formatBadgeLabel", app_js)
+        self.assertIn("buildCoverSlot", app_js)
+        self.assertIn('page === "library"', app_js)
 
     def test_set_ui_skin_updates_active_segment(self) -> None:
         app_js = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
