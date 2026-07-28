@@ -23,6 +23,7 @@
   "sidebar.import_books": "导入图书",
   "topbar.search_placeholder": "搜索书库...",
   "topbar.search_text_placeholder": "搜索文本小说：标题 / 作者 / 标签 / 路径",
+  "topbar.search_comic_placeholder": "搜索漫画：标题 / 路径 / 旁注",
   "topbar.search.empty": "无搜索建议",
   "topbar.import": "导入",
   "topbar.new_list": "新建列表",

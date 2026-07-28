@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_PREVIEW_DIR = PROJECT_ROOT / "img_preview"
+from bookhub.app_paths import default_preview_dir as app_default_preview_dir
 
+DEFAULT_PREVIEW_DIR = app_default_preview_dir()
 PREVIEW_CACHE_MODES = frozenset({"migrate", "rewire_only", "switch_only"})
 
 
 def default_preview_dir() -> Path:
-    return DEFAULT_PREVIEW_DIR.resolve(strict=False)
+    return app_default_preview_dir()
 
 
 def is_writable_dir(path: Path) -> bool:

@@ -65,10 +65,17 @@ Settings → 路径与扫描 → 文本根目录旁 **Rules**，可编辑导入�
 
 | 位置 | 用途 |
 |------|------|
+| **开发态** | |
 | `src/sql/library.db` | 书库数据库 |
 | `img_preview/`（默认） | 封面缩略图缓存 |
 | `src/Scan_error_logs/` | 扫描冲突、缺失删除等日志 |
 | `src/fonts/` | 可选自定义字体 |
+| **打包版（exe 同级）** | |
+| `sql/library.db` | 书库数据库 |
+| `img_preview/` | 封面缩略图缓存 |
+| `Scan_error_logs/` | 扫描冲突、缺失删除等日志 |
+
+升级时请保留上述三个用户数据目录，仅替换 `main.exe` 及同目录程序文件。
 
 ## 环境要求
 
@@ -90,9 +97,18 @@ pip install -r requirements.txt
 ```powershell
 .\scripts\build_nuitka.ps1          # 独立目录（推荐）
 .\scripts\build_nuitka.ps1 -Onefile # 单文件
+.\scripts\pack_release.ps1          # 改名 + 预建数据目录 + 打 zip
 ```
 
-产物在 `build/nuitka/`。首次编译 Nuitka 会自动下载 MinGW 编译器，耗时较长。
+产物：`build/nuitka/main.dist/`（原始构建）；`build/release/Simple-Book-library-v{版本}-win64.zip`（发行包）。首次编译 Nuitka 会自动下载 MinGW 编译器，耗时较长。
+
+## 一键 Release（GitHub Actions）
+
+1. 打开仓库 **Actions → Release → Run workflow**
+2. 选择 bump 类型（`patch` / `minor` / `major`）
+3. 工作流会自动：递增版本 → 提交 → 打 tag → Nuitka 构建 → 打包 zip → 创建 GitHub Release
+
+Release tag（如 `v2.1.2`）须与 `APP_VERSION`（如 `2.1.2`）一致，否则「检查更新」会误报。
 
 ## 开发自检
 

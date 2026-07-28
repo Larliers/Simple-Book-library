@@ -3,13 +3,13 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
-_LOG_DIR = _PROJECT_ROOT / "src" / "Scan_error_logs"
+from bookhub.app_paths import default_log_dir
 
 
 def get_log_dir() -> Path:
-    _LOG_DIR.mkdir(parents=True, exist_ok=True)
-    return _LOG_DIR
+    log_dir = default_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir
 
 
 def get_today_log_path() -> Path:

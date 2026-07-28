@@ -51,6 +51,7 @@ def _web_strings() -> dict[str, str]:
         ("topbar.scan", "Scan"),
         ("topbar.search_placeholder", "Search library..."),
         ("topbar.search_text_placeholder", "Search text novels by title, author, tag, or path..."),
+        ("topbar.search_comic_placeholder", "Search comics by title, path, or notes..."),
         ("detail.empty", "Select an item to see its details."),
         ("detail.author", "Author"),
         ("detail.publisher", "Publisher"),
@@ -315,6 +316,8 @@ class UiBridge(QObject):
         self._host = None
         self._library_vm = LibraryViewModel()
         self._text_vm = LibraryViewModel()
+        self._comic_vm = LibraryViewModel()
+        self._comic_fav_vm = LibraryViewModel()
         self._current_collection_id: int | None = None
         self.reload_data()
 
@@ -334,6 +337,16 @@ class UiBridge(QObject):
         self._text_records = text
         self._library_vm.set_resources([self._record_to_item(r) for r in library])
         self._text_vm.set_resources([self._record_to_item(r) for r in text])
+        self._reload_comic_vms()
+
+    def _reload_comic_vms(self) -> None:
+        comic_order = self._repo.get_comic_sort_order_main()
+        comic_rows = self._repo.list_comics(include_missing=False, order_by=comic_order)
+        self._comic_vm.set_resources([self._comic_record_to_item(r) for r in comic_rows])
+
+        fav_order = self._repo.get_comic_sort_order_fav()
+        fav_rows = self._repo.get_favorite_comics(order_by=fav_order)
+        self._comic_fav_vm.set_resources([self._comic_record_to_item(r) for r in fav_rows])
 
     def _record_to_item(self, record: dict[str, Any]):
         from bookhub.ui.models.resource import ResourceItem
@@ -352,6 +365,32 @@ class UiBridge(QObject):
             file_name=record.get("file_name") or "",
             extension=record.get("extension") or "",
         )
+
+    def _comic_record_to_item(self, record: dict[str, Any]):
+        from bookhub.ui.models.resource import ResourceItem
+
+        return ResourceItem(
+            resource_id=record.get("resource_id", ""),
+            title=record.get("title") or Path(str(record.get("path") or "")).name or "Comic",
+            author="",
+            tags=[],
+            resource_type="comic_folder",
+            path=record.get("path") or "",
+            thumbnail_path=record.get("thumbnail_path"),
+            is_missing=bool(record.get("is_missing")),
+            info_text=str(record.get("info_text") or "") or None,
+            cover_image_path=str(record.get("cover_image_path") or "") or None,
+            image_count=int(record.get("image_count") or 0),
+        )
+
+    def _search_vm_for_context(self, context: str) -> tuple[LibraryViewModel, str]:
+        if context == PAGE_TEXT:
+            return self._text_vm, PAGE_TEXT
+        if context == PAGE_COMIC:
+            return self._comic_vm, PAGE_COMIC
+        if context == PAGE_COMIC_FAV:
+            return self._comic_fav_vm, PAGE_COMIC_FAV
+        return self._library_vm, PAGE_LIBRARY
 
     # ---- cover url -----------------------------------------------------
     def _cover_url(self, *candidates: str | None) -> str | None:
@@ -416,6 +455,22 @@ class UiBridge(QObject):
             "info": str(row.get("info_text") or "") or "",
         }
 
+    def _comic_item_payload(self, item) -> dict[str, Any]:
+        count = int(item.image_count or 0)
+        return {
+            "id": item.resource_id,
+            "title": item.title,
+            "author": "",
+            "tags": [],
+            "path": item.path or "",
+            "type": "comic_folder",
+            "cover": self._cover_url(item.thumbnail_path, item.cover_image_path),
+            "coverImage": str(item.cover_image_path or ""),
+            "meta": tr("comic.meta.images", "{count} images").format(count=count),
+            "imageCount": count,
+            "info": item.info_text or "",
+        }
+
     def _item_payload(self, item) -> dict[str, Any]:
         author = str(item.author or "")
         meta_parts = [p for p in [author] if p and p.lower() != "unknown"]
@@ -450,13 +505,11 @@ class UiBridge(QObject):
             rows = self._repo.get_favorite_books(order=order)
             return {"mode": "grid_or_list", "sort": order, "items": [self._book_payload(r) for r in rows]}
         if page == PAGE_COMIC:
-            order = self._repo.get_comic_sort_order_main()
-            rows = self._repo.list_comics(include_missing=False, order_by=order)
-            return self._comic_page_payload(rows, favorite=False)
+            items = self._comic_vm.filtered_resources(include_missing=False)
+            return self._comic_page_payload_from_items(items, favorite=False)
         if page == PAGE_COMIC_FAV:
-            order = self._repo.get_comic_sort_order_fav()
-            rows = self._repo.get_favorite_comics(order_by=order)
-            return self._comic_page_payload(rows, favorite=True)
+            items = self._comic_fav_vm.filtered_resources(include_missing=False)
+            return self._comic_page_payload_from_items(items, favorite=True)
         if page == PAGE_COLLECTIONS:
             return self._collections_payload()
         return {"mode": "grid_or_list", "items": []}
@@ -468,6 +521,15 @@ class UiBridge(QObject):
             "pageSize": self._repo.get_comic_page_size(),
             "sort": self._repo.get_comic_sort_order_fav() if favorite else self._repo.get_comic_sort_order_main(),
             "items": [self._comic_payload(r) for r in rows],
+        }
+
+    def _comic_page_payload_from_items(self, items, *, favorite: bool) -> dict[str, Any]:
+        return {
+            "mode": "comic",
+            "viewMode": self._repo.get_comic_view_mode(),
+            "pageSize": self._repo.get_comic_page_size(),
+            "sort": self._repo.get_comic_sort_order_fav() if favorite else self._repo.get_comic_sort_order_main(),
+            "items": [self._comic_item_payload(i) for i in items],
         }
 
     def _collections_payload(self) -> dict[str, Any]:
@@ -510,7 +572,7 @@ class UiBridge(QObject):
 
     # ---- bootstrap / settings -----------------------------------------
     def _settings_payload(self) -> dict[str, Any]:
-        from bookhub.library.data_paths import DEFAULT_PREVIEW_DIR
+        from bookhub.app_paths import default_preview_dir
 
         repo = self._repo
         return {
@@ -543,7 +605,7 @@ class UiBridge(QObject):
             "textRoots": repo.list_text_roots_with_rules(),
             "previewCacheDir": repo.get_preview_cache_dir_setting(),
             "previewCacheDirEffective": str(repo.get_preview_dir_effective()),
-            "previewCacheDirDefault": str(DEFAULT_PREVIEW_DIR.resolve(strict=False)),
+            "previewCacheDirDefault": str(default_preview_dir()),
             "previewCacheDirIsDefault": not bool(repo.get_preview_cache_dir_setting()),
             "theme": self._theme_payload(),
             "uiSkin": self._ui_skin(),
@@ -609,14 +671,13 @@ class UiBridge(QObject):
     # ---- navigation / search ------------------------------------------
     @Slot(str, str, result=str)
     def search(self, context: str, query: str) -> str:
-        vm = self._text_vm if context == PAGE_TEXT else self._library_vm
+        vm, page = self._search_vm_for_context(context)
         vm.set_query(query)
-        page = PAGE_TEXT if context == PAGE_TEXT else PAGE_LIBRARY
         return json.dumps(self._page_resources(page), ensure_ascii=False)
 
     @Slot(str, str, result=str)
     def getSuggestions(self, context: str, query: str) -> str:
-        vm = self._text_vm if context == PAGE_TEXT else self._library_vm
+        vm, _page = self._search_vm_for_context(context)
         return json.dumps(vm.search_suggestions_for_query(query), ensure_ascii=False)
 
     @Slot(int, result=str)
@@ -636,8 +697,10 @@ class UiBridge(QObject):
             self._repo.set_setting("favorites_sort_order", "asc" if value == "asc" else "desc")
         elif page == PAGE_COMIC:
             self._repo.set_comic_sort_order_main(value)
+            self._reload_comic_vms()
         elif page == PAGE_COMIC_FAV:
             self._repo.set_comic_sort_order_fav(value)
+            self._reload_comic_vms()
         else:
             return json.dumps(self._page_resources(page), ensure_ascii=False)
         self.push_resources()

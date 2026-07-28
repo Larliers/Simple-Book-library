@@ -65,10 +65,17 @@ Open **Rules** next to a text root under Settings → Paths & Scan to edit rule 
 
 | Path | Purpose |
 |------|---------|
+| **Development** | |
 | `src/sql/library.db` | SQLite library database |
 | `img_preview/` (default) | Cover thumbnail cache |
 | `src/Scan_error_logs/` | Scan conflicts, missing-file removals, etc. |
 | `src/fonts/` | Optional custom fonts |
+| **Packaged app (next to main.exe)** | |
+| `sql/library.db` | SQLite library database |
+| `img_preview/` | Cover thumbnail cache |
+| `Scan_error_logs/` | Scan conflicts, missing-file removals, etc. |
+
+When upgrading, keep those three user-data folders and replace only `main.exe` and bundled program files.
 
 ## Requirements
 
@@ -90,9 +97,18 @@ pip install -r requirements.txt
 ```powershell
 .\scripts\build_nuitka.ps1          # standalone folder (recommended)
 .\scripts\build_nuitka.ps1 -Onefile # single-file exe
+.\scripts\pack_release.ps1          # rename, seed data dirs, create zip
 ```
 
-Output goes to `build/nuitka/`. The first Nuitka build downloads MinGW automatically and can take a while.
+Output: `build/nuitka/main.dist/` (raw build); `build/release/Simple-Book-library-v{version}-win64.zip` (release artifact). The first Nuitka build downloads MinGW automatically and can take a while.
+
+## One-click Release (GitHub Actions)
+
+1. Open **Actions → Release → Run workflow**
+2. Choose bump type (`patch` / `minor` / `major`)
+3. The workflow bumps the version, commits, tags, builds with Nuitka, packs the zip, and creates a GitHub Release
+
+Release tags (e.g. `v2.1.2`) must match `APP_VERSION` (e.g. `2.1.2`) or the in-app update check will report incorrectly.
 
 ## Developer checks
 

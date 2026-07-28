@@ -152,6 +152,7 @@ class LibraryViewModel:
             or value in item.author.lower()
             or any(value in tag.lower() for tag in item.tags)
             or value in item.path.lower()
+            or bool(item.info_text and value in item.info_text.lower())
         )
 
     def _matches_author_query(self, author: str, query: str) -> bool:

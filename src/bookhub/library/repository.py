@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from bookhub.app_paths import default_db_path, default_scan_report_path
 from bookhub.library.data_paths import DEFAULT_PREVIEW_DIR, resolve_preview_dir
 from bookhub.library.error_logs import append_scan_log
 from bookhub.library.models import (
@@ -38,10 +39,8 @@ COVER_SELECTED_BORDER_WIDTH_MIN = 1
 COVER_SELECTED_BORDER_WIDTH_MAX = 6
 DEFAULT_COVER_SELECTED_BORDER_COLOR = "#8EA7C6"
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-SRC_ROOT = PROJECT_ROOT / "src"
-DEFAULT_DB_PATH = SRC_ROOT / "sql" / "library.db"
-DEFAULT_SCAN_REPORT_PATH = SRC_ROOT / "sql" / "scan_report.json"
+DEFAULT_DB_PATH = default_db_path()
+DEFAULT_SCAN_REPORT_PATH = default_scan_report_path()
 
 
 def now_utc_iso() -> str:

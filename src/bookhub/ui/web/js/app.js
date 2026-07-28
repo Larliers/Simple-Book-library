@@ -10,6 +10,7 @@ const State = {
   viewMode: "grid",
   selected: {},
   searchQuery: "",
+  searchQueries: { library: "", text_novel: "", comic: "", comic_fav: "" },
   suggestOpen: false,
   theme: { mode: "auto", autoEnabled: true, nightStart: "22:00", dayResume: "07:00", checkFrequency: 5, transitionMinutes: 3 },
   themeTimer: null,
@@ -24,6 +25,27 @@ const State = {
 
 const COMIC_PAGES = new Set(["comic", "comic_fav"]);
 const LIST_ONLY = new Set(["text_novel"]);
+const SEARCH_PAGES = new Set(["library", "text_novel", "comic", "comic_fav"]);
+
+function searchPlaceholderForPage(page) {
+  if (page === "text_novel") return t("topbar.search_text_placeholder");
+  if (COMIC_PAGES.has(page)) return t("topbar.search_comic_placeholder");
+  return t("topbar.search_placeholder");
+}
+
+function syncSearchInputFromPage(page) {
+  if (!SEARCH_PAGES.has(page)) return;
+  const query = State.searchQueries[page] || "";
+  State.searchQuery = query;
+  $("searchInput").value = query;
+  $("searchInput").setAttribute("placeholder", searchPlaceholderForPage(page));
+}
+
+function saveSearchQueryForPage(page, query) {
+  if (!SEARCH_PAGES.has(page)) return;
+  State.searchQueries[page] = query;
+  State.searchQuery = query;
+}
 
 const SKIN_STYLESHEETS = {
   glass: [
@@ -203,10 +225,12 @@ function selectPage(page) {
     return;
   }
   detail.classList.remove("hidden");
-  // sync search box to page context
-  const isText = page === "text_novel";
-  $("searchInput").setAttribute("placeholder", isText ? t("topbar.search_text_placeholder") : t("topbar.search_placeholder"));
-  scheduleRenderPage();
+  syncSearchInputFromPage(page);
+  if (SEARCH_PAGES.has(page) && (State.searchQueries[page] || "").trim()) {
+    commitSearch();
+  } else {
+    scheduleRenderPage();
+  }
   renderDetailEmpty();
 }
 
@@ -1847,7 +1871,7 @@ function initTopbar() {
   let debounce = null;
   input.addEventListener("input", () => {
     if (State.currentPage === "settings") return;
-    State.searchQuery = input.value;
+    saveSearchQueryForPage(State.currentPage, input.value);
     if (debounce) clearTimeout(debounce);
     debounce = setTimeout(commitSearch, 160);
     updateSuggestions();
@@ -1872,10 +1896,17 @@ function initTopbar() {
   });
 }
 
-function searchContext() { return State.currentPage === "text_novel" ? "text_novel" : "library"; }
+function searchContext() {
+  const page = State.currentPage;
+  if (page === "text_novel") return "text_novel";
+  if (page === "comic") return "comic";
+  if (page === "comic_fav") return "comic_fav";
+  return "library";
+}
 
 function commitSearch() {
   const ctx = searchContext();
+  if (!SEARCH_PAGES.has(ctx)) return;
   State.bridge.search(ctx, State.searchQuery, (json) => {
     const data = safeParse(json);
     if (!data) return;
@@ -1886,7 +1917,8 @@ function commitSearch() {
 
 function updateSuggestions() {
   const query = $("searchInput").value;
-  if (State.currentPage === "settings" || COMIC_PAGES.has(State.currentPage) || State.currentPage === "collections") { closeSuggestions(); return; }
+  if (State.currentPage === "settings" || State.currentPage === "collections") { closeSuggestions(); return; }
+  if (!SEARCH_PAGES.has(State.currentPage)) { closeSuggestions(); return; }
   State.bridge.getSuggestions(searchContext(), query, (json) => {
     const items = safeParse(json) || [];
     const box = $("suggestions");
@@ -1898,7 +1930,7 @@ function updateSuggestions() {
       row.appendChild(elem("span", "suggestion-text", s.label + (s.description ? " — " + s.description : "")));
       row.addEventListener("click", () => {
         $("searchInput").value = s.query_value;
-        State.searchQuery = s.query_value;
+        saveSearchQueryForPage(State.currentPage, s.query_value);
         commitSearch();
         closeSuggestions();
       });
