@@ -1,6 +1,6 @@
 # Simple Book Library
 
-**v2.1.0** · [English](README.en.md) | [中文](README.md) · [GitHub Releases](https://github.com/Larliers/Simple-Book-library/releases)
+**v2.1.1** · [English](README.en.md) | [中文](README.md) · [GitHub Releases](https://github.com/Larliers/Simple-Book-library/releases)
 
 A local Windows desktop library for your personal collection. Scan PDF / EPUB / HTML / Markdown / FB2 / DOCX books, comic image folders and CBZ archives, and TXT novels into one library, browse cover grids, and open items with your system default apps. The UI is a **Qt WebEngine** glassmorphism SPA with switchable **Glass** and **Vaporwave** skins.
 
