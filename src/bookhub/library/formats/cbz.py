@@ -39,7 +39,9 @@ def read_cbz_cover_bytes(file_path: Path) -> tuple[str | None, bytes | None, int
 
 def _safe_archive_member_path(member: str) -> Path | None:
     normalized = Path(member.replace("\\", "/"))
-    if normalized.is_absolute():
+    # Windows: Path("/x").is_absolute() is False (no drive), but .root is "\\".
+    # Reject drive/root-prefixed members so cache_dir joins cannot escape.
+    if normalized.is_absolute() or normalized.drive or normalized.root:
         return None
     if any(part in {"..", ""} for part in normalized.parts):
         return None

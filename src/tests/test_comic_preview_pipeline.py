@@ -16,7 +16,7 @@ if str(SRC_ROOT) not in sys.path:
 from PIL import Image
 
 from bookhub.library.models import ComicScanRequest, ComicScanRoot
-from bookhub.library.preview_paths import ensure_preview_structure, is_preview_variant_uri
+from bookhub.library.preview_paths import ensure_preview_structure, is_preview_variant_uri, uri_to_path
 from bookhub.library.repository import LibraryRepository
 from bookhub.library.scanner import scan_comic_roots
 from bookhub.library.thumbnail_tasks import regenerate_comic_thumbnails
@@ -207,6 +207,70 @@ class ComicPreviewPipelineTests(unittest.TestCase):
 
         self.assertEqual(result.succeeded, 1)
         self.assertTrue(outside.exists())
+
+    def test_broken_cover_placeholder_is_safe_small_png(self) -> None:
+        comic_root = self.tmp_path / "comic_root"
+        chapter = comic_root / "broken_vol"
+        chapter.mkdir(parents=True, exist_ok=True)
+        cover = chapter / "001.jpg"
+        cover.write_bytes(b"not an image at all")
+        Image.new("RGB", (80, 100), color=(1, 2, 3)).save(chapter / "002.jpg")
+
+        result = scan_comic_roots(
+            self.repo,
+            ComicScanRequest(
+                roots=[ComicScanRoot(path=str(comic_root))],
+                max_depth=5,
+                placeholder_copy_enabled=True,
+            ),
+        )
+        self.assertEqual(result.comic_detected_folders, 1)
+        self.assertEqual(result.comic_placeholder_copied_count, 1)
+
+        records = self.repo.list_comics(include_missing=False)
+        self.assertEqual(len(records), 1)
+        placeholder_uri = str(records[0].get("thumbnail_path") or "")
+        self.assertTrue(is_preview_variant_uri(placeholder_uri, resource_type="comic", variant="original"))
+        thumb = uri_to_path(placeholder_uri)
+        self.assertIsNotNone(thumb)
+        assert thumb is not None
+        self.assertEqual(thumb.suffix.lower(), ".png")
+        self.assertNotEqual(thumb.read_bytes(), cover.read_bytes())
+        with Image.open(thumb) as img:
+            self.assertLessEqual(img.size[0], 96)
+            self.assertLessEqual(img.size[1], 144)
+
+    def test_broken_cover_regenerate_falls_back_to_placeholder(self) -> None:
+        comic_root = self.tmp_path / "comic_root"
+        chapter = comic_root / "broken_vol"
+        chapter.mkdir(parents=True, exist_ok=True)
+        cover = chapter / "001.jpg"
+        cover.write_bytes(b"not an image at all")
+        Image.new("RGB", (80, 100), color=(1, 2, 3)).save(chapter / "002.jpg")
+
+        scan_comic_roots(
+            self.repo,
+            ComicScanRequest(
+                roots=[ComicScanRoot(path=str(comic_root))],
+                max_depth=5,
+                placeholder_copy_enabled=True,
+            ),
+        )
+        records = self.repo.list_comics(include_missing=False)
+        placeholder_uri = str(records[0].get("thumbnail_path") or "")
+
+        regen = regenerate_comic_thumbnails(self.repo, only_missing=True, workers=1)
+        self.assertEqual(regen.failed, 1)
+
+        records = self.repo.list_comics(include_missing=False)
+        after_uri = str(records[0].get("thumbnail_path") or "")
+        self.assertEqual(after_uri, placeholder_uri)
+        thumb = uri_to_path(after_uri)
+        self.assertIsNotNone(thumb)
+        assert thumb is not None
+        with Image.open(thumb) as img:
+            self.assertLessEqual(img.size[0], 96)
+            self.assertLessEqual(img.size[1], 144)
 
 
 if __name__ == "__main__":

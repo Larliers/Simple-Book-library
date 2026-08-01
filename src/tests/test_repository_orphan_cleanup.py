@@ -70,5 +70,78 @@ class RepositoryOrphanCleanupTests(unittest.TestCase):
         self.assertEqual(int(enabled), 1)
 
 
+class RepositoryRootRemovalSafetyTests(unittest.TestCase):
+    """BUG-2 regression: root dirs containing LIKE wildcards (% / _) must not
+    delete sibling-directory records when a root is removed."""
+
+    def _repo(self) -> LibraryRepository:
+        tmp = tempfile.mkdtemp(prefix="bookhub_root_removal_")
+        return LibraryRepository(db_path=str(Path(tmp) / "library.db"))
+
+    def test_remove_root_keeps_sibling_with_like_wildcards(self) -> None:
+        repo = self._repo()
+        base = Path(repo.normalize_path(str(Path(tempfile.mkdtemp(prefix="lib_base_")))))
+        target = repo.normalize_path(str(base / "100%_Special"))
+        sibling = repo.normalize_path(str(base / "1000XSpecial"))
+        for path in (target, sibling):
+            repo.upsert_book(
+                {
+                    "path": path + "\\a.pdf",
+                    "title": Path(path).name,
+                    "file_name": "a.pdf",
+                    "extension": ".pdf",
+                    "resource_type": "book",
+                    "tags_json": "[]",
+                }
+            )
+        repo.add_root(target)
+        # Sibling must not be affected by removing target root.
+        deleted = repo.remove_root(target)
+        self.assertEqual(deleted, 1)
+        remaining = repo.list_books(include_missing=False)
+        self.assertEqual([b["title"] for b in remaining], ["1000XSpecial"])
+
+    def test_remove_comic_root_keeps_sibling_with_like_wildcards(self) -> None:
+        repo = self._repo()
+        base = Path(repo.normalize_path(str(Path(tempfile.mkdtemp(prefix="comic_base_")))))
+        target = repo.normalize_path(str(base / "100%_Special"))
+        sibling = repo.normalize_path(str(base / "1000XSpecial"))
+        for path in (target, sibling):
+            repo.upsert_comic(
+                {
+                    "path": path + "\\mycomic",
+                    "title": Path(path).name,
+                    "image_count": 1,
+                }
+            )
+        repo.add_comic_root(target)
+        deleted = repo.remove_comic_root(target)
+        self.assertEqual(deleted, 1)
+        remaining = repo.list_comics(include_missing=False)
+        self.assertEqual([c["title"] for c in remaining], ["1000XSpecial"])
+
+    def test_remove_text_root_keeps_sibling_with_like_wildcards(self) -> None:
+        repo = self._repo()
+        base = Path(repo.normalize_path(str(Path(tempfile.mkdtemp(prefix="text_base_")))))
+        target = repo.normalize_path(str(base / "100%_Special"))
+        sibling = repo.normalize_path(str(base / "1000XSpecial"))
+        for path in (target, sibling):
+            repo.upsert_book(
+                {
+                    "path": path + "\\novel.txt",
+                    "title": Path(path).name,
+                    "file_name": "novel.txt",
+                    "extension": ".txt",
+                    "resource_type": "text_novel",
+                    "tags_json": "[]",
+                }
+            )
+        repo.add_text_root(target)
+        deleted = repo.remove_text_root(target)
+        self.assertEqual(deleted, 1)
+        remaining = repo.list_books(include_missing=False)
+        self.assertEqual([b["title"] for b in remaining], ["1000XSpecial"])
+
+
 if __name__ == "__main__":
     unittest.main()

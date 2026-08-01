@@ -31,6 +31,12 @@ src/sql/scan_report.json
 img_preview/*
 !img_preview/.gitkeep
 
+# 测试产物（pytest 重定向输出）
+pytest_out*.txt
+
+# 运行期扫描日志（dev 态 src/Scan_error_logs，打包态 exe 同级）
+Scan_error_logs/
+
 # Nuitka / 打包产物
 build/
 dist/

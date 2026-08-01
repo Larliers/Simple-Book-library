@@ -14,7 +14,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from bookhub.library.formats.zip_safety import ZipBombError, open_zip_safely  # noqa: E402
-from bookhub.library.formats.cbz import prepare_cbz_for_external_viewer  # noqa: E402
+from bookhub.library.formats.cbz import _safe_archive_member_path, prepare_cbz_for_external_viewer  # noqa: E402
 from bookhub.library.metadata import (  # noqa: E402
     build_thumbnail_by_extension,
     extract_metadata_by_extension,
@@ -219,6 +219,37 @@ class ComicCbzTests(unittest.TestCase):
             cache_dir = first_page.parent
             self.assertTrue((cache_dir / "002.png").is_file())
             self.assertTrue((cache_dir / ".cbz_source").is_file())
+
+    def test_safe_archive_member_path_rejects_escape_vectors(self) -> None:
+        for evil in (
+            "/evil.png",
+            "\\evil.png",
+            "C:/evil.png",
+            "C:\\evil.png",
+            "../evil.png",
+            "pages/../../evil.png",
+        ):
+            with self.subTest(member=evil):
+                self.assertIsNone(_safe_archive_member_path(evil))
+        normal = _safe_archive_member_path("pages/001.png")
+        self.assertIsNotNone(normal)
+        assert normal is not None
+        self.assertEqual(normal.parts, ("pages", "001.png"))
+        # "a//b.png" is normalized by Path and stays inside the cache dir; it is not an escape vector.
+        self.assertIsNotNone(_safe_archive_member_path("a//b.png"))
+
+    def test_malicious_cbz_never_writes_outside_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            cbz = base / "Evil.cbz"
+            with zipfile.ZipFile(cbz, "w") as zf:
+                zf.writestr("/evil.png", b"fake-png-bytes")
+            preview = base / "preview"
+            first_page = prepare_cbz_for_external_viewer(cbz, preview)
+            self.assertIsNone(first_page)
+            self.assertFalse((base / "evil.png").exists(), "escaped file must not be written")
+            escape_target = Path(Path(tmp).anchor) / "evil.png"
+            self.assertFalse(escape_target.exists())
 
 
 if __name__ == "__main__":

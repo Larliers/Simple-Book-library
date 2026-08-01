@@ -405,6 +405,8 @@ def _apply_comic_title_conflict(
 
 
 _RASTERIZE_COVER_EXTENSIONS = {".gif", ".bmp", ".tif", ".tiff"}
+_PLACEHOLDER_FALLBACK_SIZE = (96, 144)
+_PLACEHOLDER_FALLBACK_COLOR = (112, 118, 128)
 
 
 def _copy_or_downscale_comic_placeholder(
@@ -439,8 +441,18 @@ def _copy_or_downscale_comic_placeholder(
     except Exception as exc:
         if must_rasterize:
             raise OSError(f"rasterize cover failed for {cover_path}: {exc}") from exc
-        shutil.copy2(cover_path, placeholder_path)
-        return placeholder_path, False
+        # Decode failed (huge/corrupt source): emit a tiny solid-color placeholder
+        # instead of copying the original, so Qt never decodes the oversized file.
+        placeholder_png = placeholder_path.with_suffix(".png")
+        try:
+            Image.new("RGB", _PLACEHOLDER_FALLBACK_SIZE, _PLACEHOLDER_FALLBACK_COLOR).save(
+                placeholder_png, format="PNG", icc_profile=None, optimize=True
+            )
+            return placeholder_png, False
+        except Exception as fallback_exc:
+            raise OSError(
+                f"create fallback placeholder failed for {cover_path}: {fallback_exc}"
+            ) from fallback_exc
 
 
 def _extract_text_fields(

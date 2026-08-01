@@ -60,6 +60,12 @@ class LibraryViewModelSearchTests(unittest.TestCase):
         self.assertEqual(tag_suggestions[0]["label"], "奇幻")
         self.assertEqual(tag_suggestions[0]["query_value"], "tag:奇幻")
 
+    def test_empty_query_has_no_hardcoded_history_suggestion(self) -> None:
+        suggestions = self.view_model.search_suggestions_for_query("")
+        history_groups = [item for item in suggestions if item["group"] == "History"]
+        self.assertEqual(history_groups, [])
+        self.assertNotIn("Bauhaus principles", [item["label"] for item in suggestions])
+
 
 if __name__ == "__main__":
     unittest.main()

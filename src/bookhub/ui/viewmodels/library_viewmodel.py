@@ -76,14 +76,7 @@ class LibraryViewModel:
 
     def search_suggestions_for_query(self, raw_query: str) -> list[dict[str, str]]:
         query = raw_query.strip().lower()
-        suggestions: list[dict[str, str]] = [
-            {
-                "group": "History",
-                "label": "Bauhaus principles",
-                "description": "Recent search",
-                "query_value": "bauhaus",
-            }
-        ]
+        suggestions: list[dict[str, str]] = []
 
         tags = {
             tag

@@ -847,7 +847,7 @@ class LibraryRepository:
 
     def remove_root(self, path: str | Path) -> int:
         normalized = self.normalize_path(path)
-        root_prefix = normalized.rstrip("\\/") + os.sep + "%"
+        root_prefix = normalized.rstrip("\\/") + os.sep
         with self._connection() as conn:
             conn.execute("DELETE FROM library_roots WHERE path = ?", (normalized,))
             rows = conn.execute(
@@ -855,9 +855,9 @@ class LibraryRepository:
                 SELECT id FROM books
                 WHERE 1=1
                 AND resource_type != 'text_novel'
-                AND (path = ? OR path LIKE ?)
+                AND (path = ? OR substr(path, 1, length(?)) = ?)
                 """,
-                (normalized, root_prefix),
+                (normalized, root_prefix, root_prefix),
             ).fetchall()
             book_ids = [int(row["id"]) for row in rows]
             self._purge_book_links(conn, book_ids)
@@ -866,9 +866,9 @@ class LibraryRepository:
                 DELETE FROM books
                 WHERE 1=1
                 AND resource_type != 'text_novel'
-                AND (path = ? OR path LIKE ?)
+                AND (path = ? OR substr(path, 1, length(?)) = ?)
                 """,
-                (normalized, root_prefix),
+                (normalized, root_prefix, root_prefix),
             )
             deleted_count = cursor.rowcount if cursor.rowcount is not None else 0
         return max(0, int(deleted_count))
@@ -907,16 +907,16 @@ class LibraryRepository:
 
     def remove_comic_root(self, path: str | Path) -> int:
         normalized = self.normalize_path(path)
-        root_prefix = normalized.rstrip("\\/") + os.sep + "%"
+        root_prefix = normalized.rstrip("\\/") + os.sep
         with self._connection() as conn:
             conn.execute("DELETE FROM comic_roots WHERE path = ?", (normalized,))
             rows = conn.execute(
                 """
                 SELECT id FROM comics
                 WHERE 1=1
-                AND (path = ? OR path LIKE ?)
+                AND (path = ? OR substr(path, 1, length(?)) = ?)
                 """,
-                (normalized, root_prefix),
+                (normalized, root_prefix, root_prefix),
             ).fetchall()
             comic_ids = [int(row["id"]) for row in rows]
             self._purge_comic_links(conn, comic_ids)
@@ -924,9 +924,9 @@ class LibraryRepository:
                 """
                 DELETE FROM comics
                 WHERE 1=1
-                AND (path = ? OR path LIKE ?)
+                AND (path = ? OR substr(path, 1, length(?)) = ?)
                 """,
-                (normalized, root_prefix),
+                (normalized, root_prefix, root_prefix),
             )
             deleted_count = cursor.rowcount if cursor.rowcount is not None else 0
         return max(0, int(deleted_count))
@@ -966,7 +966,7 @@ class LibraryRepository:
 
     def remove_text_root(self, path: str | Path) -> int:
         normalized = self.normalize_path(path)
-        root_prefix = normalized.rstrip("\\/") + os.sep + "%"
+        root_prefix = normalized.rstrip("\\/") + os.sep
         with self._connection() as conn:
             conn.execute("DELETE FROM text_roots WHERE path = ?", (normalized,))
             rows = conn.execute(
@@ -974,9 +974,9 @@ class LibraryRepository:
                 SELECT id FROM books
                 WHERE 1=1
                 AND resource_type = 'text_novel'
-                AND (path = ? OR path LIKE ?)
+                AND (path = ? OR substr(path, 1, length(?)) = ?)
                 """,
-                (normalized, root_prefix),
+                (normalized, root_prefix, root_prefix),
             ).fetchall()
             book_ids = [int(row["id"]) for row in rows]
             self._purge_book_links(conn, book_ids)
@@ -985,9 +985,9 @@ class LibraryRepository:
                 DELETE FROM books
                 WHERE 1=1
                 AND resource_type = 'text_novel'
-                AND (path = ? OR path LIKE ?)
+                AND (path = ? OR substr(path, 1, length(?)) = ?)
                 """,
-                (normalized, root_prefix),
+                (normalized, root_prefix, root_prefix),
             )
             deleted_count = cursor.rowcount if cursor.rowcount is not None else 0
         return max(0, int(deleted_count))
