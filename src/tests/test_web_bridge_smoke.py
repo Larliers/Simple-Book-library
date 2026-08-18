@@ -113,13 +113,13 @@ class WebBridgeSmokeTests(unittest.TestCase):
 
     def test_collection_rename_delete_roundtrip(self) -> None:
         bridge = self._make_bridge()
-        cid = bridge.createCollection("Temp List")
+        cid = bridge.createCollection("collections", "Temp List")
         self.assertGreater(cid, 0)
         self.assertTrue(bridge.renameCollection(cid, "Renamed List"))
-        collections = json.loads(bridge.getCollections())
+        collections = json.loads(bridge.getCollections("collections"))
         self.assertTrue(any(c["id"] == cid and c["name"] == "Renamed List" for c in collections))
         self.assertTrue(bridge.deleteCollection(cid))
-        collections = json.loads(bridge.getCollections())
+        collections = json.loads(bridge.getCollections("collections"))
         self.assertFalse(any(c["id"] == cid for c in collections))
 
     def test_bootstrap_includes_menu_i18n_keys(self) -> None:
@@ -151,11 +151,14 @@ class WebBridgeSmokeTests(unittest.TestCase):
         self.assertIn("Fast", strings["settings.hash.hint"])
         self.assertIn("Paths", strings["settings.nav.paths"])
 
-    def test_set_page_sort_favorites(self) -> None:
-        bridge = self._make_bridge()
-        payload = json.loads(bridge.setPageSort("favorites", "asc"))
-        self.assertEqual(payload.get("sort"), "asc")
-        self.assertEqual(bridge._repo.get_setting("favorites_sort_order", "desc"), "asc")
+    def test_nav_items_typed_collections_order(self) -> None:
+        pages = [page for page, _, _ in NAV_ITEMS]
+        self.assertEqual(
+            pages,
+            ["library", "collections", "text_novel", "novel_collections", "comic", "comic_collections"],
+        )
+        self.assertNotIn("favorites", pages)
+        self.assertNotIn("comic_fav", pages)
 
     def test_settings_payload_includes_comic_perf(self) -> None:
         bridge = self._make_bridge()

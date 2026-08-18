@@ -14,12 +14,12 @@ from bookhub.ui.models.resource import ResourceItem
 from bookhub.ui.viewmodels.library_viewmodel import LibraryViewModel
 
 try:
-    from bookhub.ui.web_bridge import PAGE_COMIC, PAGE_COMIC_FAV, UiBridge
+    from bookhub.ui.web_bridge import PAGE_COMIC, PAGE_COMIC_COLLECTIONS, UiBridge
 
     QT_AVAILABLE = True
 except Exception:  # pragma: no cover - optional UI dependency
     PAGE_COMIC = "comic"
-    PAGE_COMIC_FAV = "comic_fav"
+    PAGE_COMIC_COLLECTIONS = "comic_collections"
     UiBridge = None  # type: ignore[assignment,misc]
     QT_AVAILABLE = False
 
@@ -105,18 +105,13 @@ class UiBridgeComicSearchTests(unittest.TestCase):
                 "is_missing": False,
             },
         ]
-        self.repo.get_favorite_comics.return_value = [
-            {
-                "resource_id": "comic-2",
-                "title": "Beta Comic",
-                "path": "D:/comics/beta",
-                "cover_image_path": "",
-                "thumbnail_path": None,
-                "image_count": 5,
-                "info_text": "",
-                "is_missing": False,
-            }
-        ]
+        self.repo.get_favorite_comics.return_value = []
+        self.repo.get_all_collections.return_value = []
+        self.repo.get_collection.return_value = None
+        self.repo.get_comics_in_collection.return_value = []
+        self.repo.get_books_in_collection.return_value = []
+        self.repo.get_collection_item_count.return_value = 0
+        self.repo.get_collection_kind.return_value = None
         self.bridge = UiBridge(self.repo, allowed_images=set())
 
     def test_search_filters_comic_page(self) -> None:
@@ -126,13 +121,13 @@ class UiBridgeComicSearchTests(unittest.TestCase):
         data = json.loads(payload)
         self.assertEqual([item["id"] for item in data["items"]], ["comic-1"])
 
-    def test_search_filters_comic_fav_page_independently(self) -> None:
+    def test_search_comic_collections_overview_ignores_query(self) -> None:
         import json
 
         self.bridge.search(PAGE_COMIC, "alpha")
-        payload = self.bridge.search(PAGE_COMIC_FAV, "beta")
-        data = json.loads(payload)
-        self.assertEqual([item["id"] for item in data["items"]], ["comic-2"])
+        payload = json.loads(self.bridge.search(PAGE_COMIC_COLLECTIONS, "beta"))
+        self.assertEqual(payload.get("mode"), "collections")
+        self.assertEqual(payload.get("items"), [])
 
         comic_payload = json.loads(self.bridge.search(PAGE_COMIC, ""))
         self.assertEqual({item["id"] for item in comic_payload["items"]}, {"comic-1", "comic-2"})

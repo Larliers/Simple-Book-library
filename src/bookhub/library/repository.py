@@ -38,6 +38,14 @@ DEFAULT_COVER_SELECTED_BORDER_WIDTH = 2
 COVER_SELECTED_BORDER_WIDTH_MIN = 1
 COVER_SELECTED_BORDER_WIDTH_MAX = 6
 DEFAULT_COVER_SELECTED_BORDER_COLOR = "#8EA7C6"
+COLLECTION_KIND_BOOK = "book"
+COLLECTION_KIND_TEXT_NOVEL = "text_novel"
+COLLECTION_KIND_COMIC = "comic"
+COLLECTION_KINDS = frozenset(
+    {COLLECTION_KIND_BOOK, COLLECTION_KIND_TEXT_NOVEL, COLLECTION_KIND_COMIC}
+)
+DEFAULT_FAVORITES_COLLECTION_NAME = "收藏"
+FAVORITES_MIGRATED_SETTING = "favorites_migrated_to_collections"
 
 DEFAULT_DB_PATH = default_db_path()
 DEFAULT_SCAN_REPORT_PATH = default_scan_report_path()
@@ -45,6 +53,19 @@ DEFAULT_SCAN_REPORT_PATH = default_scan_report_path()
 
 def now_utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def normalize_collection_kind(kind: str | None) -> str:
+    value = str(kind or COLLECTION_KIND_BOOK).strip().lower()
+    if value not in COLLECTION_KINDS:
+        return COLLECTION_KIND_BOOK
+    return value
+
+
+def book_collection_kind(resource_type: str | None) -> str:
+    if str(resource_type or "").strip() == COLLECTION_KIND_TEXT_NOVEL:
+        return COLLECTION_KIND_TEXT_NOVEL
+    return COLLECTION_KIND_BOOK
 
 
 def _normalize_card_spacing(value: int | str | None) -> int:
@@ -98,6 +119,7 @@ class LibraryRepository:
         self.scan_report_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
         self._init_collections_tables()
+        self._migrate_typed_collections()
         self._ensure_defaults()
         self._apply_preview_dir_from_settings_or_override()
         self.purge_marked_missing_records()
@@ -218,6 +240,7 @@ class LibraryRepository:
             return
         placeholders = ",".join(["?"] * len(ids))
         conn.execute(f"DELETE FROM favorite_comics WHERE comic_id IN ({placeholders})", tuple(ids))  # noqa: S608
+        conn.execute(f"DELETE FROM collection_comics WHERE comic_id IN ({placeholders})", tuple(ids))  # noqa: S608
 
     def _cleanup_orphan_links(self, conn: sqlite3.Connection) -> None:
         tables = {
@@ -230,6 +253,12 @@ class LibraryRepository:
             conn.execute("DELETE FROM collection_books WHERE book_id NOT IN (SELECT id FROM books)")
         if "favorite_comics" in tables and "comics" in tables:
             conn.execute("DELETE FROM favorite_comics WHERE comic_id NOT IN (SELECT id FROM comics)")
+        if "collection_comics" in tables and "comics" in tables:
+            conn.execute("DELETE FROM collection_comics WHERE comic_id NOT IN (SELECT id FROM comics)")
+        if "collection_comics" in tables and "collections" in tables:
+            conn.execute(
+                "DELETE FROM collection_comics WHERE collection_id NOT IN (SELECT id FROM collections)"
+            )
 
     def _init_db(self) -> None:
         with self._connection() as conn:
@@ -1632,6 +1661,7 @@ class LibraryRepository:
                     id          INTEGER PRIMARY KEY AUTOINCREMENT,
                     name        TEXT    NOT NULL,
                     description TEXT    NOT NULL DEFAULT '',
+                    kind        TEXT    NOT NULL DEFAULT 'book',
                     created_at  TEXT    NOT NULL DEFAULT ''
                 );
                 CREATE TABLE IF NOT EXISTS collection_books (
@@ -1641,41 +1671,170 @@ class LibraryRepository:
                     PRIMARY KEY (collection_id, book_id),
                     FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
                 );
+                CREATE TABLE IF NOT EXISTS collection_comics (
+                    collection_id INTEGER NOT NULL,
+                    comic_id      INTEGER NOT NULL,
+                    added_at      TEXT    NOT NULL DEFAULT '',
+                    PRIMARY KEY (collection_id, comic_id),
+                    FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
+                );
                 CREATE TABLE IF NOT EXISTS favorite_books (
                     book_id  INTEGER PRIMARY KEY,
                     added_at TEXT    NOT NULL DEFAULT ''
                 );
             """)
+            self._ensure_column(
+                conn,
+                "collections",
+                "kind",
+                "ALTER TABLE collections ADD COLUMN kind TEXT NOT NULL DEFAULT 'book'",
+            )
+
+    def _migrate_typed_collections(self) -> None:
+        """Split mixed collections by kind and fold favorites into default named lists."""
+        with self._connection() as conn:
+            conn.execute(
+                "UPDATE collections SET kind = ? WHERE kind IS NULL OR trim(kind) = ''",
+                (COLLECTION_KIND_BOOK,),
+            )
+            conn.execute(
+                """
+                DELETE FROM collection_books
+                WHERE collection_id IN (SELECT id FROM collections WHERE kind = ?)
+                  AND book_id IN (SELECT id FROM books WHERE resource_type = ?)
+                """,
+                (COLLECTION_KIND_BOOK, COLLECTION_KIND_TEXT_NOVEL),
+            )
+            conn.execute(
+                """
+                DELETE FROM collection_books
+                WHERE collection_id IN (SELECT id FROM collections WHERE kind = ?)
+                  AND book_id IN (
+                      SELECT id FROM books WHERE COALESCE(resource_type, '') != ?
+                  )
+                """,
+                (COLLECTION_KIND_TEXT_NOVEL, COLLECTION_KIND_TEXT_NOVEL),
+            )
+        if self.get_setting(FAVORITES_MIGRATED_SETTING, False):
+            return
+        self._migrate_favorite_books_into_collections()
+        self._migrate_favorite_comics_into_collections()
+        self.set_setting(FAVORITES_MIGRATED_SETTING, True)
+
+    def _ensure_named_collection(self, name: str, kind: str) -> int:
+        kind_value = normalize_collection_kind(kind)
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT id FROM collections WHERE name = ? AND kind = ? ORDER BY id ASC LIMIT 1",
+                (name, kind_value),
+            ).fetchone()
+            if row:
+                return int(row["id"])
+            cur = conn.execute(
+                "INSERT INTO collections (name, description, kind, created_at) VALUES (?, '', ?, ?)",
+                (name, kind_value, now_utc_iso()),
+            )
+            return int(cur.lastrowid)
+
+    def _migrate_favorite_books_into_collections(self) -> None:
+        with self._connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT fb.book_id, fb.added_at, b.resource_type
+                FROM favorite_books fb
+                INNER JOIN books b ON b.id = fb.book_id
+                """
+            ).fetchall()
+        if not rows:
+            return
+        by_kind: dict[str, list[tuple[int, str]]] = {
+            COLLECTION_KIND_BOOK: [],
+            COLLECTION_KIND_TEXT_NOVEL: [],
+        }
+        for row in rows:
+            kind = book_collection_kind(row["resource_type"])
+            by_kind[kind].append((int(row["book_id"]), str(row["added_at"] or now_utc_iso())))
+        for kind, members in by_kind.items():
+            if not members:
+                continue
+            cid = self._ensure_named_collection(DEFAULT_FAVORITES_COLLECTION_NAME, kind)
+            with self._connection() as conn:
+                conn.executemany(
+                    "INSERT OR IGNORE INTO collection_books (collection_id, book_id, added_at) VALUES (?, ?, ?)",
+                    [(cid, book_id, added_at) for book_id, added_at in members],
+                )
+
+    def _migrate_favorite_comics_into_collections(self) -> None:
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT comic_id, added_at FROM favorite_comics"
+            ).fetchall()
+        if not rows:
+            return
+        cid = self._ensure_named_collection(DEFAULT_FAVORITES_COLLECTION_NAME, COLLECTION_KIND_COMIC)
+        with self._connection() as conn:
+            conn.executemany(
+                "INSERT OR IGNORE INTO collection_comics (collection_id, comic_id, added_at) VALUES (?, ?, ?)",
+                [
+                    (cid, int(row["comic_id"]), str(row["added_at"] or now_utc_iso()))
+                    for row in rows
+                ],
+            )
 
     # -- Collections --------------------------------------------------
 
-    def create_collection(self, name: str, description: str = "") -> int:
+    def create_collection(self, name: str, description: str = "", kind: str = COLLECTION_KIND_BOOK) -> int:
         """Create a new collection and return its id."""
-        import datetime
         self._init_collections_tables()
+        kind_value = normalize_collection_kind(kind)
         with self._connection() as conn:
             cur = conn.execute(
-                "INSERT INTO collections (name, description, created_at) VALUES (?, ?, ?)",
-                (name, description, datetime.datetime.now().isoformat()),
+                "INSERT INTO collections (name, description, kind, created_at) VALUES (?, ?, ?, ?)",
+                (name, description, kind_value, now_utc_iso()),
             )
             return cur.lastrowid
 
-    def get_all_collections(self) -> list[dict]:
-        """Return all collections ordered by creation time (newest first)."""
+    def get_all_collections(self, kind: str | None = None) -> list[dict]:
+        """Return collections ordered by creation time (newest first)."""
         self._init_collections_tables()
+        kind_value = normalize_collection_kind(kind) if kind is not None else None
         with self._connection() as conn:
-            conn.row_factory = __import__('sqlite3').Row
-            rows = conn.execute(
-                "SELECT * FROM collections ORDER BY created_at DESC"
-            ).fetchall()
+            if kind_value is None:
+                rows = conn.execute(
+                    "SELECT * FROM collections ORDER BY created_at DESC"
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM collections WHERE kind = ? ORDER BY created_at DESC",
+                    (kind_value,),
+                ).fetchall()
             return [dict(r) for r in rows]
 
+    def get_collection(self, collection_id: int) -> dict | None:
+        self._init_collections_tables()
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM collections WHERE id = ?",
+                (int(collection_id),),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_collection_kind(self, collection_id: int) -> str | None:
+        collection = self.get_collection(collection_id)
+        if collection is None:
+            return None
+        return normalize_collection_kind(collection.get("kind"))
+
     def delete_collection(self, collection_id: int) -> None:
-        """Delete a collection (and its book links)."""
+        """Delete a collection (and its member links)."""
         self._init_collections_tables()
         with self._connection() as conn:
             conn.execute(
                 "DELETE FROM collection_books WHERE collection_id = ?",
+                (collection_id,),
+            )
+            conn.execute(
+                "DELETE FROM collection_comics WHERE collection_id = ?",
                 (collection_id,),
             )
             conn.execute(
@@ -1693,14 +1852,24 @@ class LibraryRepository:
             )
 
     def add_book_to_collection(self, book_id: int, collection_id: int) -> None:
-        """Add a book to a collection (idempotent)."""
-        import datetime
+        """Add a book to a collection (idempotent, kind-checked)."""
         self._init_collections_tables()
+        kind = self.get_collection_kind(collection_id)
+        if kind in {None, COLLECTION_KIND_COMIC}:
+            return
         with self._connection() as conn:
+            row = conn.execute(
+                "SELECT resource_type FROM books WHERE id = ?",
+                (int(book_id),),
+            ).fetchone()
+            if not row:
+                return
+            if book_collection_kind(row["resource_type"]) != kind:
+                return
             conn.execute(
                 "INSERT OR IGNORE INTO collection_books (collection_id, book_id, added_at)"
                 " VALUES (?, ?, ?)",
-                (collection_id, book_id, datetime.datetime.now().isoformat()),
+                (collection_id, book_id, now_utc_iso()),
             )
 
     def remove_book_from_collection(self, book_id: int, collection_id: int) -> None:
@@ -1713,32 +1882,67 @@ class LibraryRepository:
             )
 
     def get_books_in_collection(self, collection_id: int) -> list[dict]:
-        """Return all book rows for a collection."""
+        """Return book/novel rows for a collection, filtered by collection kind."""
         self._init_collections_tables()
+        kind = self.get_collection_kind(collection_id)
+        if kind in {None, COLLECTION_KIND_COMIC}:
+            return []
+        type_clause = (
+            "AND COALESCE(b.resource_type, '') = ?"
+            if kind == COLLECTION_KIND_TEXT_NOVEL
+            else "AND COALESCE(b.resource_type, '') != ?"
+        )
         with self._connection() as conn:
-            conn.row_factory = __import__('sqlite3').Row
             try:
                 rows = conn.execute(
-                    """SELECT b.*
+                    f"""SELECT b.*
                        FROM books b
                        INNER JOIN collection_books cb ON b.id = cb.book_id
                        WHERE cb.collection_id = ?
-                       ORDER BY cb.added_at DESC""",
-                    (collection_id,),
+                       {type_clause}
+                       ORDER BY cb.added_at DESC""",  # noqa: S608
+                    (collection_id, COLLECTION_KIND_TEXT_NOVEL),
                 ).fetchall()
                 return [dict(r) for r in rows]
             except Exception:
                 return []
 
     def get_collection_book_count(self, collection_id: int) -> int:
-        """Return number of books in a collection."""
+        """Return number of members in a collection."""
+        return self.get_collection_item_count(collection_id)
+
+    def get_collection_item_count(self, collection_id: int) -> int:
         self._init_collections_tables()
+        kind = self.get_collection_kind(collection_id)
+        if kind is None:
+            return 0
         with self._connection() as conn:
-            row = conn.execute(
-                "SELECT COUNT(*) FROM collection_books WHERE collection_id = ?",
-                (collection_id,),
-            ).fetchone()
-            return row[0] if row else 0
+            if kind == COLLECTION_KIND_COMIC:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM collection_comics WHERE collection_id = ?",
+                    (collection_id,),
+                ).fetchone()
+            elif kind == COLLECTION_KIND_TEXT_NOVEL:
+                row = conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM collection_books cb
+                    INNER JOIN books b ON b.id = cb.book_id
+                    WHERE cb.collection_id = ? AND COALESCE(b.resource_type, '') = ?
+                    """,
+                    (collection_id, COLLECTION_KIND_TEXT_NOVEL),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM collection_books cb
+                    INNER JOIN books b ON b.id = cb.book_id
+                    WHERE cb.collection_id = ? AND COALESCE(b.resource_type, '') != ?
+                    """,
+                    (collection_id, COLLECTION_KIND_TEXT_NOVEL),
+                ).fetchone()
+            return int(row[0]) if row else 0
 
     def is_book_in_collection(self, book_id: int, collection_id: int) -> bool:
         """Return True if book is in the collection."""
@@ -1749,6 +1953,63 @@ class LibraryRepository:
                 (collection_id, book_id),
             ).fetchone()
             return row is not None
+
+    def add_comic_to_collection(self, comic_id: int, collection_id: int) -> None:
+        self._init_collections_tables()
+        if self.get_collection_kind(collection_id) != COLLECTION_KIND_COMIC:
+            return
+        with self._connection() as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM comics WHERE id = ?",
+                (int(comic_id),),
+            ).fetchone()
+            if not exists:
+                return
+            conn.execute(
+                "INSERT OR IGNORE INTO collection_comics (collection_id, comic_id, added_at)"
+                " VALUES (?, ?, ?)",
+                (int(collection_id), int(comic_id), now_utc_iso()),
+            )
+
+    def remove_comic_from_collection(self, comic_id: int, collection_id: int) -> None:
+        self._init_collections_tables()
+        with self._connection() as conn:
+            conn.execute(
+                "DELETE FROM collection_comics WHERE collection_id = ? AND comic_id = ?",
+                (int(collection_id), int(comic_id)),
+            )
+
+    def get_comics_in_collection(self, collection_id: int) -> list[dict]:
+        self._init_collections_tables()
+        if self.get_collection_kind(collection_id) != COLLECTION_KIND_COMIC:
+            return []
+        with self._connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT c.*
+                FROM comics c
+                INNER JOIN collection_comics cc ON c.id = cc.comic_id
+                WHERE cc.collection_id = ?
+                ORDER BY cc.added_at DESC
+                """,
+                (int(collection_id),),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_collections_for_comic(self, comic_id: int) -> list[dict]:
+        self._init_collections_tables()
+        with self._connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT c.id, c.name, c.description, c.kind, c.created_at, cc.added_at
+                FROM collections c
+                INNER JOIN collection_comics cc ON cc.collection_id = c.id
+                WHERE cc.comic_id = ? AND c.kind = ?
+                ORDER BY lower(c.name)
+                """,
+                (int(comic_id), COLLECTION_KIND_COMIC),
+            ).fetchall()
+            return [dict(r) for r in rows]
 
     # -- Favorites ----------------------------------------------------
 
@@ -1789,20 +2050,26 @@ class LibraryRepository:
                 return []
 
     def get_collections_for_book(self, book_id: int) -> list[dict]:
-        """Return all collections that contain the given book."""
+        """Return same-kind collections that contain the given book."""
         self._init_collections_tables()
         with self._connection() as conn:
-            conn.row_factory = __import__("sqlite3").Row
+            row = conn.execute(
+                "SELECT resource_type FROM books WHERE id = ?",
+                (int(book_id),),
+            ).fetchone()
+            if not row:
+                return []
+            kind = book_collection_kind(row["resource_type"])
             try:
                 rows = conn.execute(
                     """
-                    SELECT c.id, c.name, c.description, c.created_at, cb.added_at
+                    SELECT c.id, c.name, c.description, c.kind, c.created_at, cb.added_at
                     FROM collections c
                     INNER JOIN collection_books cb ON cb.collection_id = c.id
-                    WHERE cb.book_id = ?
+                    WHERE cb.book_id = ? AND c.kind = ?
                     ORDER BY lower(c.name)
                     """,
-                    (int(book_id),),
+                    (int(book_id), kind),
                 ).fetchall()
                 return [dict(r) for r in rows]
             except Exception:

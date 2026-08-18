@@ -1,6 +1,6 @@
 ﻿# src 结构说明书（精简且完整）
 
-更新时间：2026-07-28
+更新时间：2026-08-18
 
 ## 1. 文档目标
 - 保留字符串式文件路径结构。
@@ -49,7 +49,8 @@ src/
 │  ├─ test_missed_cleanup.py
 │  ├─ test_text_scan_tags.py
 │  ├─ test_update_checker.py
-│  └─ test_app_paths.py
+│  ├─ test_app_paths.py
+│  └─ test_collection_kinds.py
 ├─ sql/
 │  └─ .gitkeep
 ├─ assets/
@@ -151,8 +152,9 @@ src/
 - `src/tests/test_missed_cleanup.py`：启动时清理遗留 `is_missing=1` 行；确认无 Missed 恢复 API。
 - `src/tests/test_comic_preview_pipeline.py`：漫画快扫占位与后台并行补图回归测试（占位复制、压缩替换、原图删除、超大图降采样、排序顺序、GIF/BMP/TIFF 入库与 GIF 首帧封面）。
 - `src/tests/test_cover_grid_settings.py`：封面选中边框归一化与 Repository 偏好持久化（含 Text 规则预览高度/窗口尺寸/预设）；已不再依赖旧 Widgets 页。
-- `src/tests/test_web_bridge_smoke.py`：Web Bridge / scheme / Text Rules CRUD 冒烟；bootstrap settings 含 `perRootScanStrategyEnabled`、`comicScanStrategy`、`appVersion` 与目录策略 i18n keys；library payload item 含 `extension`；`setRootScanStrategy` / `checkForUpdates` / `openExternalUrl` slot 存在性；`openResource` 对 CBZ/文件夹漫画解析首张图片路径（mock `_open_external`）。
-- `src/tests/test_comic_search.py`：漫画顶栏搜索回归（ViewModel title/path/info_text 过滤；UiBridge comic/comic_fav context 路由与独立 query，PySide6 可用时跑 Bridge 集成）。
+- `src/tests/test_web_bridge_smoke.py`：Web Bridge / scheme / Text Rules CRUD 冒烟；`NAV_ITEMS` 为图书馆/书籍合集/文本小说/小说合集/漫画/漫画合集；bootstrap settings 含 `perRootScanStrategyEnabled`、`comicScanStrategy`、`appVersion` 与目录策略 i18n keys；library payload item 含 `extension`；`createCollection(page,name)` / `getCollections(page)`；`setRootScanStrategy` / `checkForUpdates` / `openExternalUrl` slot 存在性；`openResource` 对 CBZ/文件夹漫画解析首张图片路径（mock `_open_external`）。
+- `src/tests/test_comic_search.py`：漫画顶栏搜索回归（ViewModel title/path/info_text 过滤；UiBridge comic 与 comic_collections 总览 context 路由，PySide6 可用时跑 Bridge 集成）。
+- `src/tests/test_collection_kinds.py`：合集 kind 隔离（book/text_novel/comic 互不混装）、跨类加入拒绝、小说成员从书籍合集剥离、收藏星标迁入默认「收藏」合集、删漫画清 `collection_comics`。
 - `src/tests/test_library_viewmodel_search.py`：Library/Text 搜索与字段前缀建议回归。
 - `src/tests/test_update_checker.py`：GitHub 更新检查回归（版本 normalize/compare、mock API 成功/404/有更新/已最新/网络错误）。
 - `src/tests/test_app_paths.py`：运行时路径回归（dev 态 repo 根路径 vs Nuitka frozen 态 exe 同级 `img_preview`/`sql`/`Scan_error_logs`）。
@@ -201,17 +203,17 @@ src/
 ### 3.5 UI 主组件（bookhub/ui）
 - `src/bookhub/ui/__init__.py`：UI 包导出入口。
 - `src/bookhub/ui/web_window.py`：当前主窗口 `WebAppWindow`；`set_web_page_background(skin, theme)` 按 skin×theme 同步底色；`web_zoom_factor` 启动 `setZoomFactor` 恢复并以轮询+debounce 写回 `app_settings`；负责后端编排——扫描/缩略图 worker（传入 `preview_dir`）、`PreviewCacheMigrateWorker` 换缓存目录、`UpdateCheckWorker` 检查 GitHub 最新 Release 并通过 `updateCheckResult` 回传前端、原生 `QFileDialog` 添加根目录/选缓存目录与编辑封面（写入 `repo.preview_dir`；漫画写 `manual:` fingerprint）、`remove_from_library`（仅删库记录不删磁盘）、`open_text_rules` 转交 Bridge 打开 Web 面板、字体与设置写库（含 `text_encoding_preference`、`perRootScanStrategyEnabled`、`comicScanStrategy`）；扫描完成 Toast 计入 `comic_added_count`，冲突日志优先写 `incoming_path`；忙时再点扫描/缩略图/换缓存/检查更新会 Toast，并通过 `scanState.kind` 推送忙碌态。
-- `src/bookhub/ui/web/js/app.js`：单一 SPA 壳；`loadSkinStylesheets`/`setUiSkin` UI 皮肤（Glass/Vaporwave）切换与 vw-scene 挂载（切换后持久化并 Toast 提示重启软件）；`#importBtn` → `addRoot("library")`；切页只重建 `#contentArea`；`scheduleRenderPage` + `renderGen` 可取消过期渲染；主内容区封面网格/合集/表格/漫画瀑布流与分页均走视口窗口化（`getBufferScreens`/`getGridColumns`/`measureCoverGridMetrics`/`visibleIndexRange` + `virt-spacer` + scroll/ResizeObserver rAF 合并）；可见 range 未变时跳过 DOM 重建，避免无效重建；`gridColumns` 限制每行封面数以放大单卡占屏、降低同屏解码量；`State.scrollPos` 切页恢复 scrollTop；收藏/漫画 `pageHeadTools` 排序控件；设置含 `viewportBufferScreens`（3–6）与 `gridColumns`（4–12）、`comic_title_conflict_policy` 下拉（都留/跳过新人/保留较新）、`textEncodingPreference` 下拉（简体优先/繁体优先/自动）、General 页 `comicScanStrategy` 下拉（snapshot/full），并在 hash 字段内提示 Fast 漏检风险；General 底部「关于」卡片展示 `appVersion` 与「检查更新」按钮（`checkForUpdates` → `updateCheckResult` → 有更新弹窗 `openExternalUrl` 打开 GitHub Releases）；路径与扫描任务合并到“路径与扫描”页——顶栏缩略图缓存目录卡片（更改/恢复默认 + `openPreviewCacheConfirmModal` 三模式：migrate/rewire_only/switch_only）、`perRootScanStrategyEnabled` 开关，开启后三类根目录卡片旁「扫描策略」按钮 + `openRootScanStrategyModal` 弹窗（继承全局 / 各类型合法覆盖），经 `setRootScanStrategy` 写库；旧 `tasks` 状态自动归一到 `paths`；设置删路径确认模态；Settings 文本根「Rules」走 Web Text Rules 面板；Tasks 扫描摘要（字段兼容别名并计入漫画新增）；扫描/缩略图忙碌时禁用顶栏与 Settings 全部相关按钮；漫画性能三项开关；右键/详情支持漫画编辑封面与「从书库移除」；页面路由与网格/列表/漫画/合集渲染、详情栏、搜索建议、设置页、Quick Add/合集模态、日/夜主题引擎；顶栏搜索按页上下文（library/text_novel/comic/comic_fav）经 `searchContext()`/`State.searchQueries`/`syncSearchInputFromPage` 独立 query 与 placeholder，漫画页可搜标题/路径/旁注；全局拦截 Chromium 默认右键；书籍网格（图书馆/收藏/合集详情）封面左上角 `format-badge`（`formatBadgeLabel`/`buildCoverSlot`，白名单启用，漫画页不显示）。
+- `src/bookhub/ui/web/js/app.js`：单一 SPA 壳；`loadSkinStylesheets`/`setUiSkin` UI 皮肤（Glass/Vaporwave）切换与 vw-scene 挂载（切换后持久化并 Toast 提示重启软件）；`#importBtn` → `addRoot("library")`；切页只重建 `#contentArea`；`scheduleRenderPage` + `renderGen` 可取消过期渲染；主内容区封面网格/合集/表格/漫画瀑布流与分页均走视口窗口化（`getBufferScreens`/`getGridColumns`/`measureCoverGridMetrics`/`visibleIndexRange` + `virt-spacer` + scroll/ResizeObserver rAF 合并）；可见 range 未变时跳过 DOM 重建，避免无效重建；`gridColumns` 限制每行封面数以放大单卡占屏、降低同屏解码量；`State.scrollPos` 切页恢复 scrollTop；漫画与漫画合集详情 `pageHeadTools` 排序控件；三类合集页共用新建/重命名/删除与返回，漫画合集详情走漫画网格；Quick Add 按当前页 kind 过滤合集；侧栏顺序为图书馆/书籍合集/文本小说/小说合集/漫画/漫画合集；设置含 `viewportBufferScreens`（3–6）与 `gridColumns`（4–12）、`comic_title_conflict_policy` 下拉（都留/跳过新人/保留较新）、`textEncodingPreference` 下拉（简体优先/繁体优先/自动）、General 页 `comicScanStrategy` 下拉（snapshot/full），并在 hash 字段内提示 Fast 漏检风险；General 底部「关于」卡片展示 `appVersion` 与「检查更新」按钮（`checkForUpdates` → `updateCheckResult` → 有更新弹窗 `openExternalUrl` 打开 GitHub Releases）；路径与扫描任务合并到“路径与扫描”页——顶栏缩略图缓存目录卡片（更改/恢复默认 + `openPreviewCacheConfirmModal` 三模式：migrate/rewire_only/switch_only）、`perRootScanStrategyEnabled` 开关，开启后三类根目录卡片旁「扫描策略」按钮 + `openRootScanStrategyModal` 弹窗（继承全局 / 各类型合法覆盖），经 `setRootScanStrategy` 写库；旧 `tasks` 状态自动归一到 `paths`；设置删路径确认模态；Settings 文本根「Rules」走 Web Text Rules 面板；Tasks 扫描摘要（字段兼容别名并计入漫画新增）；扫描/缩略图忙碌时禁用顶栏与 Settings 全部相关按钮；漫画性能三项开关；右键/详情支持漫画编辑封面与「从书库移除」；页面路由与网格/列表/漫画/合集渲染、详情栏、搜索建议、设置页、Quick Add/合集模态、日/夜主题引擎；顶栏搜索按页上下文（library/text_novel/comic，漫画合集详情可搜）经 `searchContext()`/`State.searchQueries`/`syncSearchInputFromPage` 独立 query 与 placeholder，漫画页可搜标题/路径/旁注；合集总览不搜；全局拦截 Chromium 默认右键；书籍网格（图书馆/书籍与小说合集详情）封面左上角 `format-badge`（`formatBadgeLabel`/`buildCoverSlot`，白名单启用，漫画页不显示）。
 - `src/bookhub/ui/web/js/text_rules.js`：Text Rules 宽屏遮罩三栏编辑器（字段/规则链/步骤/预览）；防抖单样本预览、多样本预览、内置模板、用户预设、常用正则与帮助抽屉；经 Bridge 读写 `rules_json`。`renderTextRulesPanel()` 仅在 `openTextRulesPanel` 打开时构建一次性外壳（`.tr-overlay`/`.tr-host`/header/footer，带入场动画）；此后所有编辑（字段切换、规则/步骤增删移动、source/类别/类型 change、模板/预设）改调用 `renderTrBody()` 仅重建 `.tr-body` 三栏内容并保存/恢复各栏 `scrollTop`，不再重播入场动画；`installTrWheelGuard` 在 host 上拦截落在 `<select>` 的滚轮事件（Windows 悬停滚轮会静默改变原生 select 值并触发 change），`preventDefault` 后手动转发 `deltaY` 给 `.tr-col`/`.tr-drawer-body`，修复滚动时误触发全量重建导致的「白屏/像整页重载」；预览 diag 展示 `detectedEncoding` 与置信度。
-- `src/bookhub/ui/web_bridge.py`：`UiBridge(QObject)` 前后端桥；`ui_skin`（glass|vaporwave）读写与 `setUiSkin`；`setPageBackground(skin, theme)` 同步 WebEngine 底色；内置英文回退含“Paths & Scan”、缓存目录、Fast 指纹风险提示与 Settings About/更新检查文案；`setPageSort`；`editCover` / `removeFromLibrary`；settings 含 `appVersion` / `previewCacheDir` / `previewCacheDirEffective` / `previewCacheDirDefault` / `perRootScanStrategyEnabled` / `comicScanStrategy` / `viewportBufferScreens` / `gridColumns` / `comicPlaceholderCopy` / `autoGenerateComicThumbs` / `comicThumbnailWorkers` / `comic_title_conflict_policy` / `textEncodingPreference` / `scanReport`；`browsePreviewCacheDir` / `setPreviewCacheDir(path, mode)`；`checkForUpdates` 委托宿主启动 `UpdateCheckWorker`；`openExternalUrl` 经 `QDesktopServices.openUrl` 白名单打开 `https://github.com/` 链接；根列表经 `list_roots_with_strategy` / `list_comic_roots_with_strategy` / `list_text_roots_with_rules` 下发 `scan_strategy`；`@Slot setRootScanStrategy(kind, path, strategy)` 写三表覆盖（空串归 NULL）；`openResource` 对漫画页经 `resolve_comic_open_path` 解析首张图片后再外部打开（CBZ 解压全部页到阅读缓存并唤起系统默认看图软件）；`_record_to_item`/`_item_payload`/`_book_payload` 下发 `extension` 供前端格式角标；搜索持有四套 ViewModel（`_library_vm`/`_text_vm`/`_comic_vm`/`_comic_fav_vm`），`_comic_record_to_item` 将 `comics` 行转为 `ResourceItem`，`search(context,query)`/`getSuggestions` 经 `_search_vm_for_context` 路由至 comic/comic_fav，漫画页 payload 走 `_comic_page_payload_from_items` 内存过滤（title/path/info_text）；`@Slot` 暴露 `getBootstrap/search/getSuggestions/getDetail/openResource/toggleFavorite/openCollection/closeCollection/getTags/getCollections/addTag/removeTag/createCollection/setCollectionMembership/removeFromCollection/editCover/removeFromLibrary/openFolder/setSetting/setThemeSettings/addRoot/removeRoot/openTextRules/getTextRules/previewTextRule/previewTextRulesMulti/saveTextRules/getTextRulePresets/setTextRulePresets/startScan/startThumbnailTask/reloadFonts/getErrorLogs/checkForUpdates/openExternalUrl`；`Signal` 推送 `resourcesChanged/toast/scanProgress/scanState/settingsChanged/errorLogsChanged/languageChanged/textRulesOpen/updateCheckResult`；内部持有 `LibraryViewModel`（库/文本/漫画/漫画收藏四上下文）并把书籍/文本/漫画/收藏/合集统一构造为前端资源载荷；封面路径写入 scheme 白名单集合；Text Rules 样本路径沙箱于对应 text root；预览载荷透传 `detectedEncoding` / `encodingConfidence`。
-- `src/bookhub/library/repository.py`：`PRAGMA foreign_keys` + `busy_timeout`；删书/漫画与移根时清关联表；启动 orphan 清理；`hash_strategy` 缺省与非法值回退均为 `quick`；`comic_view_mode` 缺省为 `pagination`；`viewport_buffer_screens` 缺省 3（允许 3–6）；`grid_columns` 缺省 6（允许 4/5/6/7/8/10/12，限制每行封面数）；`comic_title_conflict_policy` 缺省 `skip_incoming`；`text_encoding_preference` 缺省 `simplified`。
+- `src/bookhub/ui/web_bridge.py`：`UiBridge(QObject)` 前后端桥；`ui_skin`（glass|vaporwave）读写与 `setUiSkin`；`setPageBackground(skin, theme)` 同步 WebEngine 底色；内置英文回退含“Paths & Scan”、缓存目录、Fast 指纹风险提示与 Settings About/更新检查文案；`setPageSort`；`editCover` / `removeFromLibrary`；settings 含 `appVersion` / `previewCacheDir` / `previewCacheDirEffective` / `previewCacheDirDefault` / `perRootScanStrategyEnabled` / `comicScanStrategy` / `viewportBufferScreens` / `gridColumns` / `comicPlaceholderCopy` / `autoGenerateComicThumbs` / `comicThumbnailWorkers` / `comic_title_conflict_policy` / `textEncodingPreference` / `scanReport`；`browsePreviewCacheDir` / `setPreviewCacheDir(path, mode)`；`checkForUpdates` 委托宿主启动 `UpdateCheckWorker`；`openExternalUrl` 经 `QDesktopServices.openUrl` 白名单打开 `https://github.com/` 链接；根列表经 `list_roots_with_strategy` / `list_comic_roots_with_strategy` / `list_text_roots_with_rules` 下发 `scan_strategy`；`@Slot setRootScanStrategy(kind, path, strategy)` 写三表覆盖（空串归 NULL）；`openResource` 对漫画页经 `resolve_comic_open_path` 解析首张图片后再外部打开（CBZ 解压全部页到阅读缓存并唤起系统默认看图软件）；`_record_to_item`/`_item_payload`/`_book_payload` 下发 `extension` 供前端格式角标；`NAV_ITEMS` 为图书馆/书籍合集/文本小说/小说合集/漫画/漫画合集；`openCollection/closeCollection/createCollection/getCollections` 带 page 并按 kind 隔离；`_open_collection_by_page` 避免三类合集页互相覆盖；搜索持有四套 ViewModel（`_library_vm`/`_text_vm`/`_comic_vm`/`_comic_collection_vm`），`_comic_record_to_item` 将 `comics` 行转为 `ResourceItem`，`search(context,query)`/`getSuggestions` 经 `_search_vm_for_context` 路由至 comic 或漫画合集详情，漫画页 payload 走 `_comic_page_payload_from_items` 内存过滤（title/path/info_text）；`@Slot` 暴露 `getBootstrap/search/getSuggestions/getDetail/openResource/toggleFavorite/openCollection/closeCollection/getTags/getCollections/addTag/removeTag/createCollection/setCollectionMembership/removeFromCollection/editCover/removeFromLibrary/openFolder/setSetting/setThemeSettings/addRoot/removeRoot/openTextRules/getTextRules/previewTextRule/previewTextRulesMulti/saveTextRules/getTextRulePresets/setTextRulePresets/startScan/startThumbnailTask/reloadFonts/getErrorLogs/checkForUpdates/openExternalUrl`；`Signal` 推送 `resourcesChanged/toast/scanProgress/scanState/settingsChanged/errorLogsChanged/languageChanged/textRulesOpen/updateCheckResult`；内部持有 `LibraryViewModel`（库/文本/漫画/漫画合集四上下文）并把书籍/文本/漫画/三类合集统一构造为前端资源载荷；封面路径写入 scheme 白名单集合；Text Rules 样本路径沙箱于对应 text root；预览载荷透传 `detectedEncoding` / `encodingConfidence`。
+- `src/bookhub/library/repository.py`：`PRAGMA foreign_keys` + `busy_timeout`；删书/漫画与移根时清关联表（含 `collection_comics`）；启动 orphan 清理；`collections.kind`（book/text_novel/comic）+ `collection_comics`；跨类加入拒绝；既有合集默认 book 并剥离小说成员；`favorite_*` 一次性迁入名为「收藏」的对应 kind 合集（表保留不 DROP）；`hash_strategy` 缺省与非法值回退均为 `quick`；`comic_view_mode` 缺省为 `pagination`；`viewport_buffer_screens` 缺省 3（允许 3–6）；`grid_columns` 缺省 6（允许 4/5/6/7/8/10/12，限制每行封面数）；`comic_title_conflict_policy` 缺省 `skip_incoming`；`text_encoding_preference` 缺省 `simplified`。
 - `src/bookhub/ui/web_scheme.py`：`app://` 自定义 URL scheme；`register_app_scheme()`（须在 QApplication 前调用）、`to_local_path()`（`file://`/裸路径归一化）、`AppSchemeHandler`（`app://app/*` 服务 `web/` 静态资源含 woff2 字体；`app://img/x?p=` 仅服务白名单封面图，越权拒绝）。
 - `src/bookhub/ui/web/index.html`：玻璃拟态 UI 骨架（侧栏含 Import Books、顶栏/主区/详情栏/遮罩/toast/右键菜单挂载点）；`data-ui-skin` + `data-theme` 双轴；`data-skin-link` 样式链由 `app.js` 按皮肤动态注入；`#vwSceneMount` 供蒸汽波 vw-scene 背景层。
 - `src/bookhub/ui/web/fonts/`：蒸汽波 Web 字体（Sora/Space Mono woff2 + OFL.txt）；经 `app://app/fonts/*` 与 `skins/vaporwave/fonts.css` @font-face 加载，不依赖 CDN。
 - `src/bookhub/ui/web/css/base.css`：布局/结构/动画（无 skin 色板）；glass 与 vaporwave 共用。
 - `src/bookhub/ui/web/css/app.css`：legacy 入口，`@import` glass bundle（兼容旧引用）。
 - `src/bookhub/ui/web/css/skins/glass/tokens.css`：玻璃拟态 day/night CSS 变量。
-- `src/bookhub/ui/web/css/skins/glass/components.css`：玻璃拟态组件样式（由原 app.css 拆出）；含 `.cover-wrap`/`.format-badge` 书籍格式角标（封面左上角 pill，图书馆/收藏/合集详情网格启用）。
+- `src/bookhub/ui/web/css/skins/glass/components.css`：玻璃拟态组件样式（由原 app.css 拆出）；含 `.cover-wrap`/`.format-badge` 书籍格式角标（封面左上角 pill，图书馆/书籍与小说合集详情网格启用）。
 - `src/bookhub/ui/web/css/skins/vaporwave/fonts.css`：蒸汽波 @font-face，引用 `web/fonts/` 本地 woff2。
 - `src/bookhub/ui/web/css/skins/vaporwave/tokens.css`：蒸汽波 day/night token（Sora/Space Mono 语义变量）。
 - `src/bookhub/ui/web/css/skins/vaporwave/background.css`：vw-scene 大气渐变 + CRT 扫描线（已移除太阳/动态透视网格）；night 子选择器微调。
@@ -238,9 +240,10 @@ src/
 - `src/bookhub/ui/viewmodels/library_viewmodel.py`：Library/Text/Comic 资源查询过滤、字段前缀搜索（`title:`/`author:`/`tag:`）、普通 query 匹配 title/author/tags/path/info_text、视图模式、搜索建议状态。
 
 ## 4. 当前关键实现（简要）
+- 2026-08-18 三类合集互相独立：侧栏为图书馆 / 书籍合集 / 文本小说 / 小说合集 / 漫画 / 漫画合集；`collections.kind` 隔离成员；漫画合集为可新建命名列表（详情走 comic_grid）；独立「收藏」「漫画收藏」页退出侧栏，既有星标迁入默认「收藏」合集；见 `decision-20260818-001`。
 - 2026-07-28 发布自动化与便携路径：`app_paths.py` 统一 dev/打包态数据目录；`scripts/pack_release.ps1` 将 `main.dist` 改名为 `Simple-Book-library-v{APP_VERSION}`、预建空 `img_preview`/`sql`/`Scan_error_logs` 并打 win64 zip；`.github/workflows/release.yml` 支持 workflow_dispatch 一键 bump（patch/minor/major）→ commit/tag → Nuitka build → pack → GitHub Release；用户数据不进入 zip。
-- 2026-07-28 漫画顶栏搜索对接：`comics.title` 扫描入库已有，补齐前后端搜索链路；Bridge 新增 `_comic_vm`/`_comic_fav_vm` + `_search_vm_for_context`，`search`/`getSuggestions` 支持 comic/comic_fav；前端 `searchContext`/`State.searchQueries` 按页独立 query 与 placeholder；匹配 title/path/info_text；收藏/合集页仍无搜索。
-- 2026-07-25 书籍格式角标：图书馆/收藏/合集详情封面网格左上角显示格式 pill（PDF/EPUB/FB2 等）；Bridge `_record_to_item`/`_item_payload`/`_book_payload` 下发 `extension`；`app.js` 白名单启用 `buildCoverSlot`+`formatBadgeLabel`；漫画页不显示；Glass/Vaporwave 双皮肤 `.cover-wrap`/`.format-badge`。
+- 2026-07-28 漫画顶栏搜索对接：`comics.title` 扫描入库已有，补齐前后端搜索链路；Bridge `_library_vm`/`_text_vm`/`_comic_vm`/`_comic_collection_vm` + `_search_vm_for_context`，`search`/`getSuggestions` 支持 comic 与漫画合集详情；前端 `searchContext`/`State.searchQueries` 按页独立 query 与 placeholder；匹配 title/path/info_text；合集总览仍无搜索。
+- 2026-07-25 书籍格式角标：图书馆/书籍与小说合集详情封面网格左上角显示格式 pill（PDF/EPUB/FB2 等）；Bridge `_record_to_item`/`_item_payload`/`_book_payload` 下发 `extension`；`app.js` 白名单启用 `buildCoverSlot`+`formatBadgeLabel`；漫画页不显示；Glass/Vaporwave 双皮肤 `.cover-wrap`/`.format-badge`。
 - 2026-07-24 蒸汽波排版崩坏修复（P0）：`skins/vaporwave/components.css` 由原型逐字节复制版（1090 行，选择器对不上真实 DOM，四大面板丢失 grid 落位导致主区被挤进 320px 窄列）重写为与 glass 逐选择器对齐的 613 行版本；布局声明照抄 glass、视觉层保留蒸汽波语言；新增 `Changable_vaporwave_ui/real-dom-preview.html` 真实 DOM 镜像验证页，浏览器截图验收 Library/Settings/Modal/Toast/TextRules 与 day/night 全部正常。
 - 2026-07-24 蒸汽波背景精简：移除 vw-sun 条纹太阳与 vw-grid 动态透视网格，保留 atmosphere 渐变 + scanlines，减轻主内容区视觉干扰。
 - 2026-07-24 UI 皮肤切换按钮反馈：`setUiSkin` 持久化后同步 `State.uiSkin` 并重绘 Settings 分段控件 active 态（仅视觉选中，仍不热重载 CSS）；`settingsChanged` 同步 `uiSkin` 字段。
@@ -262,13 +265,13 @@ src/
 - 2026-05-30 外部工具链注释：Hue MCP 相关目录已统一迁移到 `F:\MCP\hue-mcp-server` 与 `F:\MCP\hue`；本次仍不涉及 `src/` 代码变更。
 - 2026-06-11 UI 范本注释：新增 `Simple-Book-library-Dev_Document\UI\新UI\glassmorphism-ui.html` 作为 Glassmorphism 交互画板；设置、弹窗、组件状态已拆到底部独立预览区，便于后续拖拽/缩放窗口设计；页面内新增中文/英文 i18n 浮动预览按钮，且注释标明不进入后续正式开发；左侧侧栏删除“导入书籍”入口；Library 总页面主区采用 cover-only 封面网格，标题/作者/tag 等信息交由右侧详情栏承载；范本新增日间/夜间主题变量、按本地时间 `22:00-07:00` 自动切换的夜间模式设置区、检查频率与自动过渡时长预览控件；手动 Day/Night/Auto 预览使用快速切换，避免分钟级过渡造成白天样式灰化残留；本次不涉及 `src/` 代码与目录结构变更。
 - 缩略图：WebP 落盘，DB 保存 `file://` URL。
-- 数据能力：Collections、Favorites、Tags 已接入。
+- 数据能力：三类独立命名合集（书籍/小说/漫画）已接入；Tags 仍走书籍；独立 Favorites 页已退出侧栏。
 - Library 展示：主区双栏，右侧详情栏常驻且可拖拽宽度。
-- Favorites/CollectionDetail 展示：支持与 Library 一致的 grid/list 切换；主区接入右侧详情栏；详情页主区布局采用与 Library 相同的伸展策略，避免分栏贴底；grid 卡片采用 cover-only 样式并支持选中态；模式持久化到 `app_settings`。
-- 封面网格视觉：Library、Comic、Comic Fav、Favorites、CollectionDetail 统一使用“背景 + 封面直陈列”无壳层样式；仅在选中时显示可配置边框（全局设置）。
+- 合集详情展示：书籍/小说合集详情支持与 Library 一致的 grid/list 切换并接入右侧详情栏；漫画合集详情仅 comic_grid。
+- 封面网格视觉：Library、Comic、三类合集详情统一使用“背景 + 封面直陈列”无壳层样式；仅在选中时显示可配置边框（全局设置）。
 - Settings 导航：仅保留 General 与 Error logs 两项；移除顶部搜索框、Shortcuts、Manage Metadata 占位区域。
 - Text Novel：新增独立侧栏入口与独立列表页；TXT 不进入 Library 主列表；右侧详情栏可展示 `info_text` 预览。
-- 详情面板语义统一：`info_text` 仅作为“文本预览”渲染一次；“所属书单”仅在 `book` 资源类型显示，Comic/Text Novel 不再复用该字段。
+- 详情面板语义统一：`info_text` 仅作为“文本预览”渲染一次；「所属合集」按资源 kind 显示（图书/小说 `bookCollections`，漫画 `comicCollections`）。
 - Text 规则：规则弹窗新增“使用文档”入口、三步引导区、一键模板（标题/作者/兜底）与当前字段规则链预览；source 与 step type 显示文案与内部 code 分离（`userData` 持久化 code），在不改 JSON 协议前提下增强可读性。
 - Text 规则 i18n：补齐规则弹窗内参数字段名、source/step 文案、规则/步骤列表格式与帮助文档文案键，减少硬编码英文暴露。
 - i18n 治理基线：新增 `scripts/i18n_hardcoded_scan.py`，用于扫描 UI 常见硬编码文案候选并输出清单（仅报告，不阻断）。
@@ -284,8 +287,8 @@ src/
 - 交互规则：单击看详情（无门控延迟）、双击外部打开。
 - 字体重载：`Reload Fonts` 现在执行完整链路（重扫 `src/fonts` -> 注册字体 -> 解析回退 -> `QApplication.setFont` + 动态 QSS 立即生效 -> 持久化设置）；目录不存在时自动创建并通过右下角 Toast 提示。
 - 漫画性能：扫描阶段改为“快扫入库+可选首图占位复制”，压缩缩略图改为后台并行补全；预览图目录升级为 `img_preview/<resource_type>/<original|compressed>`。
-- 漫画性能（本轮）：Comic/Comic Fav 页显示模式改为 Settings 全局二选一（瀑布流/分页），分页容量可配（24/48/72/96）；扫描侧排序字段改为 `folder_modified_at`（目录 mtime）并保留 `folder_size_mtime` 仅作增量判定；超大封面占位自动降采样以规避 Qt 256MB 解码限制。
-- 页面渲染性能（本轮）：Comic/Comic Fav 增加“事件驱动失效 + 双层缓存（数据索引缓存 + 卡片复用缓存）”；Library/Favorites/Collections 网格改为“布局重排优先复用卡片、按需重建单卡”，减少切页和重排时的全量 widget 销毁与封面重复解码。
+- 漫画性能（本轮）：Comic/漫画合集详情页显示模式改为 Settings 全局二选一（瀑布流/分页），分页容量可配（24/48/72/96）；扫描侧排序字段改为 `folder_modified_at`（目录 mtime）并保留 `folder_size_mtime` 仅作增量判定；超大封面占位自动降采样以规避 Qt 256MB 解码限制。
+- 页面渲染性能（本轮）：Comic/漫画合集详情增加“事件驱动失效 + 双层缓存（数据索引缓存 + 卡片复用缓存）”；Library/三类合集网格改为“布局重排优先复用卡片、按需重建单卡”，减少切页和重排时的全量 widget 销毁与封面重复解码。
 
 ## 5. 边界与约束
 - 当前导入粒度：目录导入（不支持单文件导入）。

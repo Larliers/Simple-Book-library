@@ -15,7 +15,7 @@
 
 - 想集中管理本机 PDF、EPUB、HTML、Markdown、FB2、DOCX、漫画文件夹/CBZ、TXT 小说
 - 希望按目录扫描入库，而不是一个个手动添加文件
-- 需要标签、书单、收藏，以及给 TXT 配置导入规则（从文件名或正文提取信息）
+- 需要标签、按类型分开的合集（书籍 / 小说 / 漫画），以及给 TXT 配置导入规则（从文件名或正文提取信息）
 - 大书库需要增量扫描、可配置指纹策略与视口虚拟化渲染
 
 ## 能做什么
@@ -25,8 +25,9 @@
 | **Library** | PDF、EPUB、HTML/HTM、Markdown、FB2/FB2.ZIP、DOCX | 网格/列表浏览、右侧详情、标签、搜索；封面优先内嵌图，否则标题占位卡 |
 | **Comic** | 含图片的**叶子文件夹**（jpg / jpeg / png / webp / gif / bmp / tiff）与 **CBZ** | 文件夹或 CBZ 各算一本；瀑布流或分页；GIF 取首帧 |
 | **Text Novel** | TXT（自动探测 UTF-8 / GBK 等编码） | 列表浏览、正文预览、自定义导入规则链 |
-| **Collections** | — | 自定义书单 |
-| **Favorites** | 图书 + 漫画 | 统一收藏入口 |
+| **Book Collections** | 图书馆书 | 可新建的书籍合集 |
+| **Novel Collections** | 文本小说 | 可新建的小说合集 |
+| **Comic Collections** | 漫画 | 可新建的漫画合集 |
 | **Settings** | — | 路径与扫描、外观与主题、缩略图缓存、错误日志、检查更新 |
 
 ### 导入与扫描

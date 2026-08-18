@@ -13,6 +13,12 @@ from PySide6.QtGui import QDesktopServices
 
 from bookhub.i18n import tr
 from bookhub.version import APP_VERSION
+from bookhub.library.repository import (
+    COLLECTION_KIND_BOOK,
+    COLLECTION_KIND_COMIC,
+    COLLECTION_KIND_TEXT_NOVEL,
+    normalize_collection_kind,
+)
 from bookhub.library.thumbnail_tasks import resolve_comic_open_path
 from bookhub.ui.viewmodels.library_viewmodel import LibraryViewModel
 from bookhub.ui.web_scheme import to_local_path
@@ -20,18 +26,36 @@ from bookhub.ui.web_scheme import to_local_path
 PAGE_LIBRARY = "library"
 PAGE_TEXT = "text_novel"
 PAGE_COLLECTIONS = "collections"
-PAGE_FAVORITES = "favorites"
+PAGE_NOVEL_COLLECTIONS = "novel_collections"
 PAGE_COMIC = "comic"
-PAGE_COMIC_FAV = "comic_fav"
+PAGE_COMIC_COLLECTIONS = "comic_collections"
+
+COLLECTION_PAGE_KINDS = {
+    PAGE_COLLECTIONS: COLLECTION_KIND_BOOK,
+    PAGE_NOVEL_COLLECTIONS: COLLECTION_KIND_TEXT_NOVEL,
+    PAGE_COMIC_COLLECTIONS: COLLECTION_KIND_COMIC,
+}
 
 NAV_ITEMS = [
     (PAGE_LIBRARY, "sidebar.library", "Library"),
+    (PAGE_COLLECTIONS, "sidebar.book_collections", "Book Collections"),
     (PAGE_TEXT, "sidebar.text_novel", "Text Novel"),
-    (PAGE_COLLECTIONS, "sidebar.collections", "Collections"),
-    (PAGE_FAVORITES, "sidebar.favorites", "Favorites"),
+    (PAGE_NOVEL_COLLECTIONS, "sidebar.novel_collections", "Novel Collections"),
     (PAGE_COMIC, "sidebar.comic", "Comic"),
-    (PAGE_COMIC_FAV, "sidebar.comic_fav", "Comic Fav"),
+    (PAGE_COMIC_COLLECTIONS, "sidebar.comic_collections", "Comic Collections"),
 ]
+
+COMIC_PAGES = {PAGE_COMIC, PAGE_COMIC_COLLECTIONS}
+
+
+def _kind_for_page(page: str) -> str:
+    if page in COLLECTION_PAGE_KINDS:
+        return COLLECTION_PAGE_KINDS[page]
+    if page == PAGE_TEXT:
+        return COLLECTION_KIND_TEXT_NOVEL
+    if page in COMIC_PAGES:
+        return COLLECTION_KIND_COMIC
+    return COLLECTION_KIND_BOOK
 
 
 def _web_strings() -> dict[str, str]:
@@ -42,10 +66,10 @@ def _web_strings() -> dict[str, str]:
         ("sidebar.import_books", "Import Books"),
         ("sidebar.library", "Library"),
         ("sidebar.text_novel", "Text Novel"),
-        ("sidebar.collections", "Collections"),
-        ("sidebar.favorites", "Favorites"),
+        ("sidebar.book_collections", "Book Collections"),
+        ("sidebar.novel_collections", "Novel Collections"),
         ("sidebar.comic", "Comic"),
-        ("sidebar.comic_fav", "Comic Fav"),
+        ("sidebar.comic_collections", "Comic Collections"),
         ("view.grid", "Grid"),
         ("view.list", "List"),
         ("topbar.scan", "Scan"),
@@ -92,11 +116,15 @@ def _web_strings() -> dict[str, str]:
         ("common.new_list", "New List"),
         ("common.back", "Back"),
         ("collections.count", "{count} books"),
+        ("collections.novel_count", "{count} novels"),
+        ("collections.comic_count", "{count} comics"),
         ("collections.empty", "No collections yet."),
+        ("collections.novel_empty", "No novel collections yet."),
+        ("collections.comic_empty", "No comic collections yet."),
         ("collections.rename_title", "Rename Collection"),
         ("collections.rename_placeholder", "New name..."),
         ("collections.delete_title", "Delete Collection"),
-        ("collections.delete_msg", "Delete this collection? Books will not be removed from the library."),
+        ("collections.delete_msg", "Delete this collection? Items will not be removed from the library."),
         ("comic.sort.folder_mtime_desc", "Folder Date: Newest First"),
         ("comic.sort.folder_mtime_asc", "Folder Date: Oldest First"),
         ("comic.sort.folder_name_asc", "Folder Name: A-Z"),
@@ -317,8 +345,12 @@ class UiBridge(QObject):
         self._library_vm = LibraryViewModel()
         self._text_vm = LibraryViewModel()
         self._comic_vm = LibraryViewModel()
-        self._comic_fav_vm = LibraryViewModel()
-        self._current_collection_id: int | None = None
+        self._comic_collection_vm = LibraryViewModel()
+        self._open_collection_by_page: dict[str, int | None] = {
+            PAGE_COLLECTIONS: None,
+            PAGE_NOVEL_COLLECTIONS: None,
+            PAGE_COMIC_COLLECTIONS: None,
+        }
         self.reload_data()
 
     def set_host(self, host) -> None:
@@ -343,10 +375,15 @@ class UiBridge(QObject):
         comic_order = self._repo.get_comic_sort_order_main()
         comic_rows = self._repo.list_comics(include_missing=False, order_by=comic_order)
         self._comic_vm.set_resources([self._comic_record_to_item(r) for r in comic_rows])
+        self._refresh_comic_collection_vm()
 
-        fav_order = self._repo.get_comic_sort_order_fav()
-        fav_rows = self._repo.get_favorite_comics(order_by=fav_order)
-        self._comic_fav_vm.set_resources([self._comic_record_to_item(r) for r in fav_rows])
+    def _refresh_comic_collection_vm(self) -> None:
+        cid = self._open_collection_by_page.get(PAGE_COMIC_COLLECTIONS)
+        if not cid:
+            self._comic_collection_vm.set_resources([])
+            return
+        rows = self._repo.get_comics_in_collection(int(cid))
+        self._comic_collection_vm.set_resources([self._comic_record_to_item(r) for r in rows])
 
     def _record_to_item(self, record: dict[str, Any]):
         from bookhub.ui.models.resource import ResourceItem
@@ -388,8 +425,8 @@ class UiBridge(QObject):
             return self._text_vm, PAGE_TEXT
         if context == PAGE_COMIC:
             return self._comic_vm, PAGE_COMIC
-        if context == PAGE_COMIC_FAV:
-            return self._comic_fav_vm, PAGE_COMIC_FAV
+        if context == PAGE_COMIC_COLLECTIONS:
+            return self._comic_collection_vm, PAGE_COMIC_COLLECTIONS
         return self._library_vm, PAGE_LIBRARY
 
     # ---- cover url -----------------------------------------------------
@@ -498,20 +535,11 @@ class UiBridge(QObject):
         if page == PAGE_TEXT:
             items = self._text_vm.filtered_resources(include_missing=False)
             return {"mode": "list", "items": [self._item_payload(i) for i in items]}
-        if page == PAGE_FAVORITES:
-            order = str(self._repo.get_setting("favorites_sort_order", "desc") or "desc").strip().lower()
-            if order not in {"asc", "desc"}:
-                order = "desc"
-            rows = self._repo.get_favorite_books(order=order)
-            return {"mode": "grid_or_list", "sort": order, "items": [self._book_payload(r) for r in rows]}
         if page == PAGE_COMIC:
             items = self._comic_vm.filtered_resources(include_missing=False)
             return self._comic_page_payload_from_items(items, favorite=False)
-        if page == PAGE_COMIC_FAV:
-            items = self._comic_fav_vm.filtered_resources(include_missing=False)
-            return self._comic_page_payload_from_items(items, favorite=True)
-        if page == PAGE_COLLECTIONS:
-            return self._collections_payload()
+        if page in COLLECTION_PAGE_KINDS:
+            return self._collections_payload(page)
         return {"mode": "grid_or_list", "items": []}
 
     def _comic_page_payload(self, rows: list[dict[str, Any]], *, favorite: bool) -> dict[str, Any]:
@@ -532,40 +560,63 @@ class UiBridge(QObject):
             "items": [self._comic_item_payload(i) for i in items],
         }
 
-    def _collections_payload(self) -> dict[str, Any]:
-        if self._current_collection_id is not None:
-            rows = self._repo.get_books_in_collection(self._current_collection_id)
-            name = next(
-                (c.get("name") for c in self._repo.get_all_collections() if int(c.get("id")) == self._current_collection_id),
-                "",
-            )
-            return {
-                "mode": "collection_detail",
-                "collectionId": self._current_collection_id,
-                "collectionName": name,
-                "items": [self._book_payload(r) for r in rows],
-            }
-        collections = self._repo.get_all_collections()
+    def _collections_payload(self, page: str) -> dict[str, Any]:
+        kind = _kind_for_page(page)
+        cid = self._open_collection_by_page.get(page)
+        if cid is not None:
+            collection = self._repo.get_collection(int(cid))
+            if collection is None or normalize_collection_kind(collection.get("kind")) != kind:
+                self._open_collection_by_page[page] = None
+            else:
+                name = collection.get("name") or ""
+                if kind == COLLECTION_KIND_COMIC:
+                    self._refresh_comic_collection_vm()
+                    items = self._comic_collection_vm.filtered_resources(include_missing=False)
+                    payload = self._comic_page_payload_from_items(items, favorite=True)
+                    payload["collectionId"] = int(cid)
+                    payload["collectionName"] = name
+                    return payload
+                rows = self._repo.get_books_in_collection(int(cid))
+                return {
+                    "mode": "collection_detail",
+                    "collectionId": int(cid),
+                    "collectionName": name,
+                    "items": [self._book_payload(r) for r in rows],
+                }
+        collections = self._repo.get_all_collections(kind)
+        count_key, count_fb = {
+            COLLECTION_KIND_TEXT_NOVEL: ("collections.novel_count", "{count} novels"),
+            COLLECTION_KIND_COMIC: ("collections.comic_count", "{count} comics"),
+        }.get(kind, ("collections.count", "{count} books"))
         items = []
         for collection in collections:
-            cid = int(collection.get("id"))
-            books = self._repo.get_books_in_collection(cid)
+            item_cid = int(collection.get("id"))
             cover = None
-            for book in books:
-                cover = self._cover_url(book.get("thumbnail_path"))
-                if cover:
-                    break
+            member_count = self._repo.get_collection_item_count(item_cid)
+            if kind == COLLECTION_KIND_COMIC:
+                members = self._repo.get_comics_in_collection(item_cid)
+                for comic in members:
+                    cover = self._cover_url(comic.get("thumbnail_path"), comic.get("cover_image_path"))
+                    if cover:
+                        break
+            else:
+                members = self._repo.get_books_in_collection(item_cid)
+                for book in members:
+                    cover = self._cover_url(book.get("thumbnail_path"))
+                    if cover:
+                        break
             items.append({
-                "id": str(cid),
-                "collectionId": cid,
+                "id": str(item_cid),
+                "collectionId": item_cid,
                 "title": collection.get("name") or "",
-                "meta": tr("collections.count", "{count} books").format(count=len(books)),
+                "meta": tr(count_key, count_fb).format(count=member_count),
                 "cover": cover,
                 "type": "collection",
+                "kind": kind,
                 "tags": [],
                 "path": "",
             })
-        return {"mode": "collections", "items": items}
+        return {"mode": "collections", "kind": kind, "items": items}
 
     def _pages_payload(self) -> dict[str, Any]:
         return {page: self._page_resources(page) for page, _, _ in NAV_ITEMS}
@@ -680,25 +731,30 @@ class UiBridge(QObject):
         vm, _page = self._search_vm_for_context(context)
         return json.dumps(vm.search_suggestions_for_query(query), ensure_ascii=False)
 
-    @Slot(int, result=str)
-    def openCollection(self, collection_id: int) -> str:
-        self._current_collection_id = int(collection_id) if collection_id else None
-        return json.dumps(self._page_resources(PAGE_COLLECTIONS), ensure_ascii=False)
+    @Slot(str, int, result=str)
+    def openCollection(self, page: str, collection_id: int) -> str:
+        target = page if page in COLLECTION_PAGE_KINDS else PAGE_COLLECTIONS
+        self._open_collection_by_page[target] = int(collection_id) if collection_id else None
+        if target == PAGE_COMIC_COLLECTIONS:
+            self._refresh_comic_collection_vm()
+        return json.dumps(self._page_resources(target), ensure_ascii=False)
 
-    @Slot(result=str)
-    def closeCollection(self) -> str:
-        self._current_collection_id = None
-        return json.dumps(self._page_resources(PAGE_COLLECTIONS), ensure_ascii=False)
+    @Slot(str, result=str)
+    def closeCollection(self, page: str) -> str:
+        target = page if page in COLLECTION_PAGE_KINDS else PAGE_COLLECTIONS
+        self._open_collection_by_page[target] = None
+        if target == PAGE_COMIC_COLLECTIONS:
+            self._comic_collection_vm.set_query("")
+            self._refresh_comic_collection_vm()
+        return json.dumps(self._page_resources(target), ensure_ascii=False)
 
     @Slot(str, str, result=str)
     def setPageSort(self, page: str, order: str) -> str:
         value = str(order or "").strip().lower()
-        if page == PAGE_FAVORITES:
-            self._repo.set_setting("favorites_sort_order", "asc" if value == "asc" else "desc")
-        elif page == PAGE_COMIC:
+        if page == PAGE_COMIC:
             self._repo.set_comic_sort_order_main(value)
             self._reload_comic_vms()
-        elif page == PAGE_COMIC_FAV:
+        elif page == PAGE_COMIC_COLLECTIONS:
             self._repo.set_comic_sort_order_fav(value)
             self._reload_comic_vms()
         else:
@@ -713,18 +769,17 @@ class UiBridge(QObject):
         return json.dumps(detail or {}, ensure_ascii=False)
 
     def _detail_for(self, page: str, resource_id: str) -> dict[str, Any] | None:
-        if page in {PAGE_COMIC, PAGE_COMIC_FAV}:
-            order = self._repo.get_comic_sort_order_fav() if page == PAGE_COMIC_FAV else self._repo.get_comic_sort_order_main()
-            rows = (
-                self._repo.get_favorite_comics(order_by=order)
-                if page == PAGE_COMIC_FAV
-                else self._repo.list_comics(include_missing=False, order_by=order)
-            )
-            row = next((r for r in rows if str(r.get("resource_id")) == resource_id), None)
+        if page in COMIC_PAGES:
+            row = self._find_comic_row(resource_id)
             if not row:
                 return None
             payload = self._comic_payload(row)
-            payload["isFavorite"] = page == PAGE_COMIC_FAV or self._is_comic_favorite(resource_id)
+            comic_id = self._repo.get_comic_int_id(resource_id)
+            payload["comicCollections"] = (
+                [{"id": int(c.get("id")), "name": c.get("name")} for c in self._repo.get_collections_for_comic(comic_id)]
+                if comic_id is not None
+                else []
+            )
             return payload
         # books-like
         row = self._find_book_row(resource_id)
@@ -732,7 +787,6 @@ class UiBridge(QObject):
             return None
         payload = self._book_payload(row)
         book_id = self._repo.get_book_int_id(resource_id)
-        payload["isFavorite"] = bool(book_id is not None and self._repo.is_favorite(book_id))
         payload["bookCollections"] = (
             [{"id": int(c.get("id")), "name": c.get("name")} for c in self._repo.get_collections_for_book(book_id)]
             if book_id is not None
@@ -746,9 +800,11 @@ class UiBridge(QObject):
                 return row
         return None
 
-    def _is_comic_favorite(self, resource_id: str) -> bool:
-        comic_id = self._repo.get_comic_int_id(resource_id)
-        return bool(comic_id is not None and self._repo.is_favorite_comic(comic_id))
+    def _find_comic_row(self, resource_id: str) -> dict[str, Any] | None:
+        for row in self._repo.list_comics(include_missing=None):
+            if str(row.get("resource_id")) == resource_id:
+                return row
+        return None
 
     # ---- actions -------------------------------------------------------
     @Slot(str, str)
@@ -756,7 +812,7 @@ class UiBridge(QObject):
         detail = self._detail_for(page, resource_id)
         if not detail:
             return
-        if page in {PAGE_COMIC, PAGE_COMIC_FAV}:
+        if page in COMIC_PAGES:
             record = {
                 "path": detail.get("path") or "",
                 "cover_image_path": detail.get("coverImage") or "",
@@ -784,7 +840,7 @@ class UiBridge(QObject):
 
     @Slot(str, str, result=bool)
     def toggleFavorite(self, page: str, resource_id: str) -> bool:
-        if page in {PAGE_COMIC, PAGE_COMIC_FAV}:
+        if page in COMIC_PAGES:
             comic_id = self._repo.get_comic_int_id(resource_id)
             if comic_id is None:
                 return False
@@ -812,9 +868,10 @@ class UiBridge(QObject):
     def getTags(self) -> str:
         return json.dumps(self._repo.get_all_tags(), ensure_ascii=False)
 
-    @Slot(result=str)
-    def getCollections(self) -> str:
-        collections = self._repo.get_all_collections()
+    @Slot(str, result=str)
+    def getCollections(self, page: str) -> str:
+        kind = _kind_for_page(page)
+        collections = self._repo.get_all_collections(kind)
         return json.dumps([{"id": int(c.get("id")), "name": c.get("name")} for c in collections], ensure_ascii=False)
 
     @Slot(str, str)
@@ -835,11 +892,11 @@ class UiBridge(QObject):
         self.reload_data()
         self.push_resources()
 
-    @Slot(str, result=int)
-    def createCollection(self, name: str) -> int:
+    @Slot(str, str, result=int)
+    def createCollection(self, page: str, name: str) -> int:
         if not name.strip():
             return -1
-        cid = self._repo.create_collection(name.strip())
+        cid = self._repo.create_collection(name.strip(), kind=_kind_for_page(page))
         self.push_resources()
         return int(cid)
 
@@ -854,8 +911,10 @@ class UiBridge(QObject):
     @Slot(int, result=bool)
     def deleteCollection(self, collection_id: int) -> bool:
         self._repo.delete_collection(int(collection_id))
-        if self._current_collection_id == int(collection_id):
-            self._current_collection_id = None
+        for page, open_id in list(self._open_collection_by_page.items()):
+            if open_id == int(collection_id):
+                self._open_collection_by_page[page] = None
+        self._refresh_comic_collection_vm()
         self.push_resources()
         return True
 
@@ -863,7 +922,7 @@ class UiBridge(QObject):
     def openFolder(self, resource_id: str) -> None:
         row = self._find_book_row(resource_id)
         if not row:
-            detail = self._detail_for(PAGE_COMIC, resource_id) or self._detail_for(PAGE_COMIC_FAV, resource_id)
+            detail = self._detail_for(PAGE_COMIC, resource_id) or self._detail_for(PAGE_COMIC_COLLECTIONS, resource_id)
             path = str((detail or {}).get("path") or "")
         else:
             path = str(row.get("path") or "")
@@ -888,21 +947,40 @@ class UiBridge(QObject):
 
     @Slot(str, int, bool)
     def setCollectionMembership(self, resource_id: str, collection_id: int, member: bool) -> None:
-        book_id = self._repo.get_book_int_id(resource_id)
-        if book_id is None:
-            return
-        if member:
-            self._repo.add_book_to_collection(book_id, int(collection_id))
+        kind = self._repo.get_collection_kind(int(collection_id))
+        if kind == COLLECTION_KIND_COMIC:
+            comic_id = self._repo.get_comic_int_id(resource_id)
+            if comic_id is None:
+                return
+            if member:
+                self._repo.add_comic_to_collection(comic_id, int(collection_id))
+            else:
+                self._repo.remove_comic_from_collection(comic_id, int(collection_id))
         else:
-            self._repo.remove_book_from_collection(book_id, int(collection_id))
+            book_id = self._repo.get_book_int_id(resource_id)
+            if book_id is None:
+                return
+            if member:
+                self._repo.add_book_to_collection(book_id, int(collection_id))
+            else:
+                self._repo.remove_book_from_collection(book_id, int(collection_id))
+        self._refresh_comic_collection_vm()
         self.push_resources()
 
     @Slot(str, int)
     def removeFromCollection(self, resource_id: str, collection_id: int) -> None:
-        book_id = self._repo.get_book_int_id(resource_id)
-        if book_id is None:
-            return
-        self._repo.remove_book_from_collection(book_id, int(collection_id))
+        kind = self._repo.get_collection_kind(int(collection_id))
+        if kind == COLLECTION_KIND_COMIC:
+            comic_id = self._repo.get_comic_int_id(resource_id)
+            if comic_id is None:
+                return
+            self._repo.remove_comic_from_collection(comic_id, int(collection_id))
+        else:
+            book_id = self._repo.get_book_int_id(resource_id)
+            if book_id is None:
+                return
+            self._repo.remove_book_from_collection(book_id, int(collection_id))
+        self._refresh_comic_collection_vm()
         self.push_resources()
 
     # ---- settings ------------------------------------------------------

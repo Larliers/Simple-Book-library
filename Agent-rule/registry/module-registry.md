@@ -135,7 +135,7 @@
   "module_name": "comic_sidebar_binding",
   "owner_agent": "ui-agent",
   "status": "active",
-  "purpose": "在 Comic/Comic Fav 页面渲染 grid，并把同级 txt 文本绑定到右侧详情栏",
+  "purpose": "在 Comic 与漫画合集详情页面渲染 grid，并把同级 txt 文本绑定到右侧详情栏",
   "input": ["comic_resources", "selected_resource", "view_mode=comic_grid"],
   "output": ["render_plan", "interaction_events", "detail_sidebar_text"],
   "upstream": ["comic_folder_scanner", "comic_cover_selector"],

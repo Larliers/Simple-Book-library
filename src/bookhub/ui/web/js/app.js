@@ -10,7 +10,7 @@ const State = {
   viewMode: "grid",
   selected: {},
   searchQuery: "",
-  searchQueries: { library: "", text_novel: "", comic: "", comic_fav: "" },
+  searchQueries: { library: "", text_novel: "", comic: "", comic_collections: "" },
   suggestOpen: false,
   theme: { mode: "auto", autoEnabled: true, nightStart: "22:00", dayResume: "07:00", checkFrequency: 5, transitionMinutes: 3 },
   themeTimer: null,
@@ -18,23 +18,49 @@ const State = {
   renderGen: 0,
   renderTimer: null,
   scrollPos: {},
-  comicPageNum: { comic: 1, comic_fav: 1 },
+  comicPageNum: { comic: 1, comic_collections: 1 },
   _scanRunning: false,
   _taskKind: "scan",
 };
 
-const COMIC_PAGES = new Set(["comic", "comic_fav"]);
+const COLLECTION_PAGES = new Set(["collections", "novel_collections", "comic_collections"]);
+const COMIC_PAGES = new Set(["comic", "comic_collections"]);
 const LIST_ONLY = new Set(["text_novel"]);
-const SEARCH_PAGES = new Set(["library", "text_novel", "comic", "comic_fav"]);
+const SEARCH_PAGES = new Set(["library", "text_novel", "comic", "comic_collections"]);
+
+function isComicCollectionDetail(data) {
+  const d = data || currentPageData();
+  return Boolean(d && d.mode === "comic" && d.collectionId);
+}
+
+function isSearchablePage(page) {
+  if (page === "library" || page === "text_novel" || page === "comic") return true;
+  if (page === "comic_collections") return isComicCollectionDetail(State.pages[page] || {});
+  return false;
+}
+
+function applyCollectionPageData(json) {
+  const d = typeof json === "string" || json == null ? safeParse(json) : json;
+  const page = COLLECTION_PAGES.has(State.currentPage) ? State.currentPage : "collections";
+  if (d) {
+    State.pages[page] = d;
+    if (State.currentPage === page) scheduleRenderPage();
+  }
+}
 
 function searchPlaceholderForPage(page) {
   if (page === "text_novel") return t("topbar.search_text_placeholder");
-  if (COMIC_PAGES.has(page)) return t("topbar.search_comic_placeholder");
+  if (page === "comic" || (page === "comic_collections" && isComicCollectionDetail(State.pages[page] || {}))) {
+    return t("topbar.search_comic_placeholder");
+  }
   return t("topbar.search_placeholder");
 }
 
 function syncSearchInputFromPage(page) {
-  if (!SEARCH_PAGES.has(page)) return;
+  if (!isSearchablePage(page)) {
+    $("searchInput").setAttribute("placeholder", searchPlaceholderForPage(page));
+    return;
+  }
   const query = State.searchQueries[page] || "";
   State.searchQuery = query;
   $("searchInput").value = query;
@@ -42,7 +68,7 @@ function syncSearchInputFromPage(page) {
 }
 
 function saveSearchQueryForPage(page, query) {
-  if (!SEARCH_PAGES.has(page)) return;
+  if (!isSearchablePage(page)) return;
   State.searchQueries[page] = query;
   State.searchQuery = query;
 }
@@ -226,7 +252,7 @@ function selectPage(page) {
   }
   detail.classList.remove("hidden");
   syncSearchInputFromPage(page);
-  if (SEARCH_PAGES.has(page) && (State.searchQueries[page] || "").trim()) {
+  if (isSearchablePage(page) && (State.searchQueries[page] || "").trim()) {
     commitSearch();
   } else {
     scheduleRenderPage();
@@ -268,7 +294,7 @@ function renderPage(expectedGen) {
   teardownVirtualWindow(area);
   clear(area);
   // Large comic waterfall: skip enter animation — empty+animate looked like full white reload.
-  const skipEnter = COMIC_PAGES.has(page) && (data.viewMode || "waterfall") !== "pagination" && count > 48;
+  const skipEnter = (page === "comic" || isComicCollectionDetail(data)) && (data.viewMode || "waterfall") !== "pagination" && count > 48;
   area.classList.remove("view-enter", "view-enter-skip");
   if (skipEnter) {
     area.classList.add("view-enter-skip");
@@ -287,7 +313,7 @@ function renderPage(expectedGen) {
 
   if (page === "text_novel") { renderTable(area, data.items, page); return; }
   if (data.mode === "collections") { renderCollections(area, data.items); return; }
-  if (COMIC_PAGES.has(page)) { renderComic(area, data, gen); return; }
+  if (page === "comic" || data.mode === "comic") { renderComic(area, data, gen); return; }
   if (State.viewMode === "list") { renderTable(area, data.items, page); return; }
   renderGrid(area, data.items, page, data.mode === "collection_detail", gen);
 }
@@ -295,13 +321,14 @@ function renderPage(expectedGen) {
 function renderPageTools(page, data) {
   const tools = $("pageHeadTools");
   clear(tools);
-  if (data.mode === "collection_detail") {
+  const inCollectionDetail = data.mode === "collection_detail" || isComicCollectionDetail(data);
+  if (inCollectionDetail) {
     const back = elem("button", "ghost-btn", t("common.back", "Back"));
     back.addEventListener("click", () => {
-      State.bridge.closeCollection((json) => { const d = safeParse(json); if (d) { State.pages.collections = d; scheduleRenderPage(); } });
+      State.bridge.closeCollection(page, (json) => applyCollectionPageData(json));
     });
     tools.appendChild(back);
-    return;
+    if (data.mode !== "comic") return;
   }
   if (data.mode === "collections") {
     const add = elem("button", "primary-btn", t("common.new_list", "New List"));
@@ -309,26 +336,7 @@ function renderPageTools(page, data) {
     tools.appendChild(add);
     return;
   }
-  if (page === "favorites") {
-    const wrap = elem("div", "page-sort");
-    wrap.appendChild(elem("span", "small-note", t("favorites.sort.label", "Sort")));
-    const seg = elem("div", "segmented");
-    [["desc", "favorites.sort.added_desc", "Added Time: Newest First"],
-     ["asc", "favorites.sort.added_asc", "Added Time: Oldest First"]].forEach(([value, key, fb]) => {
-      const btn = elem("button", (data.sort || "desc") === value ? "active" : null, t(key, fb));
-      btn.addEventListener("click", () => {
-        State.bridge.setPageSort("favorites", value, (json) => {
-          const d = safeParse(json);
-          if (d) { State.pages.favorites = d; scheduleRenderPage(); }
-        });
-      });
-      seg.appendChild(btn);
-    });
-    wrap.appendChild(seg);
-    tools.appendChild(wrap);
-    return;
-  }
-  if (page === "comic" || page === "comic_fav") {
+  if (page === "comic" || isComicCollectionDetail(data)) {
     const wrap = elem("div", "page-sort");
     wrap.appendChild(elem("span", "small-note", t("comic.sort.label", "Sort")));
     const sel = elem("select", "sort-select");
@@ -477,7 +485,7 @@ function mountVirtualCoverGrid(area, items, page, withMeta, gen, buildCard) {
 }
 
 function renderGrid(area, items, page, isCollectionDetail, gen) {
-  const showFormatBadge = page === "library" || page === "favorites" || isCollectionDetail;
+  const showFormatBadge = page === "library" || (isCollectionDetail && page !== "comic" && page !== "comic_collections");
   mountVirtualCoverGrid(area, items, page, false, gen, (item) => {
     const card = elem("article", "book-card");
     if (State.selected[page] === item.id) card.classList.add("selected");
@@ -497,10 +505,7 @@ function renderCollections(area, items) {
     card.appendChild(elem("div", "card-title", item.title));
     card.appendChild(elem("div", "card-meta", item.meta || ""));
     const openCol = () => {
-      State.bridge.openCollection(item.collectionId, (json) => {
-        const d = safeParse(json);
-        if (d) { State.pages.collections = d; scheduleRenderPage(); }
-      });
+      State.bridge.openCollection(page, item.collectionId, (json) => applyCollectionPageData(json));
     };
     card.addEventListener("click", openCol);
     card.addEventListener("contextmenu", (e) => {
@@ -526,7 +531,7 @@ function renderComic(area, data, gen) {
     const start = (State._comicPage - 1) * pageSize;
     items = items.slice(start, start + pageSize);
   }
-  renderGrid(area, items, pageKey, false, gen);
+  renderGrid(area, items, pageKey, Boolean(data.collectionId), gen);
   if (isPagination) {
     const bar = elem("div", "detail-actions");
     bar.style.justifyContent = "flex-end";
@@ -705,6 +710,9 @@ function renderDetail(d) {
   if (d.bookCollections && d.bookCollections.length) {
     meta.appendChild(buildDetailBlock(t("detail.collections", "Collections"), d.bookCollections.map((c) => c.name).join("、")));
   }
+  if (d.comicCollections && d.comicCollections.length) {
+    meta.appendChild(buildDetailBlock(t("detail.collections", "Collections"), d.comicCollections.map((c) => c.name).join("、")));
+  }
   if (d.path) meta.appendChild(buildDetailBlock(t("detail.file", "File"), d.path));
   if (d.info) meta.appendChild(buildDetailBlock(t("detail.preview", "Text Preview"), d.info));
   content.appendChild(meta);
@@ -713,14 +721,9 @@ function renderDetail(d) {
   const openBtn = elem("button", "primary-btn", t("detail.open", "Open"));
   openBtn.addEventListener("click", () => State.bridge.openResource(State.currentPage, d.id));
   actions.appendChild(openBtn);
-  const favBtn = elem("button", "ghost-btn", d.isFavorite ? t("detail.favorite_remove", "Remove from Favorites") : t("detail.favorite_add", "Add to Favorites"));
-  favBtn.addEventListener("click", () => State.bridge.toggleFavorite(State.currentPage, d.id, () => refreshDetailIfSelected()));
-  actions.appendChild(favBtn);
-  if (!isComic) {
-    const qa = elem("button", "ghost-btn", t("detail.quick_add", "Quick Add"));
-    qa.addEventListener("click", () => openQuickAddModal(d));
-    actions.appendChild(qa);
-  }
+  const qa = elem("button", "ghost-btn", t("detail.quick_add", "Quick Add"));
+  qa.addEventListener("click", () => openQuickAddModal(d));
+  actions.appendChild(qa);
   const coverBtn = elem("button", "ghost-btn", t("detail.edit_cover", "Edit Cover"));
   coverBtn.addEventListener("click", () => State.bridge.editCover(d.id));
   actions.appendChild(coverBtn);
@@ -772,8 +775,7 @@ function openCollectionCardMenu(event, item, openCol) {
 function openContextMenu(event, page, item, isCollectionDetail) {
   const menu = $("contextMenu");
   clear(menu);
-  const isComic = COMIC_PAGES.has(page);
-  const isFavorites = page === "favorites";
+  const isComic = page === "comic" || (page === "comic_collections" && isComicCollectionDetail());
   menuAction(
     isComic ? t("menu.open_cover", "Open Cover") : t("menu.open_external", "Open External"),
     () => State.bridge.openResource(page, item.id)
@@ -781,42 +783,24 @@ function openContextMenu(event, page, item, isCollectionDetail) {
   if (!isComic) {
     menuAction(t("menu.open_folder", "Open Folder"), () => State.bridge.openFolder(item.id));
   }
-  if (isComic) {
-    const favLabel = page === "comic_fav"
-      ? t("menu.comic_fav_remove", "Remove from Comic Fav")
-      : t("menu.comic_fav_add", "Add to Comic Fav");
-    menuAction(favLabel, () => State.bridge.toggleFavorite(page, item.id, () => {}));
-    menuAction(t("menu.edit_cover", "Edit Cover..."), () => State.bridge.editCover(item.id));
+  menuAction(t("menu.quick_add", "Quick Add Tag / Collection"), () => openQuickAddModal(item));
+  menuAction(t("menu.edit_cover", "Edit Cover..."), () => State.bridge.editCover(item.id));
+  if (isCollectionDetail) {
+    const cid = currentPageData().collectionId;
+    menu.appendChild(elem("hr"));
+    menuAction(
+      t("menu.collection_remove", "Remove from Collection"),
+      () => State.bridge.removeFromCollection(item.id, cid),
+      true
+    );
+  }
+  if (page === "library" || page === "text_novel" || page === "comic" || isComic) {
     menu.appendChild(elem("hr"));
     menuAction(
       t("menu.remove_library", "Remove from Library"),
       () => confirmRemoveFromLibrary(page, item),
       true
     );
-  } else {
-    menuAction(t("menu.quick_add", "Quick Add Tag / Collection"), () => openQuickAddModal(item));
-    menuAction(t("menu.edit_cover", "Edit Cover..."), () => State.bridge.editCover(item.id));
-    const favLabel = isFavorites
-      ? t("menu.favorite_remove", "Remove from Favorites")
-      : t("menu.favorite_add", "Add to Favorites");
-    menuAction(favLabel, () => State.bridge.toggleFavorite(page, item.id, () => {}));
-    if (isCollectionDetail) {
-      const cid = currentPageData().collectionId;
-      menu.appendChild(elem("hr"));
-      menuAction(
-        t("menu.collection_remove", "Remove from Collection"),
-        () => State.bridge.removeFromCollection(item.id, cid),
-        true
-      );
-    }
-    if (page === "library" || page === "text_novel" || page === "favorites") {
-      menu.appendChild(elem("hr"));
-      menuAction(
-        t("menu.remove_library", "Remove from Library"),
-        () => confirmRemoveFromLibrary(page, item),
-        true
-      );
-    }
   }
   positionContextMenu(event);
 }
@@ -948,12 +932,9 @@ function openNewCollectionModal() {
     confirm.addEventListener("click", () => {
       const name = input.value.trim();
       if (!name) return;
-      State.bridge.createCollection(name, () => {
+      State.bridge.createCollection(State.currentPage, name, () => {
         close();
-        State.bridge.closeCollection((json) => {
-          const d = safeParse(json);
-          if (d) { State.pages.collections = d; if (State.currentPage === "collections") scheduleRenderPage(); }
-        });
+        State.bridge.closeCollection(State.currentPage, (json) => applyCollectionPageData(json));
       });
     });
     actions.appendChild(cancel); actions.appendChild(confirm);
@@ -980,10 +961,7 @@ function openRenameCollectionModal(item) {
       if (!name) return;
       State.bridge.renameCollection(item.collectionId, name, () => {
         close();
-        State.bridge.closeCollection((json) => {
-          const d = safeParse(json);
-          if (d) { State.pages.collections = d; if (State.currentPage === "collections") scheduleRenderPage(); }
-        });
+        State.bridge.closeCollection(State.currentPage, (json) => applyCollectionPageData(json));
       });
     });
     actions.appendChild(cancel); actions.appendChild(confirm);
@@ -1005,10 +983,7 @@ function openDeleteCollectionModal(item) {
     confirm.addEventListener("click", () => {
       State.bridge.deleteCollection(item.collectionId, () => {
         close();
-        State.bridge.closeCollection((json) => {
-          const d = safeParse(json);
-          if (d) { State.pages.collections = d; if (State.currentPage === "collections") scheduleRenderPage(); }
-        });
+        State.bridge.closeCollection(State.currentPage, (json) => applyCollectionPageData(json));
       });
     });
     actions.appendChild(cancel); actions.appendChild(confirm);
@@ -1020,6 +995,7 @@ function openQuickAddModal(item) {
   openModal((modal, close) => {
     modalHeader(modal, t("detail.quick_add", "Quick Add"), close);
     modal.appendChild(elem("p", "small-note", item.title || ""));
+    const skipTags = State.currentPage === "comic" || State.currentPage === "comic_collections";
 
     if (!Array.isArray(item.tags)) item.tags = [];
     const workingTags = item.tags.slice();
@@ -1071,20 +1047,22 @@ function openQuickAddModal(item) {
     tagField.appendChild(currentChips);
     tagField.appendChild(elem("div", "kicker mt", t("quick_add.recent_tags", "Recent tags")));
     tagField.appendChild(recentWrap);
-    modal.appendChild(tagField);
+    if (!skipTags) {
+      modal.appendChild(tagField);
 
-    State.bridge.getTags((tjson) => {
-      const allTags = safeParse(tjson) || [];
-      clear(recentWrap);
-      allTags.slice(0, 12).forEach((tag) => {
-        const chip = elem("button", "chip chip-btn", tag);
-        chip.type = "button";
-        chip.addEventListener("click", () => addTagValue(tag));
-        recentWrap.appendChild(chip);
+      State.bridge.getTags((tjson) => {
+        const allTags = safeParse(tjson) || [];
+        clear(recentWrap);
+        allTags.slice(0, 12).forEach((tag) => {
+          const chip = elem("button", "chip chip-btn", tag);
+          chip.type = "button";
+          chip.addEventListener("click", () => addTagValue(tag));
+          recentWrap.appendChild(chip);
+        });
       });
-    });
 
-    modal.appendChild(elem("hr", "modal-divider"));
+      modal.appendChild(elem("hr", "modal-divider"));
+    }
 
     const collField = elem("div", "field");
     collField.appendChild(elem("label", null, t("detail.collections", "Collections")));
@@ -1127,11 +1105,11 @@ function openQuickAddModal(item) {
 
     searchInput.addEventListener("input", renderCollectionRows);
 
-    State.bridge.getCollections((cjson) => {
+    State.bridge.getCollections(State.currentPage, (cjson) => {
       allCollections = safeParse(cjson) || [];
       State.bridge.getDetail(State.currentPage, item.id, (djson) => {
         const detail = safeParse(djson) || {};
-        (detail.bookCollections || []).forEach((c) => {
+        (detail.bookCollections || detail.comicCollections || []).forEach((c) => {
           initialMembers.add(c.id);
           pendingMembers.add(c.id);
         });
@@ -1156,8 +1134,12 @@ function openQuickAddModal(item) {
     actions.appendChild(cancel);
     actions.appendChild(confirm);
     modal.appendChild(actions);
-    renderCurrentChips();
-    tagInput.focus();
+    if (!skipTags) {
+      renderCurrentChips();
+      tagInput.focus();
+    } else {
+      searchInput.focus();
+    }
   });
 }
 
@@ -1900,13 +1882,13 @@ function searchContext() {
   const page = State.currentPage;
   if (page === "text_novel") return "text_novel";
   if (page === "comic") return "comic";
-  if (page === "comic_fav") return "comic_fav";
+  if (page === "comic_collections" && isComicCollectionDetail()) return "comic_collections";
   return "library";
 }
 
 function commitSearch() {
   const ctx = searchContext();
-  if (!SEARCH_PAGES.has(ctx)) return;
+  if (!isSearchablePage(State.currentPage)) return;
   State.bridge.search(ctx, State.searchQuery, (json) => {
     const data = safeParse(json);
     if (!data) return;
@@ -1917,8 +1899,8 @@ function commitSearch() {
 
 function updateSuggestions() {
   const query = $("searchInput").value;
-  if (State.currentPage === "settings" || State.currentPage === "collections") { closeSuggestions(); return; }
-  if (!SEARCH_PAGES.has(State.currentPage)) { closeSuggestions(); return; }
+  if (State.currentPage === "settings" || (COLLECTION_PAGES.has(State.currentPage) && !isComicCollectionDetail())) { closeSuggestions(); return; }
+  if (!isSearchablePage(State.currentPage)) { closeSuggestions(); return; }
   State.bridge.getSuggestions(searchContext(), query, (json) => {
     const items = safeParse(json) || [];
     const box = $("suggestions");

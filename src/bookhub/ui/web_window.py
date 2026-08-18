@@ -390,7 +390,7 @@ class WebAppWindow(QMainWindow):
         """Delete DB record only; files on disk are kept."""
         repo = self._repository
         removed = False
-        if page in {"comic", "comic_fav"}:
+        if page in {"comic", "comic_collections"}:
             comic_id = repo.get_comic_int_id(resource_id)
             if comic_id is not None:
                 removed = repo.delete_comics_by_ids([int(comic_id)]) > 0

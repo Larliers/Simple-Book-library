@@ -15,7 +15,7 @@ A local Windows desktop library for your personal collection. Scan PDF / EPUB / 
 
 - One place for local PDFs, EPUBs, HTML, Markdown, FB2, DOCX, comic folders/CBZ, and TXT novels
 - Folder-based scanning instead of adding files one by one
-- Tags, collections, favorites, and TXT import rules
+- Tags, typed collections (books / novels / comics), and TXT import rules
 - Large libraries with incremental scans, configurable fingerprint strategies, and viewport virtualization
 
 ## Features
@@ -25,8 +25,9 @@ A local Windows desktop library for your personal collection. Scan PDF / EPUB / 
 | **Library** | PDF, EPUB, HTML/HTM, Markdown, FB2/FB2.ZIP, DOCX | Grid / list view, detail pane, tags, search |
 | **Comic** | **Leaf image folders** and **CBZ** | One folder or CBZ = one volume; waterfall or paginated layout |
 | **Text Novel** | TXT (auto-detects encoding) | List view, text preview, custom import rule chains |
-| **Collections** | — | Custom reading lists |
-| **Favorites** | Books + comics | Unified favorites |
+| **Book Collections** | Library books | Named book lists |
+| **Novel Collections** | Text novels | Named novel lists |
+| **Comic Collections** | Comics | Named comic lists |
 | **Settings** | — | Paths & Scan, appearance, thumbnail cache, error logs, update check |
 
 ### Import & scan
