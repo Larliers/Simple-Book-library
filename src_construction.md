@@ -6,6 +6,7 @@
 - 保留字符串式文件路径结构。
 - 给出每个代码组件（文件）的一句话用途。
 - 作为 `src/` 结构与职责的当前事实文档。
+- 仓库分支：`main` 为当前产品线（原 `2.0_glass_ui`，GitHub 默认）；`GUI` 为旧主干史料（原 `main`），不当开发基线。详见 `Agent-rule/project-context.md`。
 
 ## 2. 字符串式文件路径结构
 
@@ -242,7 +243,8 @@ src/
 - `src/bookhub/ui/viewmodels/library_viewmodel.py`：Library/Text/Comic 资源查询过滤、字段前缀搜索（`title:`/`author:`/`tag:`）、普通 query 匹配 title/author/tags/path/info_text、视图模式、搜索建议状态。
 
 ## 4. 当前关键实现（简要）
-- 2026-09-09 发布线收敛：工作分支改动并入 `2.0_glass_ui`（GitHub 默认分支）；删除本地 `cursor/fix-bugs-1-4` 与 `20260410`；经 Actions `Release` workflow patch bump 打包 win64 zip。BUG-5：Library 扫描 `total=0` 走 busy 条纹进度；BUG-6：整型设置 repository 层容错。
+- 2026-09-09 分支更名：默认产品线 `2.0_glass_ui` → `main`；旧主干 `main` → `GUI`（史料，不当开发基线）。
+- 2026-09-09 发布线收敛：工作分支改动并入当时的 `2.0_glass_ui`（现已更名为 `main`）；删除本地 `cursor/fix-bugs-1-4` 与 `20260410`；经 Actions `Release` workflow patch bump 打包 win64 zip。BUG-5：Library 扫描 `total=0` 走 busy 条纹进度；BUG-6：整型设置 repository 层容错。
 - 2026-08-18 三类合集互相独立：侧栏为图书馆 / 书籍合集 / 文本小说 / 小说合集 / 漫画 / 漫画合集；`collections.kind` 隔离成员；漫画合集为可新建命名列表（详情走 comic_grid）；独立「收藏」「漫画收藏」页退出侧栏，既有星标迁入默认「收藏」合集；见 `decision-20260818-001`。
 - 2026-07-28 发布自动化与便携路径：`app_paths.py` 统一 dev/打包态数据目录；`scripts/pack_release.ps1` 将 `main.dist` 改名为 `Simple-Book-library-v{APP_VERSION}`、预建空 `img_preview`/`sql`/`Scan_error_logs` 并打 win64 zip；`.github/workflows/release.yml` 支持 workflow_dispatch 一键 bump（patch/minor/major）→ commit/tag → Nuitka build → pack → GitHub Release；用户数据不进入 zip。
 - 2026-07-28 漫画顶栏搜索对接：`comics.title` 扫描入库已有，补齐前后端搜索链路；Bridge `_library_vm`/`_text_vm`/`_comic_vm`/`_comic_collection_vm` + `_search_vm_for_context`，`search`/`getSuggestions` 支持 comic 与漫画合集详情；前端 `searchContext`/`State.searchQueries` 按页独立 query 与 placeholder；匹配 title/path/info_text；合集总览仍无搜索。

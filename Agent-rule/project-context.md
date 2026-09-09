@@ -26,5 +26,9 @@
 2. 性能优先
 3. 可维护性优先
 
+## 仓库分支（给 Agent 识别）
+- `main`：当前产品线与 GitHub 默认分支。原名 `2.0_glass_ui`（Glass/Vaporwave Web UI，v2.x）。新工作从这里拉。
+- `GUI`：旧主干史料。原名 `main`（早期 README / 旧 Widgets UI 线）。不要当开发基线，也不要往这里合产品改动。
+
 ## 当前规则版本
 - `v0.1.0`
