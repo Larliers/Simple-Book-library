@@ -6,14 +6,24 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from PIL import Image
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from bookhub.library.models import LibraryScanRoot, ParsedMetadata, ScanRequest
+from bookhub.library.models import (
+    ComicScanRequest,
+    ComicScanRoot,
+    LibraryScanRoot,
+    ParsedMetadata,
+    ScanRequest,
+    TextScanRequest,
+    TextScanRoot,
+)
 from bookhub.library.repository import LibraryRepository
-from bookhub.library.scanner import scan_roots
+from bookhub.library.scanner import scan_comic_roots, scan_roots, scan_text_roots
 
 
 class ScanPdfDegradeTests(unittest.TestCase):
@@ -87,7 +97,7 @@ class ScanPdfDegradeTests(unittest.TestCase):
             self.assertEqual(record["author"], "Mock Author")
             self.assertEqual(record["thumbnail_path"], "file:///mock-thumb.webp")
 
-    def test_scan_roots_reports_progress(self) -> None:
+    def test_scan_roots_reports_progress_busy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             base = Path(tmp_dir)
             root = base / "pdfs"
@@ -115,9 +125,69 @@ class ScanPdfDegradeTests(unittest.TestCase):
             self.assertEqual(len(events), 1)
             current, total, path, summary = events[0]
             self.assertEqual(current, 1)
-            self.assertEqual(total, 1)
+            # Library scan has no pre-walk count, so total stays 0: the UI
+            # renders this as an indeterminate "busy" state, not a fake 100%.
+            self.assertEqual(total, 0)
             self.assertTrue(path.endswith("progress.pdf"))
             self.assertEqual(summary["added_count"], 1)
+
+    def test_text_scan_reports_real_total(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            root = base / "texts"
+            root.mkdir(parents=True, exist_ok=True)
+            (root / "a.txt").write_text("第一章 开场\n正文", encoding="utf-8")
+            (root / "b.txt").write_text("第二章 续篇\n正文", encoding="utf-8")
+
+            repository = LibraryRepository(base / "library.db", base / "scan_report.json")
+            request = TextScanRequest(
+                roots=[TextScanRoot(path=str(root))],
+                hash_strategy="size_mtime",
+            )
+            events: list[tuple[int, int, str, dict[str, object]]] = []
+
+            scan_text_roots(
+                repository,
+                request,
+                progress_cb=lambda current, total, path, summary: events.append(
+                    (current, total, path, summary)
+                ),
+            )
+
+            self.assertEqual(len(events), 2)
+            for current, total, path, _summary in events:
+                self.assertGreater(total, 0)
+                self.assertLessEqual(current, total)
+
+    def test_comic_scan_reports_real_total(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            root = base / "comics"
+            chapter = root / "series" / "ch_001"
+            chapter.mkdir(parents=True, exist_ok=True)
+            Image.new("RGB", (120, 180), color=(120, 80, 200)).save(chapter / "001.png")
+            Image.new("RGB", (120, 180), color=(120, 80, 200)).save(chapter / "002.png")
+
+            repository = LibraryRepository(base / "library.db", base / "scan_report.json")
+            request = ComicScanRequest(
+                roots=[ComicScanRoot(path=str(root))],
+                max_depth=5,
+                placeholder_copy_enabled=True,
+            )
+            events: list[tuple[int, int, str, dict[str, object]]] = []
+
+            scan_comic_roots(
+                repository,
+                request,
+                progress_cb=lambda current, total, path, summary: events.append(
+                    (current, total, path, summary)
+                ),
+            )
+
+            self.assertGreaterEqual(len(events), 1)
+            for current, total, _path, _summary in events:
+                self.assertGreater(total, 0)
+                self.assertLessEqual(current, total)
 
 
 if __name__ == "__main__":

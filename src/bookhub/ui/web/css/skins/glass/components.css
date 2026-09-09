@@ -331,6 +331,8 @@
 
 .progress { height: 12px; overflow: hidden; border-radius: 99px; background: rgba(126, 148, 173, 0.18); border: 1px solid rgba(255, 255, 255, 0.4); }
 .progress span { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width 240ms ease; }
+.progress.busy span { width: 100%; background: repeating-linear-gradient(45deg, var(--accent) 0 10px, var(--accent-2) 10px 20px); animation: progress-busy .9s linear infinite; }
+@keyframes progress-busy { from { background-position: 0 0; } to { background-position: 28px 0; } }
 
 .switch { position: relative; width: 40px; height: 22px; flex: 0 0 auto; }
 .switch input { display: none; }

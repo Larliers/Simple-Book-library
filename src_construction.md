@@ -1,6 +1,6 @@
 ﻿# src 结构说明书（精简且完整）
 
-更新时间：2026-08-18
+更新时间：2026-09-09
 
 ## 1. 文档目标
 - 保留字符串式文件路径结构。
@@ -50,6 +50,7 @@ src/
 │  ├─ test_text_scan_tags.py
 │  ├─ test_update_checker.py
 │  ├─ test_app_paths.py
+│  ├─ test_repository_orphan_cleanup.py
 │  └─ test_collection_kinds.py
 ├─ sql/
 │  └─ .gitkeep
@@ -144,7 +145,8 @@ src/
 - `src/tests/test_rule_engine.py`：Text 规则引擎回归测试（步骤提取、行范围 warning、回退链、非法正则容错）。
 - `src/tests/test_rule_preview.py`：Text 规则预览回归测试（自动样本、规则链回退、非法正则失败、空目录无样本）。
 - `src/tests/test_text_rule_structure_parser.py`：Text 规则结构解析测试（嵌套括号、括号外分隔符、样本格式分组）。
-- `src/tests/test_scan_pdf_degrade.py`：PDF 后端降级容错回归测试（PyMuPDF 不可用时的聚合 warning 与入库行为）。
+- `src/tests/test_scan_pdf_degrade.py`：PDF 后端降级容错回归测试（PyMuPDF 不可用时的聚合 warning 与入库行为）；Library 扫描进度 `total=0` busy 语义；comic/text 扫描断言真实 total。
+- `src/tests/test_repository_orphan_cleanup.py`：根目录删除 LIKE 通配符误伤回归；整型设置非法值回退/越界 clamp（BUG-6）。
 - `src/tests/test_library_scan_incremental.py`：Library 增量扫描与 `hash_strategy` 分级指纹（未变跳过、touch 强制更新、缺缩略图重处理、COALESCE 保留指纹）；`ScanRequest.roots` 使用 `LibraryScanRoot`。
 - `src/tests/test_root_scan_strategy.py`：目录级扫描策略回归（旧库 `scan_strategy` 列迁移、Library/Text per-root 覆盖与全局回退、漫画 snapshot/full 旁注刷新、`set_root_scan_strategy` 合法性与 repository 默认值）。
 - `src/tests/test_scan_summary_fields.py`：扫描摘要字段对齐回归（comic 计入新增、别名键、冲突 `incoming_path`）。
@@ -174,8 +176,8 @@ src/
 
 ### 3.4 书库后端组件（bookhub/library）
 - `src/bookhub/library/__init__.py`：后端模块导出入口。
-- `src/bookhub/library/repository.py`：SQLite 读写中心；设置、书籍、书单、收藏、标签操作；`hash_strategy` 新装与非法值回退均默认 `quick`；`get/set_per_root_scan_strategy_enabled`（默认关）、`get/set_comic_scan_strategy`（默认 `snapshot`）、`list_roots_with_strategy` / `list_comic_roots_with_strategy` / `list_text_roots_with_rules` 返回 `{path, scan_strategy|null}`、`set_root_scan_strategy(kind, path, strategy)` 校验合法值且空串写 NULL；旧库三表 `scan_strategy` 列迁移；`map_library_books_for_scan` / `map_text_novels_for_scan` 提供 Library/Text 增量扫描用的 path→指纹索引；`upsert_book` 对空指纹列 COALESCE 保留旧值；漫画同名冲突查询与设置 `comic_title_conflict_policy`（默认 `skip_incoming`）；`get/set_text_encoding_preference`（`simplified|traditional|auto`，默认 `simplified`）；`preview_cache_dir` 设置与 `preview_dir` 注入（默认 `img_preview`）；`rewrite_thumbnail_uris_for_root_move`；漫画排序与显示模式、Text 规则预览结果区高度、规则窗口尺寸、用户预设等 UI 偏好持久化。
-- `src/bookhub/library/scanner.py`：目录扫描与文件过滤；Library 入库候选含 PDF/EPUB/HTML/MD/FB2/DOCX（`is_supported_library_file`）；Comic 含叶子图片文件夹与 **CBZ**；读取 `get_per_root_scan_strategy_enabled()` 后按根解析策略；Library/Text 指纹跳过；漫画文件夹用 `folder_size_mtime`、CBZ 用文件 `size:mtime`；`full` 强制重扫（文件夹另重读旁注）；同名冲突策略；失踪清理接受目录或文件源；TXT/旁注经 `text_encoding`；超大封面降采样占位。
+- `src/bookhub/library/repository.py`：SQLite 读写中心；设置、书籍、书单、收藏、标签操作；`hash_strategy` 新装与非法值回退均默认 `quick`；`get/set_per_root_scan_strategy_enabled`（默认关）、`get/set_comic_scan_strategy`（默认 `snapshot`）、`list_roots_with_strategy` / `list_comic_roots_with_strategy` / `list_text_roots_with_rules` 返回 `{path, scan_strategy|null}`、`set_root_scan_strategy(kind, path, strategy)` 校验合法值且空串写 NULL；旧库三表 `scan_strategy` 列迁移；`map_library_books_for_scan` / `map_text_novels_for_scan` 提供 Library/Text 增量扫描用的 path→指纹索引；`upsert_book` 对空指纹列 COALESCE 保留旧值；漫画同名冲突查询与设置 `comic_title_conflict_policy`（默认 `skip_incoming`）；`get/set_text_encoding_preference`（`simplified|traditional|auto`，默认 `simplified`）；`preview_cache_dir` 设置与 `preview_dir` 注入（默认 `img_preview`）；`rewrite_thumbnail_uris_for_root_move`；漫画排序与显示模式、Text 规则预览结果区高度、规则窗口尺寸、用户预设等 UI 偏好持久化；`set_scan_depth`/`set_text_preview_chars` 等整型设置在 repository 层容错（非法回退默认、越界 clamp），`apply_setting` 不再前置 `int()`。
+- `src/bookhub/library/scanner.py`：目录扫描与文件过滤；Library 入库候选含 PDF/EPUB/HTML/MD/FB2/DOCX（`is_supported_library_file`）；Comic 含叶子图片文件夹与 **CBZ**；读取 `get_per_root_scan_strategy_enabled()` 后按根解析策略；Library/Text 指纹跳过；漫画文件夹用 `folder_size_mtime`、CBZ 用文件 `size:mtime`；`full` 强制重扫（文件夹另重读旁注）；同名冲突策略；失踪清理接受目录或文件源；TXT/旁注经 `text_encoding`；超大封面降采样占位；`_emit_scan_progress` 对 Library（无预遍历、`total=0`）透传 0 以触发前端 busy 不定进度，comic/text 仍报真实 total。
 - `src/bookhub/library/text_encoding.py`：TXT 统一读入；`DecodeResult` / `detect_and_decode`；UTF-8 优先，64KB 样本经 charset-normalizer 按 `text_encoding_preference`（简/繁/自动）排名；简体永不选 Big5，繁体优先 Big5；低置信时 GB18030↔UTF-8 双候选回退。
 - `src/bookhub/library/data_paths.py`：缩略图缓存目录解析；默认经 `app_paths.default_preview_dir()`（dev：`img_preview/`，打包：exe 同级）；空/相对/不可写路径回退默认；`preview_cache` 模式枚举。
 - `src/bookhub/library/formats/`：新格式解析与封面提取；`registry.py` 是 Library 格式支持、元数据提取与缩略图生成的单一注册入口（延迟导入）；其余 `html_md`/`fb2`/`docx_fmt`/`cbz`/`zip_safety`/`common` 提供具体实现。Library 用内嵌图或标题占位卡；Comic CBZ 取包内首图，`prepare_cbz_for_external_viewer` 将全部页解压到 `preview/comic/read/` 供外部看图；docx/fb2.zip/cbz 经成员数与未压缩体积上限防 zip bomb。
@@ -213,12 +215,12 @@ src/
 - `src/bookhub/ui/web/css/base.css`：布局/结构/动画（无 skin 色板）；glass 与 vaporwave 共用。
 - `src/bookhub/ui/web/css/app.css`：legacy 入口，`@import` glass bundle（兼容旧引用）。
 - `src/bookhub/ui/web/css/skins/glass/tokens.css`：玻璃拟态 day/night CSS 变量。
-- `src/bookhub/ui/web/css/skins/glass/components.css`：玻璃拟态组件样式（由原 app.css 拆出）；含 `.cover-wrap`/`.format-badge` 书籍格式角标（封面左上角 pill，图书馆/书籍与小说合集详情网格启用）。
+- `src/bookhub/ui/web/css/skins/glass/components.css`：玻璃拟态组件样式（由原 app.css 拆出）；含 `.cover-wrap`/`.format-badge` 书籍格式角标（封面左上角 pill，图书馆/书籍与小说合集详情网格启用）；`.progress.busy span` 条纹不定进度动画。
 - `src/bookhub/ui/web/css/skins/vaporwave/fonts.css`：蒸汽波 @font-face，引用 `web/fonts/` 本地 woff2。
 - `src/bookhub/ui/web/css/skins/vaporwave/tokens.css`：蒸汽波 day/night token（Sora/Space Mono 语义变量）。
 - `src/bookhub/ui/web/css/skins/vaporwave/background.css`：vw-scene 大气渐变 + CRT 扫描线（已移除太阳/动态透视网格）；night 子选择器微调。
 - `src/bookhub/ui/web/css/skins/vaporwave/layout.css`：蒸汽波 z-index 层叠（不改生产 grid）。
-- `src/bookhub/ui/web/css/skins/vaporwave/components.css`：蒸汽波组件重皮肤；与 `skins/glass/components.css` 逐选择器对齐（129 类全覆盖，含四大面板 grid 落位/.glass/.modal/.settings-*/.tr-*/滚动条），布局性声明与 glass 一致，仅视觉层为蒸汽波语言（4px 硬偏移阴影、2px 霓虹描边、Space Mono、glitch/旋转 hover），零 backdrop-filter；原型专属类（dialog-card/panel/sort-control 等）已清除；`.format-badge` 采用深色底 + `--vw-cyan` 霓虹边框。
+- `src/bookhub/ui/web/css/skins/vaporwave/components.css`：蒸汽波组件重皮肤；与 `skins/glass/components.css` 逐选择器对齐（129 类全覆盖，含四大面板 grid 落位/.glass/.modal/.settings-*/.tr-*/滚动条），布局性声明与 glass 一致，仅视觉层为蒸汽波语言（4px 硬偏移阴影、2px 霓虹描边、Space Mono、glitch/旋转 hover），零 backdrop-filter；原型专属类（dialog-card/panel/sort-control 等）已清除；`.format-badge` 采用深色底 + `--vw-cyan` 霓虹边框；`.progress.busy span` 霓虹条纹不定进度动画。
 - `src/bookhub/ui/web/js/qwebchannel.js`：Qt 官方 `qwebchannel.js` 原样内置（从 Qt 资源导出）。
 - `requirements-dev.txt`：开发/测试依赖（`pytest==8.3.5`）；运行依赖仍见根目录 `requirements.txt`。
 
@@ -240,6 +242,7 @@ src/
 - `src/bookhub/ui/viewmodels/library_viewmodel.py`：Library/Text/Comic 资源查询过滤、字段前缀搜索（`title:`/`author:`/`tag:`）、普通 query 匹配 title/author/tags/path/info_text、视图模式、搜索建议状态。
 
 ## 4. 当前关键实现（简要）
+- 2026-09-09 发布线收敛：工作分支改动并入 `2.0_glass_ui`（GitHub 默认分支）；删除本地 `cursor/fix-bugs-1-4` 与 `20260410`；经 Actions `Release` workflow patch bump 打包 win64 zip。BUG-5：Library 扫描 `total=0` 走 busy 条纹进度；BUG-6：整型设置 repository 层容错。
 - 2026-08-18 三类合集互相独立：侧栏为图书馆 / 书籍合集 / 文本小说 / 小说合集 / 漫画 / 漫画合集；`collections.kind` 隔离成员；漫画合集为可新建命名列表（详情走 comic_grid）；独立「收藏」「漫画收藏」页退出侧栏，既有星标迁入默认「收藏」合集；见 `decision-20260818-001`。
 - 2026-07-28 发布自动化与便携路径：`app_paths.py` 统一 dev/打包态数据目录；`scripts/pack_release.ps1` 将 `main.dist` 改名为 `Simple-Book-library-v{APP_VERSION}`、预建空 `img_preview`/`sql`/`Scan_error_logs` 并打 win64 zip；`.github/workflows/release.yml` 支持 workflow_dispatch 一键 bump（patch/minor/major）→ commit/tag → Nuitka build → pack → GitHub Release；用户数据不进入 zip。
 - 2026-07-28 漫画顶栏搜索对接：`comics.title` 扫描入库已有，补齐前后端搜索链路；Bridge `_library_vm`/`_text_vm`/`_comic_vm`/`_comic_collection_vm` + `_search_vm_for_context`，`search`/`getSuggestions` 支持 comic 与漫画合集详情；前端 `searchContext`/`State.searchQueries` 按页独立 query 与 placeholder；匹配 title/path/info_text；合集总览仍无搜索。

@@ -447,6 +447,12 @@
   box-shadow: 0 0 8px rgba(255, 113, 206, 0.45);
   transition: width 240ms ease;
 }
+.progress.busy span {
+  width: 100%;
+  background: repeating-linear-gradient(45deg, var(--vw-primary) 0 10px, var(--vw-cyan) 10px 20px);
+  animation: progress-busy .9s linear infinite;
+}
+@keyframes progress-busy { from { background-position: 0 0; } to { background-position: 28px 0; } }
 
 .switch { position: relative; width: 40px; height: 22px; flex: 0 0 auto; }
 .switch input { display: none; }

@@ -56,20 +56,24 @@
 
 ---
 
-### [ ] BUG-5（原 ISSUE-004 演进）：Library 扫描进度恒 100%
+### [x] BUG-5（原 ISSUE-004 演进）：Library 扫描进度恒 100%
 
 **位置**：`src/bookhub/library/scanner.py` — `scan_roots`（`total_files = 0`）+ `_emit_scan_progress`（`max(current, total)`）  
 **现状**：旧 ISSUE-004 的 `_count_library_scan_files` 预扫描已移除（避免大目录预遍历），但 `total` 恒为 0，`max(current, 0)` 使进度从一开始就满格。  
 **影响**：用户无法感知扫描进度，易误以为卡住/无反馈。  
 **修复方向**：改为不定进度（busy 态）或按根/按目录实时累计并设上限，或前端进度条改为「处理中」动画。
 
+**状态（2026-08-01）**：已修 — `_emit_scan_progress` 改为透传 `total if total > 0 else 0`，Library 扫描 `total=0` 如实到达前端触发 busy 条纹动画；comic/text 扫描仍报真实 total（>0），百分比逻辑不变。前端 `updateScanProgress`/`updateScanState` 区分 busy（不定）与 determinate（百分比）两态；glass/vaporwave 两个皮肤各新增 `progress-busy` 条纹动画。更新 Library 进度断言为 total=0，新增 comic/text total>0 进度用例；全量回归 194 passed。
+
 ---
 
-### [ ] BUG-6：`apply_setting` 对整型设置直接 `int(value)` 无容错
+### [x] BUG-6：`apply_setting` 对整型设置直接 `int(value)` 无容错
 
 **位置**：`src/bookhub/ui/web_window.py` — `apply_setting`（177/200/205/208/210 行：`scanDepth`/`textPreviewChars`/`comicPageSize`/`viewportBufferScreens`/`gridColumns`）  
 **现象**：直接 `int(value)`，同文件其他设置均用 normalize 容错；前端传入异常值会抛 `ValueError`，中断整个 Qt slot 设置批次。  
 **修复方向**：与 `searchFontSize`/`cardSpacing` 一致，改用 normalize 函数或 try/except 回退默认值。
+
+**状态（2026-08-01）**：已修 — 采用 repository 层统一容错：`set_scan_depth`/`set_text_preview_chars` 补 try/except 回退默认值（签名放宽为 `int | str | None`），`set_comic_page_size`/`set_viewport_buffer_screens`/`set_grid_columns` 复用既有 `_normalize_*`；`apply_setting` 5 处 `int(value)` 全部去掉、原始值直传 repository。新增 `RepositorySettingNormalizeTests` 7 个用例（非法回退默认 + 越界 clamp + 白名单外回退）；全量回归 194 passed。
 
 ---
 
@@ -157,8 +161,8 @@
 1. BUG-1（安全 zip-slip，CBZ 恶意写入）→ 已修（2026-07-31）
 2. BUG-2（数据丢失，LIKE 通配符误删兄弟目录）→ 已修（2026-08-01）
 3. BUG-3（UI 残留硬编码建议）→ 已修（2026-08-01）
-4. BUG-6、BUG-7（健壮性，repository/web_window 同文件可一起）
-5. BUG-8、BUG-5（磁盘泄漏 / 扫描进度体验）
+4. BUG-6、BUG-7（健壮性，repository/web_window 同文件可一起）→ BUG-6 已修（2026-08-01）；BUG-7 待修
+5. BUG-8、BUG-5（磁盘泄漏 / 扫描进度体验）→ BUG-5 已修（2026-08-01）；BUG-8 待修
 6. BUG-4（超大封面降采样容错）→ 已修（2026-08-01）
 7. 低-1～低-5 与 ISSUE-006 视产品需求
 

@@ -143,5 +143,58 @@ class RepositoryRootRemovalSafetyTests(unittest.TestCase):
         self.assertEqual([b["title"] for b in remaining], ["1000XSpecial"])
 
 
+class RepositorySettingNormalizeTests(unittest.TestCase):
+    """BUG-6 regression: int settings must tolerate malformed values from the
+    web layer (apply_setting no longer calls int() upfront), falling back to
+    defaults and clamping to allowed ranges."""
+
+    def _repo(self) -> LibraryRepository:
+        tmp = tempfile.mkdtemp(prefix="bookhub_setting_")
+        return LibraryRepository(db_path=str(Path(tmp) / "library.db"))
+
+    def test_scan_depth_invalid_falls_back_to_default(self) -> None:
+        repo = self._repo()
+        repo.set_scan_depth("abc")
+        self.assertEqual(repo.get_scan_depth(), 2)
+        repo.set_scan_depth(None)
+        self.assertEqual(repo.get_scan_depth(), 2)
+
+    def test_scan_depth_out_of_range_is_clamped(self) -> None:
+        repo = self._repo()
+        repo.set_scan_depth("5")
+        self.assertEqual(repo.get_scan_depth(), 3)
+        repo.set_scan_depth("0")
+        self.assertEqual(repo.get_scan_depth(), 1)
+
+    def test_text_preview_chars_invalid_falls_back_to_default(self) -> None:
+        repo = self._repo()
+        repo.set_text_preview_chars("abc")
+        self.assertEqual(repo.get_text_preview_chars(), 1200)
+        repo.set_text_preview_chars(None)
+        self.assertEqual(repo.get_text_preview_chars(), 1200)
+
+    def test_text_preview_chars_outside_whitelist_falls_back(self) -> None:
+        repo = self._repo()
+        repo.set_text_preview_chars("1500")
+        self.assertEqual(repo.get_text_preview_chars(), 1200)
+
+    def test_comic_page_size_invalid_falls_back_to_default(self) -> None:
+        repo = self._repo()
+        repo.set_comic_page_size("abc")
+        self.assertEqual(repo.get_comic_page_size(), 48)
+
+    def test_viewport_buffer_screens_invalid_falls_back_to_default(self) -> None:
+        repo = self._repo()
+        repo.set_viewport_buffer_screens(None)
+        self.assertEqual(repo.get_viewport_buffer_screens(), 3)
+
+    def test_grid_columns_invalid_and_outside_whitelist_fall_back(self) -> None:
+        repo = self._repo()
+        repo.set_grid_columns("abc")
+        self.assertEqual(repo.get_grid_columns(), 6)
+        repo.set_grid_columns("9")
+        self.assertEqual(repo.get_grid_columns(), 6)
+
+
 if __name__ == "__main__":
     unittest.main()

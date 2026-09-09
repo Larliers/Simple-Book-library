@@ -502,9 +502,11 @@ def _emit_scan_progress(
     if progress_cb is None:
         return
     snapshot = result.to_summary()
-    # Library scans no longer pre-walk the tree just to count files. Keep the
-    # existing progress contract usable by reporting completed work so far.
-    progress_cb(current, max(current, total), label, snapshot)
+    # Library scans no longer pre-walk the tree just to count files, so total is
+    # 0 there. Pass it through unchanged so the UI can show an indeterminate
+    # "busy" state instead of a fake 100%. Comic/text scans always report a real
+    # total (>= current) and are unaffected.
+    progress_cb(current, total if total > 0 else 0, label, snapshot)
 
 
 def _count_text_scan_files(roots: list[TextScanRoot]) -> int:
