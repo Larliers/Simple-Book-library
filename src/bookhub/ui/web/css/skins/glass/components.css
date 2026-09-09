@@ -147,6 +147,26 @@
 .content-split.view-enter { animation: viewEnter 240ms ease; }
 .content-split.view-enter-skip { animation: none; }
 
+.recommendation-columns {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px; align-items: start;
+}
+.recommendation-column {
+  min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--card-bg-soft);
+}
+.recommendation-column-title { margin: 0 0 14px; font-size: 18px; text-align: center; }
+.recommendation-stack {
+  display: grid; grid-template-columns: minmax(0, 148px); justify-content: center;
+  gap: 18px; align-content: start;
+}
+.recommendation-stack .book-card:focus-visible { outline: none; }
+.recommendation-stack .book-card:focus-visible .cover,
+.recommendation-stack .book-card:focus-visible .cover-fallback {
+  outline: 2px solid var(--accent); outline-offset: 4px;
+}
+.recommendation-stack .empty-state { min-height: 160px; padding: 14px; }
+
 .page-sort { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .page-sort .sort-select {
   min-width: 220px; padding: 6px 10px; border-radius: var(--radius);

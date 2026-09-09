@@ -53,5 +53,6 @@ button:active { transform: translateY(1px) scale(0.985); }
 
 @media (max-width: 1120px) {
   .app-shell { grid-template-columns: 200px minmax(0, 1fr); grid-template-rows: 74px minmax(0, 1fr) minmax(0, 0.9fr); }
-  .detail-panel { grid-column: 1 / span 2; grid-row: 3; }
+  /* Keep the responsive placement stronger than skin-level .detail-panel rules loaded later. */
+  .app-shell > .detail-panel { grid-column: 1 / span 2; grid-row: 3; }
 }

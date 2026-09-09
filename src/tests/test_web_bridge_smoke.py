@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -22,7 +24,7 @@ try:
     from bookhub.library import LibraryRepository
     from bookhub.library.models import ComicScanRequest, ComicScanRoot
     from bookhub.library.scanner import scan_comic_roots
-    from bookhub.ui.web_bridge import PAGE_COMIC, UiBridge, NAV_ITEMS
+    from bookhub.ui.web_bridge import PAGE_COMIC, PAGE_RANDOM_RECOMMENDATIONS, UiBridge, NAV_ITEMS
     from bookhub.ui.web_scheme import WEB_ROOT, to_local_path
 
     QT_AVAILABLE = True
@@ -51,6 +53,17 @@ class WebBridgeSmokeTests(unittest.TestCase):
         page_keys = {page for page, _, _ in NAV_ITEMS}
         self.assertEqual(set(payload["pages"].keys()), page_keys)
 
+    def test_resource_push_marks_only_explicit_recommendation_invalidation(self) -> None:
+        bridge = self._make_bridge()
+        payloads: list[dict[str, object]] = []
+        bridge.resourcesChanged.connect(lambda raw: payloads.append(json.loads(raw)))
+
+        bridge.push_resources()
+        bridge.push_resources(recommendations_invalidated=True)
+
+        self.assertFalse(payloads[0]["recommendationsInvalidated"])
+        self.assertTrue(payloads[1]["recommendationsInvalidated"])
+
     def test_library_payload_includes_extension(self) -> None:
         bridge = self._make_bridge()
         with tempfile.TemporaryDirectory() as tmp:
@@ -70,6 +83,100 @@ class WebBridgeSmokeTests(unittest.TestCase):
             items = json.loads(bridge.getBootstrap())["pages"]["library"]["items"]
             book = next(item for item in items if item.get("title") == "Sample EPUB")
             self.assertEqual(book.get("extension"), ".epub")
+
+    def test_random_recommendations_empty_sources_keep_three_columns(self) -> None:
+        bridge = self._make_bridge()
+
+        payload = json.loads(bridge.getRandomRecommendations())
+
+        self.assertEqual(payload["mode"], "recommendations")
+        self.assertEqual(
+            [(column["key"], column["sourcePage"]) for column in payload["columns"]],
+            [("books", "library"), ("novels", "text_novel"), ("comics", "comic")],
+        )
+        self.assertEqual([column["items"] for column in payload["columns"]], [[], [], []])
+
+    def test_random_recommendations_isolate_sources_and_limit_each_column(self) -> None:
+        bridge = self._make_bridge()
+        for index in range(5):
+            bridge._repo.upsert_book(
+                {
+                    "path": f"C:/library/book-{index}.pdf",
+                    "file_name": f"book-{index}.pdf",
+                    "extension": ".pdf",
+                    "title": f"Book {index}",
+                    "resource_type": "pdf",
+                    "tags_json": "[]",
+                }
+            )
+        for index in range(2):
+            bridge._repo.upsert_book(
+                {
+                    "path": f"C:/novels/novel-{index}.txt",
+                    "file_name": f"novel-{index}.txt",
+                    "extension": ".txt",
+                    "title": f"Novel {index}",
+                    "resource_type": "text_novel",
+                    "tags_json": "[]",
+                }
+            )
+        for index in range(4):
+            bridge._repo.upsert_comic(
+                {
+                    "path": f"C:/comics/comic-{index}",
+                    "title": f"Comic {index}",
+                    "image_count": index + 1,
+                }
+            )
+        bridge.reload_data()
+
+        columns = {
+            column["key"]: column for column in json.loads(bridge.getRandomRecommendations())["columns"]
+        }
+
+        self.assertEqual(len(columns["books"]["items"]), 3)
+        self.assertEqual(len(columns["novels"]["items"]), 2)
+        self.assertEqual(len(columns["comics"]["items"]), 3)
+        self.assertTrue(all(item["type"] != "text_novel" for item in columns["books"]["items"]))
+        self.assertTrue(all(item["type"] == "text_novel" for item in columns["novels"]["items"]))
+        self.assertTrue(all(item["type"] == "comic_folder" for item in columns["comics"]["items"]))
+        for column in columns.values():
+            ids = [item["id"] for item in column["items"]]
+            self.assertEqual(len(ids), len(set(ids)))
+
+    def test_random_recommendations_exclude_missing_records(self) -> None:
+        bridge = self._make_bridge()
+        bridge._repo.upsert_book(
+            {
+                "path": "C:/library/missing-book.pdf",
+                "file_name": "missing-book.pdf",
+                "extension": ".pdf",
+                "title": "Missing Book",
+                "resource_type": "pdf",
+                "tags_json": "[]",
+            }
+        )
+        bridge._repo.upsert_book(
+            {
+                "path": "C:/novels/missing-novel.txt",
+                "file_name": "missing-novel.txt",
+                "extension": ".txt",
+                "title": "Missing Novel",
+                "resource_type": "text_novel",
+                "tags_json": "[]",
+            }
+        )
+        bridge._repo.upsert_comic(
+            {"path": "C:/comics/missing-comic", "title": "Missing Comic", "image_count": 1}
+        )
+        with bridge._repo._connection() as conn:
+            conn.execute("UPDATE books SET is_missing = 1")
+            conn.execute("UPDATE comics SET is_missing = 1")
+        bridge.reload_data()
+
+        payload = json.loads(bridge.getRandomRecommendations())
+
+        self.assertEqual([column["items"] for column in payload["columns"]], [[], [], []])
 
     def test_search_returns_json_payload(self) -> None:
         bridge = self._make_bridge()
@@ -146,6 +253,9 @@ class WebBridgeSmokeTests(unittest.TestCase):
             "settings.comic_scan_strategy",
             "settings.roots.scan_strategy",
             "settings.scan_strategy.inherit",
+            "sidebar.random_recommendations",
+            "recommendations.refresh",
+            "recommendations.empty_column",
         ):
             self.assertIn(key, strings)
         self.assertIn("Fast", strings["settings.hash.hint"])
@@ -155,8 +265,17 @@ class WebBridgeSmokeTests(unittest.TestCase):
         pages = [page for page, _, _ in NAV_ITEMS]
         self.assertEqual(
             pages,
-            ["library", "collections", "text_novel", "novel_collections", "comic", "comic_collections"],
+            [
+                "library",
+                "collections",
+                "text_novel",
+                "novel_collections",
+                "comic",
+                "comic_collections",
+                "random_recommendations",
+            ],
         )
+        self.assertEqual(PAGE_RANDOM_RECOMMENDATIONS, "random_recommendations")
         self.assertNotIn("favorites", pages)
         self.assertNotIn("comic_fav", pages)
 
@@ -349,6 +468,28 @@ class WebBridgeSmokeTests(unittest.TestCase):
 
 
 class SettingsUiStructureTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("node"), "Node.js is not available")
+    def test_random_recommendations_frontend_behavior(self) -> None:
+        script = PROJECT_ROOT / "src" / "tests" / "js" / "test_random_recommendations.js"
+        app_js = PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js"
+        completed = subprocess.run(
+            [shutil.which("node") or "node", str(script), str(app_js)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("RANDOM_RECOMMENDATIONS_BEHAVIOR_OK", completed.stdout)
+
+    def test_random_recommendations_keep_source_page_for_actions(self) -> None:
+        app_js = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("selectRecommendedResource(column.sourcePage", app_js)
+        self.assertIn("State.bridge.openResource(column.sourcePage", app_js)
+        self.assertIn("openContextMenu(event, column.sourcePage", app_js)
+        self.assertIn("function renderDetail(d, sourcePage)", app_js)
+        self.assertIn("function openQuickAddModal(item, sourcePage)", app_js)
+
     def test_app_js_merges_paths_and_tasks(self) -> None:
         app_js = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
         self.assertIn('["paths", "settings.nav.paths"]', app_js)

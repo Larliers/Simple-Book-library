@@ -50,6 +50,36 @@
 }
 ```
 
+## 2026-09-09 - 随机推荐采用列级来源与显式缓存失效
+
+```json
+{
+  "decision_id": "decision-20260909-001",
+  "timestamp": "2026-09-09T13:10:10+08:00",
+  "owner": "ui-agent",
+  "title": "随机推荐采用列级 sourcePage、会话缓存和显式数据源失效标记",
+  "context": "推荐页混合 Library、Text Novel、Comic 三种资源；通用 resourcesChanged 同时承载收藏、标签、合集和真实数据源变化，不能一律重抽",
+  "options": [
+    "A: 每次进入页面都重新抽取",
+    "B: 所有 resourcesChanged 都立即清空并重抽",
+    "C: 会话缓存；仅扫描、资源根增删和资源删除显式标记失效"
+  ],
+  "decision": "选择 C；sourcePage 放在固定推荐列上，列内卡片继承",
+  "rationale": [
+    "切页返回保持结果符合会话稳定性要求",
+    "标签、收藏和合集变更不改变候选集合，不应让推荐跳变",
+    "列级来源避免九个条目重复字段，同时保证所有动作路由一致",
+    "request id 使数据源变化时的旧异步响应自动失效"
+  ],
+  "impact": [
+    "resourcesChanged 增加 recommendationsInvalidated 布尔字段",
+    "扫描完成、资源根增删、资源删除发送 true；其他 UI 数据刷新保持 false",
+    "前端行为测试覆盖缓存、防重复、旧回调淘汰、搜索恢复和三类来源动作"
+  ],
+  "followups": []
+}
+```
+
 ## 追加决策
 ```json
 {

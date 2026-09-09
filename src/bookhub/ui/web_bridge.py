@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import subprocess
 import sys
 from pathlib import Path
@@ -29,6 +30,7 @@ PAGE_COLLECTIONS = "collections"
 PAGE_NOVEL_COLLECTIONS = "novel_collections"
 PAGE_COMIC = "comic"
 PAGE_COMIC_COLLECTIONS = "comic_collections"
+PAGE_RANDOM_RECOMMENDATIONS = "random_recommendations"
 
 COLLECTION_PAGE_KINDS = {
     PAGE_COLLECTIONS: COLLECTION_KIND_BOOK,
@@ -43,6 +45,7 @@ NAV_ITEMS = [
     (PAGE_NOVEL_COLLECTIONS, "sidebar.novel_collections", "Novel Collections"),
     (PAGE_COMIC, "sidebar.comic", "Comic"),
     (PAGE_COMIC_COLLECTIONS, "sidebar.comic_collections", "Comic Collections"),
+    (PAGE_RANDOM_RECOMMENDATIONS, "sidebar.random_recommendations", "Random Recommendations"),
 ]
 
 COMIC_PAGES = {PAGE_COMIC, PAGE_COMIC_COLLECTIONS}
@@ -70,12 +73,20 @@ def _web_strings() -> dict[str, str]:
         ("sidebar.novel_collections", "Novel Collections"),
         ("sidebar.comic", "Comic"),
         ("sidebar.comic_collections", "Comic Collections"),
+        ("sidebar.random_recommendations", "Random Recommendations"),
         ("view.grid", "Grid"),
         ("view.list", "List"),
         ("topbar.scan", "Scan"),
         ("topbar.search_placeholder", "Search library..."),
         ("topbar.search_text_placeholder", "Search text novels by title, author, tag, or path..."),
         ("topbar.search_comic_placeholder", "Search comics by title, path, or notes..."),
+        ("topbar.search_recommendations_placeholder", "Search is unavailable on recommendations."),
+        ("recommendations.refresh", "Recommend Again"),
+        ("recommendations.books", "Books"),
+        ("recommendations.novels", "Novels"),
+        ("recommendations.comics", "Comics"),
+        ("recommendations.empty_column", "No items available."),
+        ("recommendations.loading", "Loading recommendations..."),
         ("detail.empty", "Select an item to see its details."),
         ("detail.author", "Author"),
         ("detail.publisher", "Publisher"),
@@ -538,6 +549,8 @@ class UiBridge(QObject):
         if page == PAGE_COMIC:
             items = self._comic_vm.filtered_resources(include_missing=False)
             return self._comic_page_payload_from_items(items, favorite=False)
+        if page == PAGE_RANDOM_RECOMMENDATIONS:
+            return {"mode": "recommendations", "columns": []}
         if page in COLLECTION_PAGE_KINDS:
             return self._collections_payload(page)
         return {"mode": "grid_or_list", "items": []}
@@ -694,6 +707,37 @@ class UiBridge(QObject):
         }
         return json.dumps(payload, ensure_ascii=False)
 
+    @Slot(result=str)
+    def getRandomRecommendations(self) -> str:
+        books = [row for row in self._library_records if not bool(row.get("is_missing"))]
+        novels = [row for row in self._text_records if not bool(row.get("is_missing"))]
+        comics = self._repo.list_comics(include_missing=False)
+
+        def sampled(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            return random.sample(rows, k=min(3, len(rows)))
+
+        payload = {
+            "mode": "recommendations",
+            "columns": [
+                {
+                    "key": "books",
+                    "sourcePage": PAGE_LIBRARY,
+                    "items": [self._book_payload(row) for row in sampled(books)],
+                },
+                {
+                    "key": "novels",
+                    "sourcePage": PAGE_TEXT,
+                    "items": [self._book_payload(row) for row in sampled(novels)],
+                },
+                {
+                    "key": "comics",
+                    "sourcePage": PAGE_COMIC,
+                    "items": [self._comic_payload(row) for row in sampled(comics)],
+                },
+            ],
+        }
+        return json.dumps(payload, ensure_ascii=False)
+
     @Slot(str)
     def setPageBackgroundTheme(self, theme: str) -> None:
         self.setPageBackground(self._ui_skin(), theme)
@@ -710,8 +754,16 @@ class UiBridge(QObject):
             return
         self._repo.set_setting("ui_skin", skin)
 
-    def push_resources(self) -> None:
-        self.resourcesChanged.emit(json.dumps({"pages": self._pages_payload()}, ensure_ascii=False))
+    def push_resources(self, recommendations_invalidated: bool = False) -> None:
+        self.resourcesChanged.emit(
+            json.dumps(
+                {
+                    "pages": self._pages_payload(),
+                    "recommendationsInvalidated": bool(recommendations_invalidated),
+                },
+                ensure_ascii=False,
+            )
+        )
 
     def push_settings(self) -> None:
         self.settingsChanged.emit(json.dumps(self._settings_payload(), ensure_ascii=False))

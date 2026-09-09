@@ -45,6 +45,44 @@
 }
 ```
 
+## 2026-09-09 - 新增随机推荐页面
+
+```json
+{
+  "log_id": "worklog-20260909-003",
+  "timestamp": "2026-09-09T13:10:10+08:00",
+  "actor": "ui-agent",
+  "task": "新增图书、小说、漫画三列随机推荐页面及会话缓存",
+  "changes": [
+    "新增 random_recommendations 导航、只读 Bridge 接口与三列推荐视图",
+    "推荐卡所有详情和资源动作继承列级 sourcePage",
+    "仅扫描、资源新增/删除使缓存失效，并用 request id 阻止旧回调写回",
+    "补齐 Glass/Vaporwave 样式、中文文案、行为测试与实际 GUI 验收"
+  ],
+  "affected_files": [
+    "src/bookhub/ui/web_bridge.py",
+    "src/bookhub/ui/web_window.py",
+    "src/bookhub/ui/web/js/app.js",
+    "src/bookhub/ui/web/css/base.css",
+    "src/bookhub/ui/web/css/skins/glass/components.css",
+    "src/bookhub/ui/web/css/skins/vaporwave/components.css",
+    "src/bookhub/i18n/locales/zh-cn.json",
+    "src/tests/test_web_bridge_smoke.py",
+    "src/tests/js/test_random_recommendations.js"
+  ],
+  "outputs": [
+    "每类最多 3 项且来源隔离的会话级推荐",
+    "可执行的前端缓存、重抽、并发与来源路由行为测试",
+    "Agent-rule/logs/evidence/2026-09-09-random-recommendations-gui.md"
+  ],
+  "risks": [
+    "全量测试仍有 2 个既有非法整型设置容错失败",
+    "Vaporwave 仍有 2 个既有 SpaceMono 字体 404"
+  ],
+  "next_actions": []
+}
+```
+
 
 ---
 

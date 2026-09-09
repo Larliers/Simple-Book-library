@@ -129,6 +129,21 @@
 }
 ```
 
+### random_recommendations_view
+```json
+{
+  "module_name": "random_recommendations_view",
+  "owner_agent": "ui-agent",
+  "status": "active",
+  "purpose": "按图书、文本小说、漫画三个来源随机展示封面推荐，并复用来源对应的详情交互",
+  "input": ["library_resources", "text_novel_resources", "comic_resources"],
+  "output": ["recommendation_columns_with_source_page", "resources_changed_payload", "render_plan", "interaction_events"],
+  "upstream": ["filename_parser", "thumbnail_generator", "comic_cover_selector"],
+  "downstream": ["resource_detail_binding", "external_open_action"],
+  "notes": "三列固定顺序；每列最多 3 项且不重复；UI 仅缓存会话结果，不执行扫描或持久化"
+}
+```
+
 ### comic_sidebar_binding
 ```json
 {

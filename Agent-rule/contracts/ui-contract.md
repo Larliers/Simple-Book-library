@@ -8,7 +8,7 @@
 {
   "request_id": "string",
   "task_id": "string",
-  "view_mode": "list|waterfall|comic_grid",
+  "view_mode": "list|waterfall|comic_grid|recommendation_grid",
   "data_source": {
     "resources": [
       {
@@ -38,13 +38,13 @@
   "status": "success|partial|failed",
   "output": {
     "render_plan": {
-      "view_mode": "list|waterfall|comic_grid",
+      "view_mode": "list|waterfall|comic_grid|recommendation_grid",
       "visible_count": 0,
       "virtualized": true
     },
     "interaction_events": [
       {
-        "event": "open_external|filter|sort|paginate|comic_favorite_toggle",
+        "event": "open_external|filter|sort|paginate|comic_favorite_toggle|reroll_recommendations",
         "resource_id": "string|null",
         "timestamp": "ISO-8601"
       }
@@ -60,6 +60,31 @@
 - 保证列表/瀑布流模式共用统一字段。
 - 保证关键交互事件可追踪。
 - 保证 `comic_grid` 模式可展示 `info_text`。
+- 保证随机推荐按 Library/Text Novel/Comic 三个来源分别返回最多 3 个不重复且未缺失的资源。
+- 保证每个推荐列携带 `sourcePage`，列内卡片继承该来源上下文；详情与打开动作必须使用该来源上下文。
+
+## Random Recommendations Extension
+```json
+{
+  "mode": "recommendations",
+  "columns": [
+    {"key": "books", "sourcePage": "library", "items": []},
+    {"key": "novels", "sourcePage": "text_novel", "items": []},
+    {"key": "comics", "sourcePage": "comic", "items": []}
+  ]
+}
+```
+
+## Resource Change Signal
+```json
+{
+  "pages": {},
+  "recommendationsInvalidated": false
+}
+```
+
+- `recommendationsInvalidated=true` 仅表示推荐候选集合因扫描、资源根增删或资源删除而变化；标签、收藏、合集、排序、封面与缩略图更新必须保持 `false`。
+- 前端收到 `true` 时必须淘汰进行中的旧推荐响应，并从最新候选集合整组重抽。
 
 ## Error Shape
 ```json

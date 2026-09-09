@@ -254,7 +254,7 @@ class WebAppWindow(QMainWindow):
             repo.add_root(directory)
             scope = "library"
         self._bridge.reload_data()
-        self._bridge.push_resources()
+        self._bridge.push_resources(recommendations_invalidated=True)
         self._bridge.push_settings()
         if repo.get_auto_scan_on_path_change():
             self.start_scan(scope)
@@ -286,7 +286,7 @@ class WebAppWindow(QMainWindow):
             repo.write_scan_report(summary)
             repo.record_scan_event("remove_root", summary)
         self._bridge.reload_data()
-        self._bridge.push_resources()
+        self._bridge.push_resources(recommendations_invalidated=True)
         self._bridge.push_settings()
 
     def edit_cover(self, resource_id: str) -> None:
@@ -406,7 +406,7 @@ class WebAppWindow(QMainWindow):
             )
             return False
         self._bridge.reload_data()
-        self._bridge.push_resources()
+        self._bridge.push_resources(recommendations_invalidated=True)
         self._bridge.emit_toast(
             tr("library.remove.done_title", "Removed"),
             tr("library.remove.done_msg", "Item removed from the library database."),
@@ -483,7 +483,7 @@ class WebAppWindow(QMainWindow):
         scope = str(summary.get("scope") or "all")
         self._emit_scan_state(scope, False)
         self._bridge.reload_data()
-        self._bridge.push_resources()
+        self._bridge.push_resources(recommendations_invalidated=True)
         self._bridge.push_settings()
         conflicts = summary.get("name_conflicts", [])
         if isinstance(conflicts, list) and conflicts:
