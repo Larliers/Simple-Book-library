@@ -198,6 +198,8 @@ def _web_strings() -> dict[str, str]:
         ("settings.comic_page_size", "Comic page size"),
         ("settings.viewport_buffer_screens", "Viewport buffer screens"),
         ("settings.grid_columns", "Covers per row"),
+        ("settings.recommendation_items_per_category", "Recommendations per category"),
+        ("settings.recommendation_columns_per_category", "Columns per category"),
         ("settings.comic.placeholder_copy", "Comic scan: copy first image as placeholder"),
         ("settings.comic.auto_thumb_after_scan", "Auto-complete comic thumbnails after scan"),
         ("settings.comic.thumbnail_workers", "Comic thumbnail workers"),
@@ -661,6 +663,8 @@ class UiBridge(QObject):
             "comicPageSize": repo.get_comic_page_size(),
             "viewportBufferScreens": repo.get_viewport_buffer_screens(),
             "gridColumns": repo.get_grid_columns(),
+            "recommendationItemsPerCategory": repo.get_recommendation_items_per_category(),
+            "recommendationColumnsPerCategory": repo.get_recommendation_columns_per_category(),
             "comicPlaceholderCopy": repo.get_comic_placeholder_copy_enabled(),
             "autoGenerateComicThumbs": repo.get_auto_generate_comic_thumbnails_after_scan(),
             "comicThumbnailWorkers": repo.get_comic_thumbnail_workers_raw(),
@@ -712,9 +716,10 @@ class UiBridge(QObject):
         books = [row for row in self._library_records if not bool(row.get("is_missing"))]
         novels = [row for row in self._text_records if not bool(row.get("is_missing"))]
         comics = self._repo.list_comics(include_missing=False)
+        item_count = self._repo.get_recommendation_items_per_category()
 
         def sampled(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-            return random.sample(rows, k=min(3, len(rows)))
+            return random.sample(rows, k=min(item_count, len(rows)))
 
         payload = {
             "mode": "recommendations",

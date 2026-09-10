@@ -74,6 +74,8 @@ const nodes = {
   contextMenu: new FakeNode(),
 };
 
+const observerStats = { created: 0, disconnected: 0 };
+
 const document = {
   createElement: (tag) => new FakeNode(tag),
   createDocumentFragment: () => new FakeNode("fragment"),
@@ -87,15 +89,32 @@ const context = {
   console,
   document,
   window: { innerWidth: 1400, innerHeight: 860 },
+  observerStats,
+  ResizeObserver: class {
+    constructor() { observerStats.created += 1; }
+    observe() {}
+    disconnect() { observerStats.disconnected += 1; }
+  },
+  requestAnimationFrame: (callback) => { callback(); return 1; },
+  cancelAnimationFrame() {},
   setTimeout: () => 1,
   clearTimeout() {},
 };
 vm.createContext(context);
 
 const assertions = `
-scheduleRenderPage = () => {};
+let scheduledRenders = 0;
+scheduleRenderPage = () => { scheduledRenders += 1; };
 renderDetailEmpty = () => {};
+renderSettings = () => {};
 wireTextRulesSignal = () => {};
+
+assert.deepStrictEqual(recommendationLayoutForWidth(620, 2), { columns: 2, cardWidth: 260 });
+assert.deepStrictEqual(recommendationLayoutForWidth(250, 2), { columns: 1, cardWidth: 250 });
+assert.deepStrictEqual(recommendationLayoutForWidth(500, 3), { columns: 3, cardWidth: 154 });
+assert.deepStrictEqual(recommendationLayoutForWidth(100, 3), { columns: 1, cardWidth: 100 });
+assert.strictEqual(getRecommendationColumnsPerCategory({ recommendationColumnsPerCategory: 3 }), 3);
+assert.strictEqual(getRecommendationColumnsPerCategory({ recommendationColumnsPerCategory: 99 }), 2);
 
 const calls = { detail: [], open: [], context: [], quick: [], remove: [] };
 State.currentPage = RANDOM_RECOMMENDATIONS_PAGE;
@@ -135,6 +154,11 @@ assert.deepStrictEqual(calls.detail, [
 ]);
 assert.deepStrictEqual(calls.open, [["library", "b1"], ["text_novel", "n1"], ["comic", "c1"]]);
 assert.deepStrictEqual(calls.context, [["library", "b1"], ["text_novel", "n1"], ["comic", "c1"]]);
+assert.strictEqual(observerStats.created, 1, "one ResizeObserver must own all recommendation columns");
+assert.strictEqual(typeof area._recommendationCleanup, "function");
+teardownVirtualWindow(area);
+assert.strictEqual(observerStats.disconnected, 1, "recommendation ResizeObserver must disconnect on teardown");
+assert.strictEqual(area._recommendationCleanup, null);
 
 openQuickAddModal = (item, page) => calls.quick.push([page, item.id]);
 confirmRemoveFromLibrary = (page, item) => calls.remove.push([page, item.id]);
@@ -160,10 +184,12 @@ assert.strictEqual(document.getElementById("searchInput").value, "preserved quer
 
 const callbacks = [];
 let resourcesChangedHandler = null;
+let settingsChangedHandler = null;
 const signal = () => ({ connect(callback) { this.callback = callback; } });
 const bridge = {
   resourcesChanged: { connect(callback) { resourcesChangedHandler = callback; } },
-  toast: signal(), scanProgress: signal(), scanState: signal(), settingsChanged: signal(), errorLogsChanged: signal(),
+  settingsChanged: { connect(callback) { settingsChangedHandler = callback; } },
+  toast: signal(), scanProgress: signal(), scanState: signal(), errorLogsChanged: signal(),
   getRandomRecommendations(callback) { callbacks.push(callback); },
 };
 State.bridge = bridge;
@@ -191,6 +217,18 @@ callbacks[1](JSON.stringify({ mode: "recommendations", columns: [{ key: "books",
 assert.strictEqual(State.recommendations, null, "retired callbacks must not restore stale data");
 callbacks[2](JSON.stringify({ mode: "recommendations", columns: [{ key: "books", items: [{ id: "fresh" }] }] }));
 assert.strictEqual(State.recommendations.columns[0].items[0].id, "fresh");
+
+State.currentPage = RANDOM_RECOMMENDATIONS_PAGE;
+State.settings = { recommendationItemsPerCategory: 6, recommendationColumnsPerCategory: 2 };
+const recommendationsBeforeLayoutChange = State.recommendations;
+scheduledRenders = 0;
+settingsChangedHandler(JSON.stringify({ recommendationItemsPerCategory: 6, recommendationColumnsPerCategory: 3 }));
+assert.strictEqual(State.recommendations, recommendationsBeforeLayoutChange, "column changes must preserve recommendation ids");
+assert.strictEqual(scheduledRenders, 1, "column changes must relayout the current recommendation page");
+const callbacksBeforeItemCountChange = callbacks.length;
+settingsChangedHandler(JSON.stringify({ recommendationItemsPerCategory: 9, recommendationColumnsPerCategory: 3 }));
+assert.strictEqual(State.recommendations, null, "item-count changes must invalidate recommendation ids");
+assert.strictEqual(callbacks.length, callbacksBeforeItemCountChange + 1, "item-count changes must request a fresh recommendation set");
 `;
 
 vm.runInContext(fs.readFileSync(appPath, "utf8") + "\n" + assertions, context, { filename: appPath });

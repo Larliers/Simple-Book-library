@@ -157,7 +157,7 @@
 }
 .recommendation-column-title { margin: 0 0 14px; font-size: 18px; text-align: center; }
 .recommendation-stack {
-  display: grid; grid-template-columns: minmax(0, 148px); justify-content: center;
+  width: 100%; display: grid; grid-template-columns: minmax(0, 1fr); justify-content: center;
   gap: 18px; align-content: start;
 }
 .recommendation-stack .book-card:focus-visible { outline: none; }

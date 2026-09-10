@@ -23,6 +23,37 @@ from bookhub.ui.resources.layout_config import (
 
 
 class CoverGridSettingsTests(unittest.TestCase):
+    def test_repository_recommendation_density_defaults_persist_and_normalize(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = LibraryRepository(
+                db_path=root / "library.db",
+                scan_report_path=root / "scan_report.json",
+            )
+            self.assertEqual(repo.get_recommendation_items_per_category(), 6)
+            self.assertEqual(repo.get_recommendation_columns_per_category(), 2)
+
+            for value in (3, 6, 9, 12):
+                repo.set_recommendation_items_per_category(value)
+                self.assertEqual(repo.get_recommendation_items_per_category(), value)
+            for value in (1, 2, 3):
+                repo.set_recommendation_columns_per_category(value)
+                self.assertEqual(repo.get_recommendation_columns_per_category(), value)
+
+            repo.set_recommendation_items_per_category("invalid")
+            repo.set_recommendation_columns_per_category(99)
+            self.assertEqual(repo.get_recommendation_items_per_category(), 6)
+            self.assertEqual(repo.get_recommendation_columns_per_category(), 2)
+
+            repo.set_recommendation_items_per_category(12)
+            repo.set_recommendation_columns_per_category(3)
+            repo_reload = LibraryRepository(
+                db_path=root / "library.db",
+                scan_report_path=root / "scan_report.json",
+            )
+            self.assertEqual(repo_reload.get_recommendation_items_per_category(), 12)
+            self.assertEqual(repo_reload.get_recommendation_columns_per_category(), 3)
+
     def test_cover_border_normalizers(self) -> None:
         self.assertEqual(normalize_cover_selected_border_width(None), DEFAULT_COVER_SELECTED_BORDER_WIDTH)
         self.assertEqual(normalize_cover_selected_border_width(-1), 1)

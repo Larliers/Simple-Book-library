@@ -50,6 +50,8 @@ class WebBridgeSmokeTests(unittest.TestCase):
         self.assertIn("strings", payload)
         self.assertIn("settings", payload)
         self.assertIn("theme", payload["settings"])
+        self.assertEqual(payload["settings"]["recommendationItemsPerCategory"], 6)
+        self.assertEqual(payload["settings"]["recommendationColumnsPerCategory"], 2)
         page_keys = {page for page, _, _ in NAV_ITEMS}
         self.assertEqual(set(payload["pages"].keys()), page_keys)
 
@@ -134,15 +136,55 @@ class WebBridgeSmokeTests(unittest.TestCase):
             column["key"]: column for column in json.loads(bridge.getRandomRecommendations())["columns"]
         }
 
-        self.assertEqual(len(columns["books"]["items"]), 3)
+        self.assertEqual(len(columns["books"]["items"]), 5)
         self.assertEqual(len(columns["novels"]["items"]), 2)
-        self.assertEqual(len(columns["comics"]["items"]), 3)
+        self.assertEqual(len(columns["comics"]["items"]), 4)
         self.assertTrue(all(item["type"] != "text_novel" for item in columns["books"]["items"]))
         self.assertTrue(all(item["type"] == "text_novel" for item in columns["novels"]["items"]))
         self.assertTrue(all(item["type"] == "comic_folder" for item in columns["comics"]["items"]))
         for column in columns.values():
             ids = [item["id"] for item in column["items"]]
             self.assertEqual(len(ids), len(set(ids)))
+
+    def test_random_recommendations_honor_configured_item_count(self) -> None:
+        bridge = self._make_bridge()
+        for index in range(12):
+            bridge._repo.upsert_book(
+                {
+                    "path": f"C:/library/configured-book-{index}.pdf",
+                    "file_name": f"configured-book-{index}.pdf",
+                    "extension": ".pdf",
+                    "title": f"Configured Book {index}",
+                    "resource_type": "pdf",
+                    "tags_json": "[]",
+                }
+            )
+            bridge._repo.upsert_book(
+                {
+                    "path": f"C:/novels/configured-novel-{index}.txt",
+                    "file_name": f"configured-novel-{index}.txt",
+                    "extension": ".txt",
+                    "title": f"Configured Novel {index}",
+                    "resource_type": "text_novel",
+                    "tags_json": "[]",
+                }
+            )
+            bridge._repo.upsert_comic(
+                {
+                    "path": f"C:/comics/configured-comic-{index}",
+                    "title": f"Configured Comic {index}",
+                    "image_count": index + 1,
+                }
+            )
+        bridge.reload_data()
+
+        for expected in (3, 6, 9, 12):
+            bridge._repo.set_recommendation_items_per_category(expected)
+            columns = json.loads(bridge.getRandomRecommendations())["columns"]
+            self.assertEqual([len(column["items"]) for column in columns], [expected] * 3)
+            for column in columns:
+                ids = [item["id"] for item in column["items"]]
+                self.assertEqual(len(ids), len(set(ids)))
 
     def test_random_recommendations_exclude_missing_records(self) -> None:
         bridge = self._make_bridge()
@@ -256,6 +298,8 @@ class WebBridgeSmokeTests(unittest.TestCase):
             "sidebar.random_recommendations",
             "recommendations.refresh",
             "recommendations.empty_column",
+            "settings.recommendation_items_per_category",
+            "settings.recommendation_columns_per_category",
         ):
             self.assertIn(key, strings)
         self.assertIn("Fast", strings["settings.hash.hint"])
@@ -468,6 +512,20 @@ class WebBridgeSmokeTests(unittest.TestCase):
 
 
 class SettingsUiStructureTests(unittest.TestCase):
+    def test_random_recommendation_density_settings_are_exposed(self) -> None:
+        app_js = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+        web_window = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web_window.py").read_text(encoding="utf-8")
+        self.assertIn('"settings.recommendation_items_per_category", "recommendationItemsPerCategory"', app_js)
+        self.assertIn('"settings.recommendation_columns_per_category", "recommendationColumnsPerCategory"', app_js)
+        self.assertIn('key == "recommendationItemsPerCategory"', web_window)
+        self.assertIn('key == "recommendationColumnsPerCategory"', web_window)
+
+    def test_random_recommendation_cards_do_not_use_fixed_148px_tracks(self) -> None:
+        css_root = PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "css" / "skins"
+        for skin in ("glass", "vaporwave"):
+            css = (css_root / skin / "components.css").read_text(encoding="utf-8")
+            self.assertNotIn("grid-template-columns: minmax(0, 148px)", css)
+
     @unittest.skipUnless(shutil.which("node"), "Node.js is not available")
     def test_random_recommendations_frontend_behavior(self) -> None:
         script = PROJECT_ROOT / "src" / "tests" / "js" / "test_random_recommendations.js"

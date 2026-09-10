@@ -141,11 +141,7 @@ function wireSignals() {
     if (data && data.pages) {
       State.pages = data.pages;
       if (data.recommendationsInvalidated) {
-        // Retire any pending callback before requesting against the new source snapshot.
-        State.recommendationRequestId += 1;
-        State.recommendationsLoading = false;
-        State.recommendations = null;
-        State.recommendationSelection = null;
+        invalidateRandomRecommendations();
       }
       if (State.currentPage === RANDOM_RECOMMENDATIONS_PAGE) {
         if (data.recommendationsInvalidated) {
@@ -167,7 +163,19 @@ function wireSignals() {
   b.settingsChanged.connect((json) => {
     const d = safeParse(json);
     if (!d) return;
+    const previousItemCount = getRecommendationItemsPerCategory(State.settings);
+    const previousColumnCount = getRecommendationColumnsPerCategory(State.settings);
     State.settings = d;
+    const itemCountChanged = previousItemCount !== getRecommendationItemsPerCategory(d);
+    const columnCountChanged = previousColumnCount !== getRecommendationColumnsPerCategory(d);
+    if (itemCountChanged) {
+      invalidateRandomRecommendations();
+      if (State.currentPage === RANDOM_RECOMMENDATIONS_PAGE) {
+        renderDetailEmpty();
+        loadRandomRecommendations();
+      }
+    }
+    else if (columnCountChanged && State.currentPage === RANDOM_RECOMMENDATIONS_PAGE) scheduleRenderPage();
     if (d.theme) applyThemeConfig(d.theme);
     if (d.uiSkin) State.uiSkin = normalizeUiSkin(d.uiSkin);
     if (State.currentPage === "settings") renderSettings();
@@ -448,6 +456,65 @@ function loadRandomRecommendations(force) {
   });
 }
 
+function getRecommendationItemsPerCategory(settings) {
+  const value = Math.round(Number((settings || State.settings).recommendationItemsPerCategory));
+  return new Set([3, 6, 9, 12]).has(value) ? value : 6;
+}
+
+function getRecommendationColumnsPerCategory(settings) {
+  const value = Math.round(Number((settings || State.settings).recommendationColumnsPerCategory));
+  return new Set([1, 2, 3]).has(value) ? value : 2;
+}
+
+function invalidateRandomRecommendations() {
+  // Retire any pending callback before requesting against the new source snapshot or item-count setting.
+  State.recommendationRequestId += 1;
+  State.recommendationsLoading = false;
+  State.recommendations = null;
+  State.recommendationSelection = null;
+}
+
+const RECOMMENDATION_CARD_MIN_WIDTH = 120;
+const RECOMMENDATION_CARD_MAX_WIDTH = 260;
+const RECOMMENDATION_CARD_GAP = 18;
+
+function recommendationLayoutForWidth(containerWidth, requestedColumns) {
+  const width = Math.max(0, Number(containerWidth) || 0);
+  const desired = getRecommendationColumnsPerCategory({ recommendationColumnsPerCategory: requestedColumns });
+  const maxFit = Math.max(1, Math.floor(
+    (width + RECOMMENDATION_CARD_GAP) / (RECOMMENDATION_CARD_MIN_WIDTH + RECOMMENDATION_CARD_GAP)
+  ));
+  const columns = Math.min(desired, maxFit);
+  const available = Math.max(0, (width - RECOMMENDATION_CARD_GAP * (columns - 1)) / columns);
+  return { columns, cardWidth: Math.floor(Math.min(RECOMMENDATION_CARD_MAX_WIDTH, available)) };
+}
+
+function attachRecommendationLayout(area, columnsRoot) {
+  let frameId = null;
+  const sync = () => {
+    frameId = null;
+    const desired = getRecommendationColumnsPerCategory();
+    columnsRoot.querySelectorAll(".recommendation-stack").forEach((stack) => {
+      const width = stack.clientWidth;
+      if (!width) return;
+      const layout = recommendationLayoutForWidth(width, desired);
+      stack.dataset.effectiveColumns = String(layout.columns);
+      stack.style.gridTemplateColumns = `repeat(${layout.columns}, minmax(0, ${layout.cardWidth}px))`;
+    });
+  };
+  const schedule = () => {
+    if (frameId != null) return;
+    frameId = requestAnimationFrame(sync);
+  };
+  sync();
+  const observer = new ResizeObserver(schedule);
+  observer.observe(columnsRoot);
+  area._recommendationCleanup = () => {
+    observer.disconnect();
+    if (frameId != null) cancelAnimationFrame(frameId);
+  };
+}
+
 function recommendationColumnTitle(key) {
   const labels = {
     books: t("recommendations.books", "Books"),
@@ -495,6 +562,7 @@ function renderRecommendations(area, data) {
     columns.appendChild(section);
   });
   area.appendChild(columns);
+  attachRecommendationLayout(area, columns);
 }
 
 function getBufferScreens() {
@@ -556,6 +624,10 @@ function teardownVirtualWindow(area) {
   if (area && area._virtCleanup) {
     area._virtCleanup();
     area._virtCleanup = null;
+  }
+  if (area && area._recommendationCleanup) {
+    area._recommendationCleanup();
+    area._recommendationCleanup = null;
   }
 }
 
@@ -1421,6 +1493,8 @@ function renderSettingsGeneral(panel) {
   grid.appendChild(selectField("settings.comic_page_size", "comicPageSize", [[24,"24"],[48,"48"],[72,"72"],[96,"96"]], s.comicPageSize));
   grid.appendChild(selectField("settings.viewport_buffer_screens", "viewportBufferScreens", [[3,"3"],[4,"4"],[5,"5"],[6,"6"]], s.viewportBufferScreens ?? 3));
   grid.appendChild(selectField("settings.grid_columns", "gridColumns", [[4,"4"],[5,"5"],[6,"6"],[7,"7"],[8,"8"],[10,"10"],[12,"12"]], s.gridColumns ?? 6));
+  grid.appendChild(selectField("settings.recommendation_items_per_category", "recommendationItemsPerCategory", [[3,"3"],[6,"6"],[9,"9"],[12,"12"]], s.recommendationItemsPerCategory ?? 6));
+  grid.appendChild(selectField("settings.recommendation_columns_per_category", "recommendationColumnsPerCategory", [[1,"1"],[2,"2"],[3,"3"]], s.recommendationColumnsPerCategory ?? 2));
   grid.appendChild(selectField("settings.comic.thumbnail_workers", "comicThumbnailWorkers", [
     ["auto", t("settings.comic.workers.auto", "Auto")],
     ["2", "2"], ["4", "4"], ["6", "6"], ["8", "8"], ["12", "12"], ["16", "16"],

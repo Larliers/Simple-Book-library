@@ -136,11 +136,11 @@
   "owner_agent": "ui-agent",
   "status": "active",
   "purpose": "按图书、文本小说、漫画三个来源随机展示封面推荐，并复用来源对应的详情交互",
-  "input": ["library_resources", "text_novel_resources", "comic_resources"],
-  "output": ["recommendation_columns_with_source_page", "resources_changed_payload", "render_plan", "interaction_events"],
+  "input": ["library_resources", "text_novel_resources", "comic_resources", "recommendation_density_settings"],
+  "output": ["recommendation_columns_with_source_page", "responsive_inner_grid", "resources_changed_payload", "render_plan", "interaction_events"],
   "upstream": ["filename_parser", "thumbnail_generator", "comic_cover_selector"],
   "downstream": ["resource_detail_binding", "external_open_action"],
-  "notes": "三列固定顺序；每列最多 3 项且不重复；UI 仅缓存会话结果，不执行扫描或持久化"
+  "notes": "三类固定顺序；每类数量 3/6/9/12（默认 6），内部最大列数 1/2/3（默认 2）并随容器宽度降级；结果不重复，UI 仅缓存会话结果"
 }
 ```
 

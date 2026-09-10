@@ -633,6 +633,8 @@
   "settings.comic_page_size": "漫画分页容量",
   "settings.viewport_buffer_screens": "视口缓冲屏数",
   "settings.grid_columns": "每行封面数",
+  "settings.recommendation_items_per_category": "每类推荐",
+  "settings.recommendation_columns_per_category": "每类内列数",
   "settings.font_source.system": "系统",
   "settings.font_source.project": "项目字体",
   "settings.font_family.default": "（默认）",

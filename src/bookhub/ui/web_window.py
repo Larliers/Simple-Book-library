@@ -208,6 +208,10 @@ class WebAppWindow(QMainWindow):
             repo.set_viewport_buffer_screens(int(value))
         elif key == "gridColumns":
             repo.set_grid_columns(int(value))
+        elif key == "recommendationItemsPerCategory":
+            repo.set_recommendation_items_per_category(value)
+        elif key == "recommendationColumnsPerCategory":
+            repo.set_recommendation_columns_per_category(value)
         elif key == "comicPlaceholderCopy":
             repo.set_comic_placeholder_copy_enabled(self._as_bool(value))
         elif key == "autoGenerateComicThumbs":

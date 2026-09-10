@@ -441,6 +441,10 @@ class LibraryRepository:
             self.set_setting("viewport_buffer_screens", 3)
         if self.get_setting("grid_columns", None) is None:
             self.set_setting("grid_columns", 6)
+        if self.get_setting("recommendation_items_per_category", None) is None:
+            self.set_setting("recommendation_items_per_category", 6)
+        if self.get_setting("recommendation_columns_per_category", None) is None:
+            self.set_setting("recommendation_columns_per_category", 2)
         if self.get_setting("comic_sort_order_main", None) is None:
             self.set_setting("comic_sort_order_main", "folder_mtime_desc")
         if self.get_setting("comic_sort_order_fav", None) is None:
@@ -788,6 +792,44 @@ class LibraryRepository:
 
     def set_grid_columns(self, value: int | str) -> None:
         self.set_setting("grid_columns", self._normalize_grid_columns(value))
+
+    @staticmethod
+    def _normalize_recommendation_items_per_category(value: int | str | None) -> int:
+        try:
+            parsed = int(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return 6
+        return parsed if parsed in {3, 6, 9, 12} else 6
+
+    def get_recommendation_items_per_category(self) -> int:
+        return self._normalize_recommendation_items_per_category(
+            self.get_setting("recommendation_items_per_category", 6)
+        )
+
+    def set_recommendation_items_per_category(self, value: int | str) -> None:
+        self.set_setting(
+            "recommendation_items_per_category",
+            self._normalize_recommendation_items_per_category(value),
+        )
+
+    @staticmethod
+    def _normalize_recommendation_columns_per_category(value: int | str | None) -> int:
+        try:
+            parsed = int(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return 2
+        return parsed if parsed in {1, 2, 3} else 2
+
+    def get_recommendation_columns_per_category(self) -> int:
+        return self._normalize_recommendation_columns_per_category(
+            self.get_setting("recommendation_columns_per_category", 2)
+        )
+
+    def set_recommendation_columns_per_category(self, value: int | str) -> None:
+        self.set_setting(
+            "recommendation_columns_per_category",
+            self._normalize_recommendation_columns_per_category(value),
+        )
 
     @staticmethod
     def _normalize_comic_sort_order(value: str | None) -> str:

@@ -60,7 +60,7 @@
 - 保证列表/瀑布流模式共用统一字段。
 - 保证关键交互事件可追踪。
 - 保证 `comic_grid` 模式可展示 `info_text`。
-- 保证随机推荐按 Library/Text Novel/Comic 三个来源分别返回最多 3 个不重复且未缺失的资源。
+- 保证随机推荐按 Library/Text Novel/Comic 三个来源分别返回最多 `recommendationItemsPerCategory` 个不重复且未缺失的资源；允许值为 3/6/9/12，默认 6。
 - 保证每个推荐列携带 `sourcePage`，列内卡片继承该来源上下文；详情与打开动作必须使用该来源上下文。
 
 ## Random Recommendations Extension
@@ -85,6 +85,8 @@
 
 - `recommendationsInvalidated=true` 仅表示推荐候选集合因扫描、资源根增删或资源删除而变化；标签、收藏、合集、排序、封面与缩略图更新必须保持 `false`。
 - 前端收到 `true` 时必须淘汰进行中的旧推荐响应，并从最新候选集合整组重抽。
+- settings payload 必须提供 `recommendationItemsPerCategory`（3/6/9/12，默认 6）与 `recommendationColumnsPerCategory`（1/2/3，默认 2）。数量变化使会话推荐缓存失效；内部列数变化只重排现有推荐。
+- 外层固定三列；每类内部按行优先排列，设置列数仅为上限。容器宽度不足时按 120px 目标最小宽度从 3→2→1 列降级，卡片最大 260px、间距 18px，极窄时允许继续缩小且不得横向溢出。
 
 ## Error Shape
 ```json
