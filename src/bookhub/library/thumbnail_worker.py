@@ -8,8 +8,10 @@ from bookhub.library.repository import LibraryRepository
 from bookhub.library.thumbnail_tasks import (
     cleanup_comic_thumbnails,
     cleanup_library_thumbnails,
+    cleanup_text_novel_thumbnails,
     regenerate_comic_thumbnails,
     regenerate_library_thumbnails,
+    regenerate_text_novel_thumbnails,
 )
 
 
@@ -66,6 +68,13 @@ class ThumbnailTaskWorker(QThread):
                         workers=self._comic_workers,
                         progress_cb=progress_cb,
                     )
+                else:
+                    raise RuntimeError(f"Unsupported thumbnail task: {self._task_kind}")
+            elif self._task_scope == "text_novel":
+                if self._task_kind == "cleanup":
+                    result = cleanup_text_novel_thumbnails(repository, progress_cb=progress_cb)
+                elif self._task_kind == "regenerate":
+                    result = regenerate_text_novel_thumbnails(repository, progress_cb=progress_cb)
                 else:
                     raise RuntimeError(f"Unsupported thumbnail task: {self._task_kind}")
             else:

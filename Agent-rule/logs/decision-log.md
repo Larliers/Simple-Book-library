@@ -2,7 +2,7 @@
 
 ## 最新决策
 ```json
-{"decision_id":"decision-20260911-005","timestamp":"2026-09-11T16:55:06+08:00","owner":"ui-agent","title":"文本同名封面采用来源优先与独立指纹","context":"TXT 内容未变时，自动封面仍可能新增、修改或删除；用户手动封面不能被扫描覆盖","options":["仅随 TXT 指纹刷新","每次无条件重建封面","单独记录 cover_source 与 cover_fingerprint"],"decision":"manual 优先；sidecar 以扩展名优先级和独立指纹参与增量判断","rationale":["封面与 TXT 生命周期独立","避免未变扫描反复解码图片","旧非空封面可安全视为用户选择"],"impact":["books 增加两个可空字段","自动封面删除后回退标题占位","损坏图片仅产生警告"],"followups":[]}
+{"decision_id":"decision-20260911-006","timestamp":"2026-09-11T17:29:42+08:00","owner":"thumbnail-agent","title":"文本小说缩略图维护区分清空与重建语义","context":"Text Novel 已有自动与手动两类封面，设置页维护任务必须避免误删外部文件或覆盖用户选择","options":["复用 Library 仅清路径语义","清空后立即自动重建","按来源定义 cleanup/regenerate"],"decision":"cleanup 只删除 preview_root 内缓存并清除状态；regenerate 保留有效 manual，否则按当前 sidecar 恢复","rationale":["外部文件不应被缓存任务删除","手动封面优先契约必须延续","清空与重建保持用户可预期的独立动作"],"impact":["新增 text_novel 任务 scope","无 sidecar 时重建维持标题占位","Settings 增加两个入口"],"followups":[]}
 ```
 
 ## 决策记录规则
@@ -52,6 +52,35 @@
     "在 UI 合同中固化 external_open_action",
     "在 shared-rules 中声明非目标边界"
   ]
+}
+```
+
+## 2026-09-11 - 文本小说缩略图维护语义
+
+```json
+{
+  "decision_id": "decision-20260911-006",
+  "timestamp": "2026-09-11T17:29:42+08:00",
+  "owner": "thumbnail-agent",
+  "title": "文本小说缩略图维护区分清空与重建语义",
+  "context": "Text Novel 同时存在 manual 与 sidecar 封面，设置任务必须避免误删外部文件或覆盖用户选择",
+  "options": [
+    "直接复用 Library 仅清 thumbnail_path 的语义",
+    "清空后立即自动重建",
+    "按封面来源分别定义 cleanup 与 regenerate"
+  ],
+  "decision": "cleanup 只删除 preview_root 内缓存并清除封面状态；regenerate 保留有效 manual，否则按当前同名 sidecar 恢复",
+  "rationale": [
+    "缓存任务不能删除 preview_root 外文件",
+    "手动封面优先必须覆盖独立重建路径",
+    "无 sidecar 时明确回退标题占位"
+  ],
+  "impact": [
+    "ThumbnailTaskWorker 新增 text_novel scope",
+    "Settings 新增两个 Text Novel 维护按钮",
+    "扫描与重建共享同一套 sidecar 选择和压缩规则"
+  ],
+  "followups": []
 }
 ```
 

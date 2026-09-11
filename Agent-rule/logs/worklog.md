@@ -2,7 +2,7 @@
 
 ## 最新记录
 ```json
-{"log_id":"worklog-20260911-006","timestamp":"2026-09-11T16:55:06+08:00","actor":"ui-agent","task":"文本小说 Grid 与同名封面优化","changes":["Text Novel 独立持久化 Grid/List，首次默认 Grid","扫描同 stem 图片并生成 360x540 内 WebP 缓存，支持自动封面增删改与手动优先","390px 外壳改为单列以保证视图按钮可操作"],"affected_files":["src/bookhub/library/repository.py","src/bookhub/library/scanner.py","src/bookhub/ui/web_bridge.py","src/bookhub/ui/web_window.py","src/bookhub/ui/web/js/app.js","src/bookhub/ui/web/css/base.css"],"outputs":["文本小说封面 Grid 和无封面 List","双皮肤 1920/1440/1280/768/749/390/375 真实 Qt 验收"],"risks":["Vaporwave 既有本地字体资源仍返回 404","全量测试保留两个既有非法整型设置失败"],"next_actions":[]}
+{"log_id":"worklog-20260911-007","timestamp":"2026-09-11T17:29:42+08:00","actor":"thumbnail-agent","task":"补齐文本小说缩略图清空与重建设置项","changes":["Settings 新增 Text Novel 清空/重建按钮并接入既有任务通道","新增 text_novel scope 的安全清空与同名 sidecar 重建逻辑","390px Settings 改为单列并允许长任务按钮换行"],"affected_files":["src/bookhub/library/text_cover.py","src/bookhub/library/thumbnail_tasks.py","src/bookhub/library/thumbnail_worker.py","src/bookhub/library/repository.py","src/bookhub/ui/web/js/app.js","src/bookhub/ui/web/css/base.css"],"outputs":["两项 Text Novel 缩略图维护入口","双皮肤 1440/749/390 真实 Qt 验收"],"risks":["Vaporwave 既有本地字体资源仍返回 404","全量测试保留两个既有非法整型设置失败"],"next_actions":[]}
 ```
 
 ## 记录规则
@@ -47,6 +47,46 @@
   "outputs": ["v0.1.0 基线规则可用"],
   "risks": ["后续模块扩展需严格遵守字段稳定性"],
   "next_actions": ["执行首轮模块任务拆分并登记 registry"]
+}
+```
+
+## 2026-09-11 - 文本小说缩略图清空与重建
+
+```json
+{
+  "log_id": "worklog-20260911-007",
+  "timestamp": "2026-09-11T17:29:42+08:00",
+  "actor": "thumbnail-agent",
+  "task": "补齐设置页文本小说缩略图清空与重建",
+  "changes": [
+    "Settings 缩略图任务增加 text_novel scope 的 cleanup/regenerate 两个入口",
+    "抽取 text_cover 共享服务供扫描和设置页重建复用",
+    "清空仅删除受控缓存并清除封面状态；重建保留有效 manual，否则读取当前 sidecar",
+    "Settings 在 390px 使用单列外壳，长按钮可换行并提供键盘焦点样式"
+  ],
+  "affected_files": [
+    "src/bookhub/library/text_cover.py",
+    "src/bookhub/library/repository.py",
+    "src/bookhub/library/scanner.py",
+    "src/bookhub/library/thumbnail_tasks.py",
+    "src/bookhub/library/thumbnail_worker.py",
+    "src/bookhub/ui/web/js/app.js",
+    "src/bookhub/ui/web/css/base.css",
+    "src/bookhub/ui/web_bridge.py",
+    "src/bookhub/i18n/locales/zh-cn.json",
+    "src/tests/test_text_thumbnail_tasks.py",
+    "src/tests/test_web_bridge_smoke.py"
+  ],
+  "outputs": [
+    "设置页六个分 scope 缩略图维护按钮",
+    "59 项专项 Python 测试与 4 个 subtests 通过",
+    "Glass/Vaporwave 在 1440/749/390 无页面横向溢出"
+  ],
+  "risks": [
+    "Vaporwave 既有 Sora/SpaceMono 字体文件 404，不由本功能引入",
+    "全量测试仍有两个既有 Repository 非法整型设置失败"
+  ],
+  "next_actions": []
 }
 ```
 

@@ -734,6 +734,17 @@ class SettingsUiStructureTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("RANDOM_RECOMMENDATIONS_BEHAVIOR_OK", completed.stdout)
 
+    def test_text_novel_thumbnail_tasks_are_exposed_in_settings_and_worker(self) -> None:
+        app_js = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+        worker_py = (PROJECT_ROOT / "src" / "bookhub" / "library" / "thumbnail_worker.py").read_text(encoding="utf-8")
+        base_css = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "css" / "base.css").read_text(encoding="utf-8")
+
+        self.assertIn('["cleanup","text_novel","settings.tasks.cleanup_text"]', app_js)
+        self.assertIn('["regenerate","text_novel","settings.tasks.regen_text"]', app_js)
+        self.assertIn('self._task_scope == "text_novel"', worker_py)
+        self.assertIn('body:is([data-page="text_novel"], [data-page="settings"])', base_css)
+        self.assertIn('body[data-page="settings"] [data-library-task-btn="thumb"]', base_css)
+
     @unittest.skipUnless(shutil.which("node"), "Node.js is not available")
     def test_shortcuts_frontend_behavior(self) -> None:
         script = PROJECT_ROOT / "src" / "tests" / "js" / "test_shortcuts.js"

@@ -729,6 +729,8 @@
   "settings.tasks.scan_text": "扫描文本小说",
   "settings.tasks.cleanup_library": "清理图书馆缩略图",
   "settings.tasks.regen_library": "重建图书馆缩略图",
+  "settings.tasks.cleanup_text": "清空文本小说缩略图",
+  "settings.tasks.regen_text": "重建文本小说缩略图",
   "settings.tasks.cleanup_comic": "清理漫画缩略图",
   "settings.tasks.regen_comic": "重建漫画缩略图",
   "settings.tasks.reload_fonts": "重载字体",

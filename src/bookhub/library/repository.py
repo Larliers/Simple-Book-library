@@ -1581,6 +1581,23 @@ class LibraryRepository:
             return records
         return [record for record in records if self._path_in_roots(str(record.get("path") or ""), roots)]
 
+    def list_active_text_novels_for_thumbnail_task(self, roots: list[str] | None = None) -> list[dict[str, Any]]:
+        with self._connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, resource_id, file_name, extension, title, path, thumbnail_path,
+                       cover_source, cover_fingerprint
+                FROM books
+                WHERE is_missing = 0
+                  AND resource_type = 'text_novel'
+                ORDER BY lower(COALESCE(title, file_name))
+                """
+            ).fetchall()
+        records = [dict(row) for row in rows]
+        if not roots:
+            return records
+        return [record for record in records if self._path_in_roots(str(record.get("path") or ""), roots)]
+
     def list_active_comics_for_thumbnail_task(self, roots: list[str] | None = None) -> list[dict[str, Any]]:
         with self._connection() as conn:
             rows = conn.execute(

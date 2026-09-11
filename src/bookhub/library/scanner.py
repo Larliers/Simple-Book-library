@@ -53,6 +53,12 @@ from bookhub.library.preview_cache_migrate import safe_unlink_under_preview
 from bookhub.library.repository import LibraryRepository
 from bookhub.library.text_rules import ImportRule, RuleContext, apply_rule_chain, load_rules_from_json
 from bookhub.library.text_rules.rule_examples import default_text_title_rule_chain
+from bookhub.library.text_cover import (
+    find_text_cover,
+    generate_text_cover_thumbnail,
+    text_cover_fingerprint,
+    text_thumbnail_output_path,
+)
 from bookhub.library.text_encoding import (
     TEXT_ENCODING_SIMPLIFIED,
     normalize_encoding_preference,
@@ -61,7 +67,6 @@ from bookhub.library.text_encoding import (
 )
 
 ScanProgressCallback = Callable[[int, int, str, dict[str, object]], None]
-TEXT_COVER_EXTENSIONS = (".webp", ".png", ".jpg", ".jpeg")
 
 
 def _lanczos_resample() -> object:
@@ -92,44 +97,6 @@ def _thumbnail_path_for(repo: LibraryRepository, normalized_path: str) -> Path:
         source_key=normalized_path,
         extension=".webp",
     )
-
-
-def _text_thumbnail_path_for(repo: LibraryRepository, normalized_path: str) -> Path:
-    return build_preview_path(
-        preview_root=repo.preview_dir,
-        resource_type="text_novel",
-        variant="compressed",
-        source_key=normalized_path,
-        extension=".webp",
-    )
-
-
-def _find_text_cover(txt_path: Path) -> Path | None:
-    for extension in TEXT_COVER_EXTENSIONS:
-        candidate = txt_path.with_suffix(extension)
-        if candidate.is_file():
-            return candidate
-    return None
-
-
-def _text_cover_fingerprint(cover_path: Path | None) -> str:
-    if cover_path is None:
-        return ""
-    stat = cover_path.stat()
-    return f"{cover_path.name}:{stat.st_size}:{stat.st_mtime_ns}"
-
-
-def _generate_text_cover_thumbnail(cover_path: Path, output_path: Path) -> str:
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with Image.open(cover_path) as image:
-        try:
-            image.seek(0)
-        except EOFError:
-            pass
-        thumbnail = image.convert("RGB")
-        thumbnail.thumbnail((360, 540), _lanczos_resample())
-        thumbnail.save(output_path, format="WEBP", quality=80, method=4)
-    return output_path.resolve(strict=False).as_uri()
 
 
 def _probe_pdf_backend() -> tuple[bool, str | None]:
@@ -908,8 +875,8 @@ def scan_text_roots(
                 existing_cover_fingerprint = (
                     str(existing.get("cover_fingerprint") or "") if isinstance(existing, dict) else ""
                 )
-                cover_path = _find_text_cover(file_path)
-                cover_fingerprint = _text_cover_fingerprint(cover_path)
+                cover_path = find_text_cover(file_path)
+                cover_fingerprint = text_cover_fingerprint(cover_path)
                 cached_thumbnail_path = uri_to_path(existing_thumbnail)
                 cached_thumbnail_exists = bool(cached_thumbnail_path and cached_thumbnail_path.is_file())
                 manual_cover = (
@@ -975,9 +942,9 @@ def scan_text_roots(
                     cover_source = "sidecar"
                     stored_cover_fingerprint = cover_fingerprint
                     try:
-                        thumbnail_path = _generate_text_cover_thumbnail(
+                        thumbnail_path = generate_text_cover_thumbnail(
                             cover_path,
-                            _text_thumbnail_path_for(repository, normalized_path),
+                            text_thumbnail_output_path(repository, normalized_path),
                         )
                     except Exception as exc:  # noqa: BLE001
                         result.warnings.append(

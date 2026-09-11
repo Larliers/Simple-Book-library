@@ -14,6 +14,12 @@ from bookhub.library.formats.cbz import prepare_cbz_for_external_viewer, read_cb
 from bookhub.library.preview_cache_migrate import safe_unlink_under_preview
 from bookhub.library.preview_paths import build_preview_path, is_preview_variant_uri, uri_to_path
 from bookhub.library.repository import LibraryRepository
+from bookhub.library.text_cover import (
+    find_text_cover,
+    generate_text_cover_thumbnail,
+    text_cover_fingerprint,
+    text_thumbnail_output_path,
+)
 
 
 def _materialize_comic_cover_file(preview_dir: Path, record: dict[str, object]) -> Path | None:
@@ -142,6 +148,104 @@ def regenerate_library_thumbnails(
             result.failed += 1
             repository.update_book_thumbnail_path(book_id, None)
             result.errors.append(f"Regenerate failed: {source_path} -> {exc}")
+
+    return result
+
+
+def cleanup_text_novel_thumbnails(
+    repository: LibraryRepository,
+    *,
+    roots: list[str] | None = None,
+    progress_cb=None,
+) -> ThumbnailTaskResult:
+    result = ThumbnailTaskResult(task_kind="cleanup", task_scope="text_novel")
+    records = repository.list_active_text_novels_for_thumbnail_task(roots=roots)
+    result.total = len(records)
+
+    for index, record in enumerate(records, start=1):
+        source_path = str(record.get("path") or "")
+        if progress_cb is not None:
+            progress_cb(index, result.total, source_path)
+        thumb_file = uri_to_path(record.get("thumbnail_path"))
+        try:
+            if thumb_file is not None and not safe_unlink_under_preview(thumb_file, repository.preview_dir):
+                result.failed += 1
+                result.errors.append(f"Refused delete outside preview dir: {thumb_file}")
+                continue
+            repository.update_book_thumbnail_state(
+                int(record["id"]),
+                thumbnail_path=None,
+                cover_source=None,
+                cover_fingerprint=None,
+            )
+            result.succeeded += 1
+        except OSError as exc:
+            result.failed += 1
+            result.errors.append(f"Delete failed: {thumb_file} -> {exc}")
+
+    return result
+
+
+def regenerate_text_novel_thumbnails(
+    repository: LibraryRepository,
+    *,
+    roots: list[str] | None = None,
+    progress_cb=None,
+) -> ThumbnailTaskResult:
+    result = ThumbnailTaskResult(task_kind="regenerate", task_scope="text_novel")
+    records = repository.list_active_text_novels_for_thumbnail_task(roots=roots)
+    result.total = len(records)
+
+    for index, record in enumerate(records, start=1):
+        book_id = int(record["id"])
+        source_path = str(record.get("path") or "")
+        if progress_cb is not None:
+            progress_cb(index, result.total, source_path)
+
+        text_path = Path(source_path)
+        if not text_path.exists() or not text_path.is_file():
+            result.skipped += 1
+            continue
+
+        existing_thumbnail = str(record.get("thumbnail_path") or "")
+        existing_file = uri_to_path(existing_thumbnail)
+        manual_cover = (
+            str(record.get("cover_source") or "") == "manual"
+            and existing_file is not None
+            and existing_file.is_file()
+        )
+        if manual_cover:
+            result.skipped += 1
+            continue
+
+        sidecar = find_text_cover(text_path)
+        if sidecar is None:
+            if existing_file is not None:
+                safe_unlink_under_preview(existing_file, repository.preview_dir)
+            repository.update_book_thumbnail_state(
+                book_id,
+                thumbnail_path=None,
+                cover_source=None,
+                cover_fingerprint=None,
+            )
+            result.skipped += 1
+            continue
+
+        try:
+            output_path = text_thumbnail_output_path(repository, source_path)
+            thumbnail_path = generate_text_cover_thumbnail(sidecar, output_path)
+            repository.update_book_thumbnail_state(
+                book_id,
+                thumbnail_path=thumbnail_path,
+                cover_source="sidecar",
+                cover_fingerprint=text_cover_fingerprint(sidecar),
+            )
+            if existing_file is not None and existing_file != output_path:
+                safe_unlink_under_preview(existing_file, repository.preview_dir)
+            result.succeeded += 1
+        except Exception as exc:  # noqa: BLE001
+            result.failed += 1
+            result.errors.append(f"Text novel regenerate failed: {sidecar} -> {exc}")
 
     return result
 

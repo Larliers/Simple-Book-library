@@ -347,6 +347,8 @@ def _web_strings() -> dict[str, str]:
         ("settings.tasks.scan_text", "Scan Text Novel"),
         ("settings.tasks.cleanup_library", "Cleanup Library Thumbnails"),
         ("settings.tasks.regen_library", "Regenerate Library Thumbnails"),
+        ("settings.tasks.cleanup_text", "Clear Text Novel Thumbnails"),
+        ("settings.tasks.regen_text", "Regenerate Text Novel Thumbnails"),
         ("settings.tasks.cleanup_comic", "Cleanup Comic Thumbnails"),
         ("settings.tasks.regen_comic", "Regenerate Comic Thumbnails"),
         ("settings.tasks.reload_fonts", "Reload Fonts"),

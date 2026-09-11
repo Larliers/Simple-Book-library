@@ -43,7 +43,7 @@ Notes:
 - **Comic scan**: directory snapshot (fast) or full rescan each time (strict); same-title conflicts: skip incoming / keep both / prefer newer.
 - **TXT encoding preference**: Simplified first / Traditional first / Auto; text rules extract metadata from filename or body.
 - **TXT sidecar covers**: place a same-stem WebP/PNG/JPG/JPEG beside the TXT file. Priority is WebP → PNG → JPG → JPEG; scans cache a thumbnail while manually edited covers remain authoritative.
-- **Thumbnail cache**: default `img_preview/`; relocate under Settings (migrate / rewire index / switch only).
+- **Thumbnail cache**: default `img_preview/`; relocate under Settings (migrate / rewire index / switch only), and clear or regenerate Library, Comic, and Text Novel thumbnails independently.
 - Missing sources are logged and removed; same name+extension under different paths is skipped and logged.
 
 ### Browse & open

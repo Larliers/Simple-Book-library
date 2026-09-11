@@ -26,6 +26,7 @@ button {
   transition: background-color 160ms ease, border-color 160ms ease, transform 120ms ease, box-shadow 160ms ease, color 160ms ease;
 }
 button:active { transform: translateY(1px) scale(0.985); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .hidden { display: none !important; }
 
@@ -58,8 +59,8 @@ button:active { transform: translateY(1px) scale(0.985); }
 }
 
 @media (max-width: 600px) {
-  body[data-page="text_novel"] { overflow: auto; }
-  body[data-page="text_novel"] .app-shell {
+  body:is([data-page="text_novel"], [data-page="settings"]) { overflow: auto; }
+  body:is([data-page="text_novel"], [data-page="settings"]) .app-shell {
     height: auto;
     min-height: 100vh;
     grid-template-columns: minmax(0, 1fr);
@@ -67,19 +68,27 @@ button:active { transform: translateY(1px) scale(0.985); }
     padding: 8px;
     gap: 8px;
   }
-  body[data-page="text_novel"] .app-shell > .sidebar { grid-column: 1; grid-row: 1; }
-  body[data-page="text_novel"] .app-shell > .topbar {
+  body:is([data-page="text_novel"], [data-page="settings"]) .app-shell > .sidebar { grid-column: 1; grid-row: 1; }
+  body:is([data-page="text_novel"], [data-page="settings"]) .app-shell > .topbar {
     grid-column: 1;
     grid-row: 2;
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto auto;
   }
-  body[data-page="text_novel"] .app-shell > .main-stage { grid-column: 1; grid-row: 3; }
-  body[data-page="text_novel"] .app-shell > .detail-panel { grid-column: 1; grid-row: 4; }
-  body[data-page="text_novel"] .app-shell .side-list {
+  body:is([data-page="text_novel"], [data-page="settings"]) .app-shell > .main-stage { grid-column: 1; grid-row: 3; }
+  body:is([data-page="text_novel"], [data-page="settings"]) .app-shell > .detail-panel { grid-column: 1; grid-row: 4; }
+  body:is([data-page="text_novel"], [data-page="settings"]) .app-shell .side-list {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  body[data-page="text_novel"] .app-shell .side-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  body[data-page="text_novel"] .app-shell .top-tools { justify-content: space-between; }
+  body:is([data-page="text_novel"], [data-page="settings"]) .app-shell .side-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body:is([data-page="text_novel"], [data-page="settings"]) .app-shell .top-tools { justify-content: space-between; }
+  body[data-page="settings"] [data-library-task-btn="thumb"] {
+    max-width: 100%;
+    min-width: 0;
+    height: auto;
+    padding-block: 8px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }

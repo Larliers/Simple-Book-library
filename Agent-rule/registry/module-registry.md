@@ -28,12 +28,12 @@
   "module_name": "text_novel_sidecar_cover",
   "owner_agent": "thumbnail-agent",
   "status": "active",
-  "purpose": "为 Text Novel 选择同 stem 图片、生成 WebP 缓存并独立跟踪封面变化",
-  "input": ["txt_path", "existing_cover_source", "existing_cover_fingerprint", "preview_root"],
-  "output": ["thumbnail_path", "cover_source", "cover_fingerprint", "scan_warning"],
-  "upstream": ["scanner.scan_text_roots"],
-  "downstream": ["LibraryRepository.upsert_book", "resource_list_view"],
-  "notes": "ScanWorker 后台执行；webp/png/jpg/jpeg 优先；manual 且文件有效时优先；sidecar 缓存不超过 360x540"
+  "purpose": "为 Text Novel 选择同 stem 图片、生成 WebP 缓存、独立跟踪封面变化，并支持设置页清空或重建",
+  "input": ["txt_path", "existing_cover_source", "existing_cover_fingerprint", "preview_root", "thumbnail_task_kind"],
+  "output": ["thumbnail_path", "cover_source", "cover_fingerprint", "scan_warning", "thumbnail_task_result"],
+  "upstream": ["scanner.scan_text_roots", "ThumbnailTaskWorker"],
+  "downstream": ["LibraryRepository.upsert_book", "resource_list_view", "settings_thumbnail_tasks"],
+  "notes": "ScanWorker 后台执行；webp/png/jpg/jpeg 优先；manual 且文件有效时优先；sidecar 缓存不超过 360x540；cleanup 只删受控缓存并清状态，regenerate 保留有效 manual"
 }
 ```
 

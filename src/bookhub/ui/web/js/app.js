@@ -2540,6 +2540,7 @@ function renderSettingsTasks(panel) {
 
   const thumbRow = elem("div", "detail-actions");
   [["cleanup","library","settings.tasks.cleanup_library"],["regenerate","library","settings.tasks.regen_library"],
+   ["cleanup","text_novel","settings.tasks.cleanup_text"],["regenerate","text_novel","settings.tasks.regen_text"],
    ["cleanup","comic","settings.tasks.cleanup_comic"],["regenerate","comic","settings.tasks.regen_comic"]].forEach(([kind, scope, key]) => {
     const btn = elem("button", "ghost-btn", t(key));
     btn.setAttribute("data-library-task-btn", "thumb");

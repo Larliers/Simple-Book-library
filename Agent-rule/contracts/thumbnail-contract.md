@@ -59,6 +59,7 @@
 - 保证 `comic_folder` 的 `cover_image_path` 与缩略图绑定。
 - 保证 Text Novel 同名封面按 `.webp` → `.png` → `.jpg` → `.jpeg` 选择并输出 360×540 以内 WebP；手动封面不被自动扫描覆盖。
 - Text Novel 同名封面在 `ScanWorker` 后台扫描阶段同步生成，不进入首屏 `deferred_queue`；失败写 `text_cover_generation_failed` 警告并继续入库文本。
+- Settings 缩略图任务支持 `scope=text_novel`：`cleanup` 仅删除 `preview_root` 内受控缓存并清空 `thumbnail_path/cover_source/cover_fingerprint`；`regenerate` 保留有效 `manual` 封面，否则按当前同名 sidecar 重建，缺失时回退标题占位。
 
 ## Error Shape
 ```json
