@@ -10,6 +10,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from bookhub.library.text_rules import ImportRule, RuleContext, RuleStep, apply_rule, apply_rule_chain
+from bookhub.library.text_rules.rule_examples import default_text_title_rule_chain
 
 
 class RuleEngineTests(unittest.TestCase):
@@ -40,6 +41,38 @@ class RuleEngineTests(unittest.TestCase):
         result = apply_rule(rule, context)
         self.assertTrue(result.success)
         self.assertEqual(result.value, "我的青春恋爱物语果然有问题")
+
+    def test_default_title_chain_strips_title_label_not_letter_t(self) -> None:
+        chain = default_text_title_rule_chain()
+        labeled = apply_rule_chain(
+            chain,
+            RuleContext(
+                file_path=r"F:\books\novel.txt",
+                txt_first_line="Title: 北境轶事·二牛戏龙",
+            ),
+        )
+        self.assertTrue(labeled.success)
+        self.assertEqual(labeled.value, "北境轶事·二牛戏龙")
+
+        chinese = apply_rule_chain(
+            chain,
+            RuleContext(
+                file_path=r"F:\books\novel.txt",
+                txt_first_line="标题：北境轶事·二牛戏龙",
+            ),
+        )
+        self.assertTrue(chinese.success)
+        self.assertEqual(chinese.value, "北境轶事·二牛戏龙")
+
+        raw = apply_rule_chain(
+            chain,
+            RuleContext(
+                file_path=r"F:\books\novel.txt",
+                txt_first_line="第一章 开场",
+            ),
+        )
+        self.assertTrue(raw.success)
+        self.assertEqual(raw.value, "第一章 开场")
 
     def test_split_and_take_second_piece(self) -> None:
         rule = ImportRule(
@@ -640,6 +673,59 @@ class RuleEngineTests(unittest.TestCase):
                 result = apply_rule(rule, context)
                 self.assertTrue(result.success)
                 self.assertEqual(result.value, expected)
+
+    def test_loop_inline_extracts_all_hash_tags_on_one_line(self) -> None:
+        rule = ImportRule(
+            field="tag",
+            source="txt_head_text",
+            steps=[
+                RuleStep(
+                    type="loop_inline",
+                    params={"pattern": r"#([^#\s]+)", "group": 1, "join": "newline"},
+                )
+            ],
+        )
+        context = RuleContext(file_path=r"F:\books\x.txt", txt_head_text="#玄幻#爽文 #完结")
+
+        result = apply_rule(rule, context)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.value, "玄幻\n爽文\n完结")
+
+    def test_loop_inline_accumulates_matches_across_lines(self) -> None:
+        rule = ImportRule(
+            field="tag",
+            source="txt_head_text",
+            steps=[RuleStep(type="loop_inline", params={"pattern": r"#([^#\s]+)", "group": 1})],
+        )
+        context = RuleContext(
+            file_path=r"F:\books\x.txt",
+            txt_head_text="#fantasy #wip\n普通说明\n#completed",
+        )
+
+        result = apply_rule(rule, context)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.value, "fantasy\nwip\ncompleted")
+
+    def test_loop_inline_can_fail_on_unmatched_line(self) -> None:
+        rule = ImportRule(
+            field="tag",
+            source="txt_head_text",
+            steps=[
+                RuleStep(
+                    type="loop_inline",
+                    params={"pattern": r"#([^#\s]+)", "group": 1, "skip_failed": False},
+                )
+            ],
+        )
+        context = RuleContext(file_path=r"F:\books\x.txt", txt_head_text="#ok\nno tags here")
+
+        result = apply_rule(rule, context)
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.failed_step, "loop_inline")
+        self.assertIn("Line 2 did not match", str(result.error_message))
 
     def test_nested_bracket_content_uses_outer_scope_by_default(self) -> None:
         rule = ImportRule(

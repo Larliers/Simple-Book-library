@@ -2,7 +2,7 @@
 
 ## 最新记录
 ```json
-{"log_id":"worklog-20260911-008","timestamp":"2026-09-11T17:45:00+08:00","actor":"master-agent","task":"推送 Codex 文本小说改动并触发远程 minor Release","changes":["rebase origin/main 接入 chore: release v2.2.0","不提交已跟踪的 pycache","推送封面网格与缩略图维护两个提交","workflow_dispatch bump=minor 得到 v2.3.0"],"affected_files":["Agent-rule/logs/worklog.md","Agent-rule/logs/history/2026-09-11.md","Agent-rule/logs/decision-log.md","src_construction.md"],"outputs":["main 含 Grid/封面/缩略图维护","GitHub Release v2.3.0 与 win64 zip"],"risks":["构建超时 120 分钟","bump 在 Nuitka 之前落 tag，失败不能无脑重跑同一 bump"],"next_actions":[]}
+{"log_id":"worklog-20260911-012","timestamp":"2026-09-11T19:15:00+08:00","actor":"maintenance-agent","task":"提交文本小说排序与规则扫描改动并触发远程 minor Release","changes":["提交功能改动并 push origin/main","workflow_dispatch bump=minor 预期 v2.4.0"],"affected_files":[".github/workflows/release.yml"],"outputs":["origin/main 功能提交","远程 Nuitka 打包 Release"],"risks":["工作流另提 chore: release 提交","Nuitka 远程构建可能超过一小时"],"next_actions":[]}
 ```
 
 ## 记录规则
@@ -22,6 +22,100 @@
   "outputs": ["string"],
   "risks": ["string"],
   "next_actions": ["string"]
+}
+```
+
+## 2026-09-11 - 提交并触发 minor Release
+
+```json
+{
+  "log_id": "worklog-20260911-012",
+  "timestamp": "2026-09-11T19:15:00+08:00",
+  "actor": "maintenance-agent",
+  "task": "提交文本小说排序与规则扫描改动并触发远程 minor Release",
+  "changes": [
+    "提交功能改动并 push origin/main",
+    "workflow_dispatch bump=minor，从 latest GitHub Release v2.3.0 递增为预期 v2.4.0"
+  ],
+  "affected_files": [
+    ".github/workflows/release.yml"
+  ],
+  "outputs": [
+    "origin/main 功能提交",
+    "workflow_dispatch Release"
+  ],
+  "risks": [
+    "工作流另提 chore: release 提交",
+    "Nuitka 远程构建可能超过一小时"
+  ],
+  "next_actions": []
+}
+```
+
+## 2026-09-11 - 文本标签不再拼入 series
+
+```json
+{
+  "log_id": "worklog-20260911-011",
+  "timestamp": "2026-09-11T19:25:00+08:00",
+  "actor": "parser-agent",
+  "task": "文本标签不再拼入 series",
+  "changes": [
+    "scan_text_roots 标签只取 tag 字段拆分结果",
+    "去掉 series: 前缀拼凑"
+  ],
+  "affected_files": [
+    "src/bookhub/library/scanner.py",
+    "src/tests/test_text_scan_incremental.py",
+    "src_construction.md"
+  ],
+  "outputs": ["详情标签只显示 tag 规则结果"],
+  "risks": [
+    "Text Rules 的 series 字段仍可配置但扫描结果无处落库",
+    "下次扫描会清掉已入库的 series: 标签"
+  ],
+  "next_actions": []
+}
+```
+
+## 2026-09-11 - 单行内循环提取与扫描字段刷新
+
+```json
+{
+  "log_id": "worklog-20260911-010",
+  "timestamp": "2026-09-11T19:20:00+08:00",
+  "actor": "parser-agent",
+  "task": "单行内循环提取与扫描字段刷新",
+  "changes": [
+    "新增 loop_inline：按行 finditer 取出全部捕获，默认 #([^#\\s]+)、join=newline",
+    "scan_text_roots 无论指纹是否变化都跑当前 rules；未变走 update_text_novel_metadata",
+    "默认标题链先剥 Title:/标题：再完整首行，去掉 take_after_text(T)"
+  ],
+  "affected_files": [
+    "src/bookhub/library/text_rules/step_handlers.py",
+    "src/bookhub/library/text_rules/rule_catalog.py",
+    "src/bookhub/library/text_rules/rule_examples.py",
+    "src/bookhub/library/scanner.py",
+    "src/bookhub/library/repository.py",
+    "src/bookhub/i18n/locales/zh-cn.json",
+    "src/bookhub/ui/web_bridge.py",
+    "src/tests/test_rule_engine.py",
+    "src/tests/test_text_scan_incremental.py",
+    "src/tests/test_text_novel_sort.py",
+    "src_construction.md",
+    "Agent-rule/agents/parser-agent.md",
+    "Agent-rule/agents/indexer-agent.md",
+    "Agent-rule/contracts/indexer-contract.md"
+  ],
+  "outputs": [
+    "一行多个 #tag 可入库为多个标签",
+    "改规则后点一次扫描即可刷新字段，不重置 status"
+  ],
+  "risks": [
+    "无自定义 title 时标题变成 TXT 首行",
+    "每次扫描用规则覆盖库内 title/author/tags/info_text"
+  ],
+  "next_actions": []
 }
 ```
 
@@ -47,6 +141,45 @@
   "outputs": ["v0.1.0 基线规则可用"],
   "risks": ["后续模块扩展需严格遵守字段稳定性"],
   "next_actions": ["执行首轮模块任务拆分并登记 registry"]
+}
+```
+
+## 2026-09-11 - 文本小说主页与合集详情排序
+
+```json
+{
+  "log_id": "worklog-20260911-009",
+  "timestamp": "2026-09-11T18:40:00+08:00",
+  "actor": "ui-agent",
+  "task": "为文本小说区域增加与漫画同形态的排序选项",
+  "changes": [
+    "books 增加 file_mtime，扫描写入，启动时从指纹或 stat 回填",
+    "新增 text_novel_sort_order_main / text_novel_sort_order_fav，默认 file_mtime_desc",
+    "Text Novel 主页与小说合集详情标题栏增加四档下拉，合集详情真正按所选排序",
+    "图书馆缺省仍按标题，随机推荐与漫画合集缺口不改"
+  ],
+  "affected_files": [
+    "src/bookhub/library/repository.py",
+    "src/bookhub/library/scanner.py",
+    "src/bookhub/ui/web_bridge.py",
+    "src/bookhub/ui/web/js/app.js",
+    "src/bookhub/i18n/locales/zh-cn.json",
+    "src/tests/test_text_novel_sort.py",
+    "src/tests/test_web_bridge_smoke.py",
+    "src/tests/test_comic_search.py",
+    "Agent-rule/contracts/ui-contract.md",
+    "Agent-rule/agents/ui-agent.md",
+    "src_construction.md"
+  ],
+  "outputs": [
+    "小说列表可按文件日期或标题正逆序排列并跨重启保持",
+    "合集详情排序与主页分键持久化"
+  ],
+  "risks": [
+    "已有小说库首次打开默认从标题 A-Z 变为文件日期新到旧",
+    "file_mtime=0 且文件缺失的行每次启动仍会尝试回填"
+  ],
+  "next_actions": []
 }
 ```
 

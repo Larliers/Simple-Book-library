@@ -452,7 +452,7 @@ def _join_separator(params: dict[str, Any]) -> str:
     raise StepError(f"Unsupported join: {join}")
 
 
-def _loop_lines(value: str, step: RuleStep) -> str:
+def _compile_loop_regex(step: RuleStep) -> tuple[re.Pattern[str], int, bool]:
     pattern = str(step.params.get("pattern") or "")
     if not pattern:
         raise StepError("pattern is required")
@@ -460,13 +460,24 @@ def _loop_lines(value: str, step: RuleStep) -> str:
         compiled = re.compile(pattern)
     except re.error as exc:
         raise StepError(f"Invalid regex pattern: {exc}") from exc
-
     try:
         group = int(step.params.get("group", 1))
     except (TypeError, ValueError) as exc:
         raise StepError("group must be an integer") from exc
-
     skip_failed = _bool_from_step(step.params, "skip_failed", True)
+    return compiled, group, skip_failed
+
+
+def _captured_group(match: re.Match[str], group: int) -> str:
+    try:
+        item = match.group(group)
+    except IndexError as exc:
+        raise StepError(f"Regex group {group} out of range") from exc
+    return str(item or "").strip()
+
+
+def _loop_lines(value: str, step: RuleStep) -> str:
+    compiled, group, skip_failed = _compile_loop_regex(step)
     extracted: list[str] = []
     for line_number, raw_line in enumerate(value.splitlines(), start=1):
         line = raw_line.strip()
@@ -477,16 +488,34 @@ def _loop_lines(value: str, step: RuleStep) -> str:
             if skip_failed:
                 continue
             raise StepError(f"Line {line_number} did not match")
-        try:
-            item = match.group(group)
-        except IndexError as exc:
-            raise StepError(f"Regex group {group} out of range") from exc
-        item = item.strip()
+        item = _captured_group(match, group)
         if item:
             extracted.append(item)
 
     if not extracted:
         raise StepError("No lines matched")
+    return _join_separator(step.params).join(extracted)
+
+
+def _loop_inline(value: str, step: RuleStep) -> str:
+    compiled, group, skip_failed = _compile_loop_regex(step)
+    extracted: list[str] = []
+    for line_number, raw_line in enumerate(value.splitlines(), start=1):
+        line = raw_line.strip()
+        if not line:
+            continue
+        matches = list(compiled.finditer(line))
+        if not matches:
+            if skip_failed:
+                continue
+            raise StepError(f"Line {line_number} did not match")
+        for match in matches:
+            item = _captured_group(match, group)
+            if item:
+                extracted.append(item)
+
+    if not extracted:
+        raise StepError("No matches found")
     return _join_separator(step.params).join(extracted)
 
 
@@ -561,5 +590,7 @@ def apply_step(value: str, step: RuleStep) -> str | StepOutput:
         return _regex_extract(value, step)
     if step_type == "loop_lines":
         return _loop_lines(value, step)
+    if step_type == "loop_inline":
+        return _loop_inline(value, step)
 
     raise StepError(f"Unsupported step type: {step_type}")

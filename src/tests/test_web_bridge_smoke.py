@@ -326,6 +326,8 @@ class WebBridgeSmokeTests(unittest.TestCase):
             "quick_add.confirm",
             "quick_add.recent_tags",
             "favorites.sort.added_desc",
+            "text_novel.sort.file_mtime_desc",
+            "text_novel.sort.title_asc",
             "settings.comic.placeholder_copy",
             "settings.delete_confirm_title",
             "settings.scan_summary_title",

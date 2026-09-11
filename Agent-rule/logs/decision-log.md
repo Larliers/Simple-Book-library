@@ -2,7 +2,7 @@
 
 ## 最新决策
 ```json
-{"decision_id":"decision-20260911-007","timestamp":"2026-09-11T17:45:00+08:00","owner":"master-agent","title":"文本小说 Grid/封面/缩略图维护按 minor 发版","context":"GitHub 已有 v2.2.0；Codex 后半段用户可见能力尚未进 Release","options":["patch → v2.2.1","minor → v2.3.0","不推送 Codex 提交直接 bump"],"decision":"rebase 后 push，再 bump=minor，预期 v2.3.0","rationale":["与快捷键 minor 口径一致","必须先推送否则会发空 bump"],"impact":["下一正式版 v2.3.0","不手改 APP_VERSION"],"followups":["成功后确认 tag 与检查更新对齐"]}
+{"decision_id":"decision-20260911-010","timestamp":"2026-09-11T19:15:00+08:00","owner":"maintenance-agent","title":"本批功能走 minor 发布为 v2.4.0","context":"用户要求 commit、push 并远程打包发布；latest tag 为 v2.3.0","options":["patch","minor","major"],"decision":"workflow_dispatch bump=minor，预期 v2.4.0","rationale":["含小说排序、loop_inline、扫描每次重抽规则等用户可见能力","与 v2.2.0/v2.3.0 功能批次同级"],"impact":["工作流会再提交 chore: release 并打 tag","Nuitka 远程构建可能超过一小时"],"followups":["发布完成后核对 zip 与 Release 页"]}
 ```
 
 ## 决策记录规则
@@ -23,6 +23,61 @@
   "rationale": ["string"],
   "impact": ["string"],
   "followups": ["string"]
+}
+```
+
+## 2026-09-11 - 扫描字段刷新与 loop_inline
+
+```json
+{
+  "decision_id": "decision-20260911-009",
+  "timestamp": "2026-09-11T19:20:00+08:00",
+  "owner": "parser-agent",
+  "title": "文本扫描每次重抽规则字段，指纹只省封面",
+  "context": "改规则后重扫作者不更新；Title: 被默认 take_after_text(T) 吃成 itle:；loop_lines 一行只能 search 一次",
+  "options": [
+    "指纹未变整本跳过",
+    "指纹未变仍跑规则并窄更新元数据",
+    "每次整本 upsert"
+  ],
+  "decision": "每次扫描都用当前 rules 重抽；文件+封面未变只写 title/author/tags/info_text；新增 loop_inline；默认标题链剥 Title:/标题：",
+  "rationale": [
+    "用户明确要求每次扫文本都必须按当前规则写回",
+    "upsert_book UPDATE 会把 status 打成 UNREAD 并改封面列",
+    "#tag1#tag2 需要 finditer 而不是改 split_tags"
+  ],
+  "impact": [
+    "无自定义 title 时标题改为首行",
+    "规则结果覆盖库内同名字段",
+    "阅读状态在文件未变时保留"
+  ],
+  "followups": [
+    "不改漫画合集排序",
+    "不按 # 拆标签"
+  ]
+}
+```
+
+## 2026-09-11 - 本批功能走 minor 发布为 v2.4.0
+
+```json
+{
+  "decision_id": "decision-20260911-010",
+  "timestamp": "2026-09-11T19:15:00+08:00",
+  "owner": "maintenance-agent",
+  "title": "本批功能走 minor 发布为 v2.4.0",
+  "context": "用户要求 commit、push 并远程打包发布；latest tag 为 v2.3.0",
+  "options": ["patch", "minor", "major"],
+  "decision": "workflow_dispatch bump=minor，预期 v2.4.0",
+  "rationale": [
+    "含小说排序、loop_inline、扫描每次重抽规则等用户可见能力",
+    "与 v2.2.0/v2.3.0 功能批次同级"
+  ],
+  "impact": [
+    "工作流会再提交 chore: release 并打 tag",
+    "Nuitka 远程构建可能超过一小时"
+  ],
+  "followups": ["发布完成后核对 zip 与 Release 页"]
 }
 ```
 
@@ -51,6 +106,35 @@
   "followups": [
     "在 UI 合同中固化 external_open_action",
     "在 shared-rules 中声明非目标边界"
+  ]
+}
+```
+
+## 2026-09-11 - 小说排序合集详情真正生效
+
+```json
+{
+  "decision_id": "decision-20260911-008",
+  "timestamp": "2026-09-11T18:40:00+08:00",
+  "owner": "ui-agent",
+  "title": "小说排序镜像漫画四档且合集详情真正生效",
+  "context": "用户要求文本小说区域增加排序，细则参考漫画；漫画合集下拉目前只记设置不改成员顺序",
+  "options": [
+    "仅主页",
+    "主页+合集下拉但合集仍按加入时间",
+    "主页+合集详情都真正按所选排序"
+  ],
+  "decision": "主页与小说合集详情都真正排序；默认 file_mtime_desc；图书馆不动",
+  "rationale": [
+    "用户明确要合集详情真正生效",
+    "日期字段用 INTEGER file_mtime 对齐漫画 folder_mtime，不在 SQL 里拆指纹字符串"
+  ],
+  "impact": [
+    "现有小说库默认顺序变为文件日期新到旧",
+    "新增 text_novel_sort_order_main/fav"
+  ],
+  "followups": [
+    "不修漫画合集排序缺口"
   ]
 }
 ```

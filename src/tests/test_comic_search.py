@@ -81,6 +81,8 @@ class UiBridgeComicSearchTests(unittest.TestCase):
         self.repo.list_books.return_value = []
         self.repo.get_comic_sort_order_main.return_value = "folder_name_asc"
         self.repo.get_comic_sort_order_fav.return_value = "folder_name_asc"
+        self.repo.get_text_novel_sort_order_main.return_value = "file_mtime_desc"
+        self.repo.get_text_novel_sort_order_fav.return_value = "file_mtime_desc"
         self.repo.get_comic_view_mode.return_value = "waterfall"
         self.repo.get_comic_page_size.return_value = 48
         self.repo.list_comics.return_value = [

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
@@ -366,6 +367,148 @@ class TextScanIncrementalTests(unittest.TestCase):
     def test_request_default_hash_strategy_is_quick(self) -> None:
         request = TextScanRequest(roots=[])
         self.assertEqual(request.hash_strategy, "quick")
+
+    def test_default_title_chain_strips_title_label_not_letter_t(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            root = base / "texts"
+            root.mkdir(parents=True, exist_ok=True)
+            target = root / "novel.txt"
+            target.write_text("Title: 北境轶事·二牛戏龙\n作者：烟烬先生\n#玄幻#爽文", encoding="utf-8")
+
+            repository = LibraryRepository(base / "library.db", base / "scan_report.json")
+            result = scan_text_roots(
+                repository,
+                TextScanRequest(roots=[TextScanRoot(path=str(root))], hash_strategy="size_mtime"),
+            )
+
+            self.assertEqual(result.text_added_count, 1)
+            record = repository.list_books(include_missing=False, resource_type="text_novel")[0]
+            self.assertEqual(record["title"], "北境轶事·二牛戏龙")
+            self.assertFalse(str(record["title"]).startswith("itle"))
+            self.assertEqual(record["author"], "")
+
+    def test_second_scan_refreshes_rules_without_resetting_status(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            root = base / "texts"
+            root.mkdir(parents=True, exist_ok=True)
+            target = root / "novel.txt"
+            target.write_text("Title: 北境轶事·二牛戏龙\n作者：烟烬先生\n#玄幻#爽文", encoding="utf-8")
+
+            repository = LibraryRepository(base / "library.db", base / "scan_report.json")
+            first = scan_text_roots(
+                repository,
+                TextScanRequest(roots=[TextScanRoot(path=str(root))], hash_strategy="size_mtime"),
+            )
+            self.assertEqual(first.text_added_count, 1)
+
+            with repository._connection() as conn:
+                conn.execute(
+                    "UPDATE books SET status = 'READ' WHERE COALESCE(resource_type, '') = 'text_novel'"
+                )
+
+            rules_json = json.dumps(
+                {
+                    "author": [
+                        {
+                            "field": "author",
+                            "source": "txt_head_text",
+                            "steps": [{"type": "regex_extract", "pattern": r"作者[:：]\s*(.+)", "group": 1}],
+                        }
+                    ],
+                    "tag": [
+                        {
+                            "field": "tag",
+                            "source": "txt_head_text",
+                            "steps": [
+                                {
+                                    "type": "loop_inline",
+                                    "pattern": r"#([^#\s]+)",
+                                    "group": 1,
+                                    "join": "newline",
+                                }
+                            ],
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            )
+            second = scan_text_roots(
+                repository,
+                TextScanRequest(
+                    roots=[TextScanRoot(path=str(root), rules_json=rules_json)],
+                    hash_strategy="size_mtime",
+                ),
+            )
+            self.assertEqual(second.text_added_count, 0)
+            self.assertEqual(second.skipped_unchanged_count, 0)
+            self.assertEqual(second.text_updated_count, 1)
+
+            record = repository.list_books(include_missing=False, resource_type="text_novel")[0]
+            self.assertEqual(record["title"], "北境轶事·二牛戏龙")
+            self.assertEqual(record["author"], "烟烬先生")
+            self.assertEqual(record["tags"], ["玄幻", "爽文"])
+            self.assertEqual(record["status"], "READ")
+
+            third = scan_text_roots(
+                repository,
+                TextScanRequest(
+                    roots=[TextScanRoot(path=str(root), rules_json=rules_json)],
+                    hash_strategy="size_mtime",
+                ),
+            )
+            self.assertEqual(third.text_updated_count, 0)
+            self.assertEqual(third.skipped_unchanged_count, 1)
+            still = repository.list_books(include_missing=False, resource_type="text_novel")[0]
+            self.assertEqual(still["status"], "READ")
+            self.assertEqual(still["author"], "烟烬先生")
+
+    def test_series_rule_is_not_written_into_tags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            root = base / "texts"
+            root.mkdir(parents=True, exist_ok=True)
+            (root / "novel.txt").write_text("北境轶事\n系列：龙族\n#玄幻#爽文", encoding="utf-8")
+
+            rules_json = json.dumps(
+                {
+                    "series": [
+                        {
+                            "field": "series",
+                            "source": "txt_head_text",
+                            "steps": [{"type": "regex_extract", "pattern": r"系列[:：]\s*(.+)", "group": 1}],
+                        }
+                    ],
+                    "tag": [
+                        {
+                            "field": "tag",
+                            "source": "txt_head_text",
+                            "steps": [
+                                {
+                                    "type": "loop_inline",
+                                    "pattern": r"#([^#\s]+)",
+                                    "group": 1,
+                                    "join": "newline",
+                                }
+                            ],
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            )
+            repository = LibraryRepository(base / "library.db", base / "scan_report.json")
+            scan_text_roots(
+                repository,
+                TextScanRequest(
+                    roots=[TextScanRoot(path=str(root), rules_json=rules_json)],
+                    hash_strategy="size_mtime",
+                ),
+            )
+
+            record = repository.list_books(include_missing=False, resource_type="text_novel")[0]
+            self.assertEqual(record["tags"], ["玄幻", "爽文"])
+            self.assertFalse(any(str(item).startswith("series:") for item in record["tags"]))
 
 
 if __name__ == "__main__":

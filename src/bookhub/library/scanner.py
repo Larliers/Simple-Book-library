@@ -4,7 +4,8 @@ from __future__ import annotations
 
 Indexer contract alignment (Agent-rule/contracts/indexer-contract.md):
 - Each scan walks configured roots fully.
-- Local skip only: Library/Text hash_strategy fingerprints; Comic folder_size_mtime.
+- Local skip: Library hash_strategy fingerprints; Comic folder_size_mtime.
+- Text: fingerprints skip cover rebuild only; current rules always re-extract fields.
 - Missing sources are deleted from DB and logged (no Missed restore path).
 - No last_checkpoint / next_checkpoint API.
 """
@@ -903,16 +904,6 @@ def scan_text_roots(
                         existing_fp = str(existing.get("fingerprint_quick") or "")
                     else:
                         existing_fp = str(existing.get("fingerprint_size_mtime") or "")
-                if (
-                    isinstance(existing, dict)
-                    and current_fp
-                    and existing_fp
-                    and current_fp == existing_fp
-                    and cover_unchanged
-                ):
-                    result.skipped_unchanged_count += 1
-                    _emit_scan_progress(progress_cb, result.text_scanned_files, total_files, normalized_path, result)
-                    continue
 
                 txt_first_line = _read_txt_first_line(file_path, preference=encoding_preference)
                 txt_head_text = _read_txt_head_text(file_path, preview_chars, preference=encoding_preference)
@@ -925,11 +916,35 @@ def scan_text_roots(
                 extracted = _extract_text_fields(rule_map=rule_map, context=context)
                 title = extracted.get("title") or file_path.stem
                 author = _clean_text_rule_author(extracted.get("author"))
-                tags: list[str] = []
-                if extracted.get("series"):
-                    tags.append(f"series:{extracted['series']}")
-                if extracted.get("tag"):
-                    tags.extend(_split_text_rule_tags(extracted["tag"]))
+                tags = _split_text_rule_tags(extracted.get("tag") or "")
+
+                file_and_cover_unchanged = (
+                    isinstance(existing, dict)
+                    and bool(current_fp)
+                    and bool(existing_fp)
+                    and current_fp == existing_fp
+                    and cover_unchanged
+                )
+                if file_and_cover_unchanged:
+                    if repository.update_text_novel_metadata(
+                        normalized_path,
+                        title=title,
+                        author=author,
+                        tags=tags,
+                        info_text=txt_head_text,
+                    ):
+                        result.text_updated_count += 1
+                    else:
+                        result.skipped_unchanged_count += 1
+                    existing_by_path[normalized_path] = {
+                        **(existing or {}),
+                        "title": title,
+                        "author": author or "",
+                        "tags_json": json.dumps(tags, ensure_ascii=False),
+                        "info_text": txt_head_text or "",
+                    }
+                    _emit_scan_progress(progress_cb, result.text_scanned_files, total_files, normalized_path, result)
+                    continue
 
                 thumbnail_path: str | None = None
                 cover_source: str | None = None
@@ -974,6 +989,7 @@ def scan_text_roots(
                     "fingerprint_sha256": fingerprints.sha256,
                     "fingerprint_size_mtime": fingerprints.size_mtime,
                     "fingerprint_quick": fingerprints.quick,
+                    "file_mtime": int(file_path.stat().st_mtime),
                 }
 
                 duplicate = repository.find_duplicate_name(payload["file_name"], TEXT_FILE_EXTENSION, normalized_path)
@@ -1004,6 +1020,10 @@ def scan_text_roots(
                     result.text_updated_count += 1
                 existing_by_path[normalized_path] = {
                     "path": normalized_path,
+                    "title": title,
+                    "author": author or "",
+                    "tags_json": json.dumps(tags, ensure_ascii=False),
+                    "info_text": txt_head_text or "",
                     "thumbnail_path": thumbnail_path or "",
                     "cover_source": cover_source or "",
                     "cover_fingerprint": stored_cover_fingerprint or "",

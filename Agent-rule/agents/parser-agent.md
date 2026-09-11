@@ -6,6 +6,8 @@
 ## In Scope
 - 解析资源名称中的标题、卷号、作者、语言、版本等元信息。
 - 根据可配置规则执行标准化与结构化。
+- Text 规则步骤含 `loop_lines`（每行一次 search）与 `loop_inline`（每行 `finditer` 全部捕获，适合 `#tag1#tag2`）。
+- 无自定义 title 时默认链先剥 `Title:` / `Title：` / `标题：` / `标题:`，否则用完整首行；内置模板 `title_t_marker` 仍给 `T 书名`。
 - 输出可被索引与 UI 复用的统一元数据对象。
 
 ## Out of Scope

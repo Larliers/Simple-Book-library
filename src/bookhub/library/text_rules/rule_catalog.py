@@ -36,7 +36,7 @@ STEP_CATEGORIES: tuple[tuple[str, tuple[str, ...]], ...] = (
             "take_after_marker",
         ),
     ),
-    ("line", ("take_line", "take_first_lines", "take_line_range", "remove_first_lines", "remove_last_lines", "loop_lines")),
+    ("line", ("take_line", "take_first_lines", "take_line_range", "remove_first_lines", "remove_last_lines", "loop_lines", "loop_inline")),
     (
         "bracket",
         (
@@ -149,6 +149,8 @@ def param_keys_for_step_type(step_type: str) -> tuple[str, ...]:
         return ("pattern", "group")
     if step_type == "loop_lines":
         return ("pattern", "group", "join", "custom_separator", "skip_failed")
+    if step_type == "loop_inline":
+        return ("pattern", "group", "join", "custom_separator", "skip_failed")
     return ()
 
 
@@ -244,6 +246,14 @@ def _seed_defaults(step_type: str, old: dict[str, Any]) -> dict[str, Any]:
             "custom_separator": str(old.get("custom_separator") or ""),
             "skip_failed": _safe_bool(old.get("skip_failed"), True),
         }
+    if step_type == "loop_inline":
+        return {
+            "pattern": str(old.get("pattern") or r"#([^#\s]+)"),
+            "group": _safe_int(old.get("group"), 1),
+            "join": str(old.get("join") or "newline"),
+            "custom_separator": str(old.get("custom_separator") or ""),
+            "skip_failed": _safe_bool(old.get("skip_failed"), True),
+        }
     return {}
 
 
@@ -314,6 +324,7 @@ def step_type_label(code: str) -> str:
         "replace_text": tr("text.rules.step.replace_text", "Replace text"),
         "regex_extract": tr("text.rules.step.regex_extract", "Regex extract"),
         "loop_lines": tr("text.rules.step.loop_lines", "Loop lines"),
+        "loop_inline": tr("text.rules.step.loop_inline", "Loop matches in line"),
     }
     return mapping.get(code, code)
 
@@ -407,6 +418,11 @@ def help_sections() -> list[dict[str, Any]]:
                 tr("text.rules.help.step.take_after_text", "- take_after_text: keep content after marker"),
                 tr("text.rules.help.step.take_bracket_content", "- take_bracket_content: extract Nth bracket content"),
                 tr("text.rules.help.step.regex_extract", "- regex_extract: capture group from regex"),
+                tr("text.rules.help.step.loop_lines", "- loop_lines: one regex match per line"),
+                tr(
+                    "text.rules.help.step.loop_inline",
+                    "- loop_inline: all regex matches inside each line; use for #tag1#tag2",
+                ),
             ],
         },
     ]

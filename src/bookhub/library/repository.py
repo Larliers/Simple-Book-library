@@ -168,6 +168,7 @@ class LibraryRepository:
         self._init_collections_tables()
         self._migrate_typed_collections()
         self._ensure_defaults()
+        self.backfill_book_file_mtime()
         self._apply_preview_dir_from_settings_or_override()
         self.purge_marked_missing_records()
 
@@ -358,6 +359,7 @@ class LibraryRepository:
                     fingerprint_sha256 TEXT,
                     fingerprint_size_mtime TEXT,
                     fingerprint_quick TEXT,
+                    file_mtime INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
@@ -408,6 +410,7 @@ class LibraryRepository:
             self._ensure_column(conn, "books", "info_text", "ALTER TABLE books ADD COLUMN info_text TEXT")
             self._ensure_column(conn, "books", "cover_source", "ALTER TABLE books ADD COLUMN cover_source TEXT")
             self._ensure_column(conn, "books", "cover_fingerprint", "ALTER TABLE books ADD COLUMN cover_fingerprint TEXT")
+            self._ensure_column(conn, "books", "file_mtime", "ALTER TABLE books ADD COLUMN file_mtime INTEGER NOT NULL DEFAULT 0")
             conn.execute(
                 """
                 UPDATE books
@@ -513,6 +516,10 @@ class LibraryRepository:
             self.set_setting("comic_sort_order_main", "folder_mtime_desc")
         if self.get_setting("comic_sort_order_fav", None) is None:
             self.set_setting("comic_sort_order_fav", "folder_mtime_desc")
+        if self.get_setting("text_novel_sort_order_main", None) is None:
+            self.set_setting("text_novel_sort_order_main", "file_mtime_desc")
+        if self.get_setting("text_novel_sort_order_fav", None) is None:
+            self.set_setting("text_novel_sort_order_fav", "file_mtime_desc")
         if self.get_setting("preview_cache_dir", None) is None:
             self.set_setting("preview_cache_dir", "")
         with self._connection() as conn:
@@ -867,6 +874,42 @@ class LibraryRepository:
 
     def set_text_novel_view_mode(self, value: str) -> None:
         self.set_setting("text_novel_view_mode", self._normalize_text_novel_view_mode(value))
+
+    @staticmethod
+    def _normalize_text_novel_sort_order(value: str | None) -> str:
+        normalized = str(value or "").strip().lower()
+        allowed = {"file_mtime_asc", "file_mtime_desc", "title_asc", "title_desc"}
+        return normalized if normalized in allowed else "file_mtime_desc"
+
+    @staticmethod
+    def _text_novel_order_clause(order_by: str | None, *, table_alias: str = "") -> str:
+        prefix = f"{table_alias}." if table_alias else ""
+        normalized = LibraryRepository._normalize_text_novel_sort_order(order_by)
+        mtime_expr = f"COALESCE({prefix}file_mtime, 0)"
+        title_expr = f"lower(COALESCE({prefix}title, {prefix}file_name))"
+        if normalized == "file_mtime_asc":
+            return f"{mtime_expr} ASC, {title_expr} ASC"
+        if normalized == "title_asc":
+            return f"{title_expr} ASC"
+        if normalized == "title_desc":
+            return f"{title_expr} DESC"
+        return f"{mtime_expr} DESC, {title_expr} ASC"
+
+    def get_text_novel_sort_order_main(self) -> str:
+        return self._normalize_text_novel_sort_order(
+            self.get_setting("text_novel_sort_order_main", "file_mtime_desc")
+        )
+
+    def set_text_novel_sort_order_main(self, value: str) -> None:
+        self.set_setting("text_novel_sort_order_main", self._normalize_text_novel_sort_order(value))
+
+    def get_text_novel_sort_order_fav(self) -> str:
+        return self._normalize_text_novel_sort_order(
+            self.get_setting("text_novel_sort_order_fav", "file_mtime_desc")
+        )
+
+    def set_text_novel_sort_order_fav(self, value: str) -> None:
+        self.set_setting("text_novel_sort_order_fav", self._normalize_text_novel_sort_order(value))
 
     @staticmethod
     def _normalize_recommendation_items_per_category(value: int | str | None) -> int:
@@ -1291,6 +1334,30 @@ class LibraryRepository:
         text = str(value or "").strip()
         return text or None
 
+    @staticmethod
+    def _mtime_from_size_mtime(value: object) -> int:
+        text = str(value or "").strip()
+        if ":" not in text:
+            return 0
+        _size, _sep, tail = text.rpartition(":")
+        try:
+            parsed = int(float(tail))
+        except ValueError:
+            return 0
+        return parsed if parsed > 0 else 0
+
+    @staticmethod
+    def _resolve_file_mtime(payload: dict[str, Any], fingerprint_size_mtime: str | None) -> int:
+        raw = payload.get("file_mtime")
+        try:
+            if raw is not None and str(raw).strip() != "":
+                parsed = int(raw)
+                if parsed > 0:
+                    return parsed
+        except (TypeError, ValueError):
+            pass
+        return LibraryRepository._mtime_from_size_mtime(fingerprint_size_mtime)
+
     def map_library_books_for_scan(self, roots: list[str]) -> dict[str, dict[str, Any]]:
         """Lightweight path→fingerprint/thumb map for Library incremental scan (excludes text_novel)."""
         with self._connection() as conn:
@@ -1317,11 +1384,11 @@ class LibraryRepository:
         return mapped
 
     def map_text_novels_for_scan(self, roots: list[str]) -> dict[str, dict[str, Any]]:
-        """Lightweight path→fingerprint map for Text Novel incremental scan."""
+        """Path map for Text Novel incremental scan: fingerprints plus current rule fields."""
         with self._connection() as conn:
             rows = conn.execute(
                 """
-                SELECT path, thumbnail_path, cover_source, cover_fingerprint,
+                SELECT path, title, author, tags_json, info_text, thumbnail_path, cover_source, cover_fingerprint,
                        fingerprint_sha256, fingerprint_size_mtime, fingerprint_quick
                 FROM books
                 WHERE is_missing = 0
@@ -1335,6 +1402,10 @@ class LibraryRepository:
                 continue
             mapped[path_value] = {
                 "path": path_value,
+                "title": row["title"] or "",
+                "author": row["author"] or "",
+                "tags_json": row["tags_json"] or "[]",
+                "info_text": row["info_text"] or "",
                 "thumbnail_path": row["thumbnail_path"],
                 "cover_source": row["cover_source"] or "",
                 "cover_fingerprint": row["cover_fingerprint"] or "",
@@ -1344,12 +1415,60 @@ class LibraryRepository:
             }
         return mapped
 
+    def update_text_novel_metadata(
+        self,
+        path: str,
+        *,
+        title: str,
+        author: str | None,
+        tags: list[str],
+        info_text: str | None,
+    ) -> bool:
+        tags_json = json.dumps([str(item) for item in tags], ensure_ascii=False)
+        title_text = str(title or "")
+        author_text = str(author or "")
+        info_value = str(info_text or "")
+        with self._connection() as conn:
+            existing = conn.execute(
+                """
+                SELECT id, title, author, tags_json, info_text
+                FROM books
+                WHERE path = ? AND COALESCE(resource_type, '') = 'text_novel'
+                """,
+                (path,),
+            ).fetchone()
+            if not existing:
+                return False
+            existing_tags = existing["tags_json"] or "[]"
+            try:
+                parsed_existing = json.loads(existing_tags)
+            except json.JSONDecodeError:
+                parsed_existing = None
+            same_tags = parsed_existing == tags if isinstance(parsed_existing, list) else existing_tags == tags_json
+            if (
+                str(existing["title"] or "") == title_text
+                and str(existing["author"] or "") == author_text
+                and same_tags
+                and str(existing["info_text"] or "") == info_value
+            ):
+                return False
+            conn.execute(
+                """
+                UPDATE books
+                SET title = ?, author = ?, tags_json = ?, info_text = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (title_text, author_text or None, tags_json, info_value or None, now_utc_iso(), int(existing["id"])),
+            )
+        return True
+
     def upsert_book(self, payload: dict[str, Any]) -> bool:
         path = payload["path"]
         timestamp = now_utc_iso()
         fp_sha = self._fingerprint_or_none(payload.get("fingerprint_sha256"))
         fp_size = self._fingerprint_or_none(payload.get("fingerprint_size_mtime"))
         fp_quick = self._fingerprint_or_none(payload.get("fingerprint_quick"))
+        file_mtime = self._resolve_file_mtime(payload, fp_size)
         incoming_cover_source = (
             self._normalize_book_cover_source(payload.get("cover_source"))
             if "cover_source" in payload
@@ -1377,6 +1496,7 @@ class LibraryRepository:
                         fingerprint_sha256 = COALESCE(?, fingerprint_sha256),
                         fingerprint_size_mtime = COALESCE(?, fingerprint_size_mtime),
                         fingerprint_quick = COALESCE(?, fingerprint_quick),
+                        file_mtime = CASE WHEN ? > 0 THEN ? ELSE file_mtime END,
                         updated_at = ?
                     WHERE id = ?
                     """,
@@ -1397,6 +1517,8 @@ class LibraryRepository:
                         fp_sha,
                         fp_size,
                         fp_quick,
+                        file_mtime,
+                        file_mtime,
                         timestamp,
                         existing["id"],
                     ),
@@ -1410,9 +1532,9 @@ class LibraryRepository:
                     resource_id, file_name, extension, title, author, publisher, language, tags_json,
                     status, resource_type, path, thumbnail_path, cover_source, cover_fingerprint,
                     info_text, is_missing, missing_reason,
-                    fingerprint_sha256, fingerprint_size_mtime, fingerprint_quick, created_at, updated_at
+                    fingerprint_sha256, fingerprint_size_mtime, fingerprint_quick, file_mtime, created_at, updated_at
                 )
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     resource_id,
@@ -1433,30 +1555,49 @@ class LibraryRepository:
                     fp_sha,
                     fp_size,
                     fp_quick,
+                    file_mtime,
                     timestamp,
                     timestamp,
                 ),
             )
             return True
 
-    def list_books(self, include_missing: bool | None = None) -> list[dict[str, Any]]:
-        where_clause = ""
-        params: tuple[Any, ...] = ()
+    def list_books(
+        self,
+        include_missing: bool | None = None,
+        *,
+        resource_type: str | None = None,
+        exclude_resource_type: str | None = None,
+        order_by: str | None = None,
+    ) -> list[dict[str, Any]]:
+        conditions: list[str] = []
+        params: list[Any] = []
         if include_missing is True:
-            where_clause = "WHERE is_missing = 1"
+            conditions.append("is_missing = 1")
         elif include_missing is False:
-            where_clause = "WHERE is_missing = 0"
+            conditions.append("is_missing = 0")
+        if resource_type is not None:
+            conditions.append("COALESCE(resource_type, '') = ?")
+            params.append(str(resource_type))
+        if exclude_resource_type is not None:
+            conditions.append("COALESCE(resource_type, '') != ?")
+            params.append(str(exclude_resource_type))
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        if order_by:
+            order_clause = self._text_novel_order_clause(order_by)
+        else:
+            order_clause = "lower(COALESCE(title, file_name))"
 
         query = f"""
             SELECT resource_id, file_name, extension, title, author, publisher, language, tags_json, status,
                    resource_type, path, thumbnail_path, cover_source, cover_fingerprint,
-                   info_text, is_missing, missing_reason
+                   info_text, is_missing, missing_reason, file_mtime
             FROM books
             {where_clause}
-            ORDER BY lower(COALESCE(title, file_name))
+            ORDER BY {order_clause}
         """
         with self._connection() as conn:
-            rows = conn.execute(query, params).fetchall()
+            rows = conn.execute(query, tuple(params)).fetchall()  # noqa: S608
 
         records: list[dict[str, Any]] = []
         for row in rows:
@@ -1486,6 +1627,7 @@ class LibraryRepository:
                     "info_text": row["info_text"],
                     "is_missing": bool(row["is_missing"]),
                     "missing_reason": row["missing_reason"],
+                    "file_mtime": int(row["file_mtime"] or 0),
                 }
             )
         return records
@@ -1807,6 +1949,40 @@ class LibraryRepository:
             rows = conn.execute(query).fetchall()
         return [dict(row) for row in rows]
 
+    def backfill_book_file_mtime(self) -> int:
+        with self._connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, path, fingerprint_size_mtime
+                FROM books
+                WHERE COALESCE(file_mtime, 0) <= 0
+                """
+            ).fetchall()
+            updated = 0
+            for row in rows:
+                book_id = int(row["id"])
+                mtime = self._mtime_from_size_mtime(row["fingerprint_size_mtime"])
+                if mtime <= 0:
+                    path_value = str(row["path"] or "")
+                    file_path = Path(path_value)
+                    if not path_value or not file_path.exists() or not file_path.is_file():
+                        continue
+                    try:
+                        mtime = int(file_path.stat().st_mtime)
+                    except OSError as exc:
+                        append_scan_log(
+                            f"book_file_mtime_backfill_failed | id={book_id} | path={path_value} | reason={exc}"
+                        )
+                        continue
+                if mtime <= 0:
+                    continue
+                conn.execute(
+                    "UPDATE books SET file_mtime = ?, updated_at = ? WHERE id = ?",
+                    (mtime, now_utc_iso(), book_id),
+                )
+                updated += 1
+        return updated
+
     def backfill_comic_folder_modified_at(self) -> int:
         with self._connection() as conn:
             rows = conn.execute(
@@ -2113,7 +2289,7 @@ class LibraryRepository:
                 (collection_id, book_id),
             )
 
-    def get_books_in_collection(self, collection_id: int) -> list[dict]:
+    def get_books_in_collection(self, collection_id: int, order_by: str | None = None) -> list[dict]:
         """Return book/novel rows for a collection, filtered by collection kind."""
         self._init_collections_tables()
         kind = self.get_collection_kind(collection_id)
@@ -2124,6 +2300,10 @@ class LibraryRepository:
             if kind == COLLECTION_KIND_TEXT_NOVEL
             else "AND COALESCE(b.resource_type, '') != ?"
         )
+        if kind == COLLECTION_KIND_TEXT_NOVEL and order_by:
+            order_clause = self._text_novel_order_clause(order_by, table_alias="b")
+        else:
+            order_clause = "cb.added_at DESC"
         with self._connection() as conn:
             try:
                 rows = conn.execute(
@@ -2132,7 +2312,7 @@ class LibraryRepository:
                        INNER JOIN collection_books cb ON b.id = cb.book_id
                        WHERE cb.collection_id = ?
                        {type_clause}
-                       ORDER BY cb.added_at DESC""",  # noqa: S608
+                       ORDER BY {order_clause}""",  # noqa: S608
                     (collection_id, COLLECTION_KIND_TEXT_NOVEL),
                 ).fetchall()
                 return [dict(r) for r in rows]

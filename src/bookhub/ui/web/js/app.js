@@ -98,6 +98,11 @@ function isComicCollectionDetail(data) {
   return Boolean(d && d.mode === "comic" && d.collectionId);
 }
 
+function isNovelCollectionDetail(page, data) {
+  const d = data || currentPageData();
+  return page === "novel_collections" && Boolean(d && d.mode === "collection_detail" && d.collectionId);
+}
+
 function isSearchablePage(page) {
   if (page === "library" || page === "text_novel" || page === "comic") return true;
   if (page === "comic_collections") return isComicCollectionDetail(State.pages[page] || {});
@@ -569,7 +574,7 @@ function renderPageTools(page, data) {
     const back = elem("button", "ghost-btn", t("common.back", "Back"));
     back.addEventListener("click", () => executeAction("exit_collection", null));
     tools.appendChild(back);
-    if (data.mode !== "comic") return;
+    if (data.mode !== "comic" && !isNovelCollectionDetail(page, data)) return;
   }
   if (data.mode === "collections") {
     const add = elem("button", "primary-btn", t("common.new_list", "New List"));
@@ -596,6 +601,30 @@ function renderPageTools(page, data) {
       State.bridge.setPageSort(page, sel.value, (json) => {
         const d = safeParse(json);
         if (d) { State.pages[page] = d; State.comicPageNum[page] = 1; State._comicPage = 1; clearPageScroll(page); scheduleRenderPage(); }
+      });
+    });
+    wrap.appendChild(sel);
+    tools.appendChild(wrap);
+  }
+  if (page === "text_novel" || isNovelCollectionDetail(page, data)) {
+    const wrap = elem("div", "page-sort");
+    wrap.appendChild(elem("span", "small-note", t("text_novel.sort.label", "Sort")));
+    const sel = elem("select", "sort-select");
+    [
+      ["file_mtime_desc", "text_novel.sort.file_mtime_desc", "File Date: Newest First"],
+      ["file_mtime_asc", "text_novel.sort.file_mtime_asc", "File Date: Oldest First"],
+      ["title_asc", "text_novel.sort.title_asc", "Title: A-Z"],
+      ["title_desc", "text_novel.sort.title_desc", "Title: Z-A"],
+    ].forEach(([value, key, fb]) => {
+      const opt = elem("option", null, t(key, fb));
+      opt.value = value;
+      if ((data.sort || "file_mtime_desc") === value) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener("change", () => {
+      State.bridge.setPageSort(page, sel.value, (json) => {
+        const d = safeParse(json);
+        if (d) { State.pages[page] = d; clearPageScroll(page); scheduleRenderPage(); }
       });
     });
     wrap.appendChild(sel);
