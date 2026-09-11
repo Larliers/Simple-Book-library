@@ -46,6 +46,38 @@ COLLECTION_KINDS = frozenset(
 )
 DEFAULT_FAVORITES_COLLECTION_NAME = "收藏"
 FAVORITES_MIGRATED_SETTING = "favorites_migrated_to_collections"
+SHORTCUT_ACTION_IDS = (
+    "exit_collection",
+    "reopen_recent_collection",
+    "open_resource",
+    "open_folder",
+    "quick_add",
+    "edit_cover",
+    "remove_from_collection",
+    "remove_from_library",
+)
+SHORTCUT_MOUSE_TOKENS = frozenset({"MouseBack", "MouseForward"})
+SHORTCUT_MODIFIERS = ("Ctrl", "Alt", "Shift", "Meta")
+SHORTCUT_KEY_CODES = frozenset(
+    {f"Key{letter}" for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"}
+    | {f"Digit{digit}" for digit in "0123456789"}
+    | {f"Numpad{digit}" for digit in "0123456789"}
+    | {f"F{number}" for number in range(1, 25)}
+    | {
+        "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
+        "Home", "End", "PageUp", "PageDown", "Insert", "Delete", "Backspace",
+        "Backquote", "Minus", "Equal", "BracketLeft", "BracketRight", "Backslash",
+        "Semicolon", "Quote", "Comma", "Period", "Slash",
+        "NumpadAdd", "NumpadSubtract", "NumpadMultiply", "NumpadDivide", "NumpadDecimal",
+    }
+)
+RESERVED_SHORTCUT_TOKENS = frozenset(
+    {
+        "F5", "Ctrl+KeyR", "Ctrl+KeyW", "Ctrl+KeyQ",
+        "Ctrl+Equal", "Ctrl+Shift+Equal", "Ctrl+Minus", "Ctrl+Digit0", "Ctrl+Numpad0",
+        "Ctrl+NumpadAdd", "Ctrl+NumpadSubtract", "Alt+F4",
+    }
+)
 
 DEFAULT_DB_PATH = default_db_path()
 DEFAULT_SCAN_REPORT_PATH = default_scan_report_path()
@@ -66,6 +98,21 @@ def book_collection_kind(resource_type: str | None) -> str:
     if str(resource_type or "").strip() == COLLECTION_KIND_TEXT_NOVEL:
         return COLLECTION_KIND_TEXT_NOVEL
     return COLLECTION_KIND_BOOK
+
+
+def is_valid_shortcut_input_token(input_token: str) -> bool:
+    token = str(input_token or "")
+    if not token:
+        return True
+    if token in SHORTCUT_MOUSE_TOKENS:
+        return True
+    if token in RESERVED_SHORTCUT_TOKENS:
+        return False
+    parts = token.split("+")
+    key_code = parts[-1]
+    modifiers = parts[:-1]
+    expected_modifiers = [name for name in SHORTCUT_MODIFIERS if name in modifiers]
+    return modifiers == expected_modifiers and key_code in SHORTCUT_KEY_CODES
 
 
 def _normalize_card_spacing(value: int | str | None) -> int:
@@ -445,6 +492,8 @@ class LibraryRepository:
             self.set_setting("recommendation_items_per_category", 6)
         if self.get_setting("recommendation_columns_per_category", None) is None:
             self.set_setting("recommendation_columns_per_category", 2)
+        if self.get_setting("shortcut_bindings", None) is None:
+            self.set_setting("shortcut_bindings", {})
         if self.get_setting("comic_sort_order_main", None) is None:
             self.set_setting("comic_sort_order_main", "folder_mtime_desc")
         if self.get_setting("comic_sort_order_fav", None) is None:
@@ -830,6 +879,51 @@ class LibraryRepository:
             "recommendation_columns_per_category",
             self._normalize_recommendation_columns_per_category(value),
         )
+
+    def get_shortcut_bindings(self) -> dict[str, str]:
+        raw = self.get_setting("shortcut_bindings", {})
+        stored = raw if isinstance(raw, dict) else {}
+        bindings: dict[str, str] = {}
+        used_tokens: set[str] = set()
+        for action_id in SHORTCUT_ACTION_IDS:
+            token = str(stored.get(action_id) or "")
+            if not is_valid_shortcut_input_token(token) or token in used_tokens:
+                token = ""
+            bindings[action_id] = token
+            if token:
+                used_tokens.add(token)
+        return bindings
+
+    def set_shortcut_binding(self, action_id: str, input_token: str) -> dict[str, Any]:
+        bindings = self.get_shortcut_bindings()
+        if action_id not in SHORTCUT_ACTION_IDS:
+            return {
+                "ok": False, "error": "invalid_action", "conflictAction": "", "bindings": bindings,
+            }
+        token = str(input_token or "")
+        if not is_valid_shortcut_input_token(token):
+            return {
+                "ok": False, "error": "invalid_binding", "conflictAction": "", "bindings": bindings,
+            }
+        conflict_action = next(
+            (key for key, value in bindings.items() if value == token and key != action_id and token),
+            "",
+        )
+        if conflict_action:
+            return {
+                "ok": False,
+                "error": "duplicate",
+                "conflictAction": conflict_action,
+                "bindings": bindings,
+            }
+        bindings[action_id] = token
+        self.set_setting("shortcut_bindings", bindings)
+        return {
+            "ok": True,
+            "error": "",
+            "conflictAction": "",
+            "bindings": bindings,
+        }
 
     @staticmethod
     def _normalize_comic_sort_order(value: str | None) -> str:

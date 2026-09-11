@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 import zipfile
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -24,7 +25,7 @@ try:
     from bookhub.library import LibraryRepository
     from bookhub.library.models import ComicScanRequest, ComicScanRoot
     from bookhub.library.scanner import scan_comic_roots
-    from bookhub.ui.web_bridge import PAGE_COMIC, PAGE_RANDOM_RECOMMENDATIONS, UiBridge, NAV_ITEMS
+    from bookhub.ui.web_bridge import PAGE_COMIC, PAGE_LIBRARY, PAGE_RANDOM_RECOMMENDATIONS, UiBridge, NAV_ITEMS
     from bookhub.ui.web_scheme import WEB_ROOT, to_local_path
 
     QT_AVAILABLE = True
@@ -44,6 +45,13 @@ class WebBridgeSmokeTests(unittest.TestCase):
         repo = LibraryRepository(db_path=str(Path(tmp) / "library.db"))
         return UiBridge(repo, set())
 
+    def _assert_open_external_event(self, events: list[dict[str, object]], resource_id: str) -> None:
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["event"], "open_external")
+        self.assertEqual(events[0]["resource_id"], resource_id)
+        parsed = datetime.fromisoformat(str(events[0]["timestamp"]))
+        self.assertIsNotNone(parsed.tzinfo)
+
     def test_bootstrap_has_all_pages(self) -> None:
         bridge = self._make_bridge()
         payload = json.loads(bridge.getBootstrap())
@@ -52,8 +60,39 @@ class WebBridgeSmokeTests(unittest.TestCase):
         self.assertIn("theme", payload["settings"])
         self.assertEqual(payload["settings"]["recommendationItemsPerCategory"], 6)
         self.assertEqual(payload["settings"]["recommendationColumnsPerCategory"], 2)
+        self.assertEqual(
+            payload["settings"]["shortcutBindings"],
+            {
+                "exit_collection": "",
+                "reopen_recent_collection": "",
+                "open_resource": "",
+                "open_folder": "",
+                "quick_add": "",
+                "edit_cover": "",
+                "remove_from_collection": "",
+                "remove_from_library": "",
+            },
+        )
         page_keys = {page for page, _, _ in NAV_ITEMS}
         self.assertEqual(set(payload["pages"].keys()), page_keys)
+
+    def test_shortcut_binding_bridge_returns_conflicts_and_emits_native_input(self) -> None:
+        bridge = self._make_bridge()
+        settings_payloads: list[dict[str, object]] = []
+        native_inputs: list[str] = []
+        bridge.settingsChanged.connect(lambda raw: settings_payloads.append(json.loads(raw)))
+        bridge.nativeShortcutInput.connect(native_inputs.append)
+
+        saved = json.loads(bridge.setShortcutBinding("open_resource", "MouseForward"))
+        duplicate = json.loads(bridge.setShortcutBinding("quick_add", "MouseForward"))
+        bridge.nativeShortcutInput.emit("MouseBack")
+
+        self.assertTrue(saved["ok"])
+        self.assertEqual(saved["bindings"]["open_resource"], "MouseForward")
+        self.assertEqual(duplicate["error"], "duplicate")
+        self.assertEqual(duplicate["conflictAction"], "open_resource")
+        self.assertEqual(settings_payloads[-1]["shortcutBindings"]["open_resource"], "MouseForward")
+        self.assertEqual(native_inputs, ["MouseBack"])
 
     def test_resource_push_marks_only_explicit_recommendation_invalidation(self) -> None:
         bridge = self._make_bridge()
@@ -458,16 +497,20 @@ class WebBridgeSmokeTests(unittest.TestCase):
             )
             comics = repo.list_comics(include_missing=False)
             self.assertEqual(len(comics), 1)
+            resource_id = str(comics[0]["resource_id"])
             bridge = UiBridge(repo, set())
             opened: list[str] = []
+            events: list[dict[str, object]] = []
+            bridge.interactionEvent.connect(lambda raw: events.append(json.loads(raw)))
 
             def capture_open(path: str) -> None:
                 opened.append(path)
 
             with patch.object(bridge, "_open_external", side_effect=capture_open):
-                bridge.openResource(PAGE_COMIC, str(comics[0]["resource_id"]))
+                bridge.openResource(PAGE_COMIC, resource_id)
 
             self.assertEqual(len(opened), 1)
+            self._assert_open_external_event(events, resource_id)
             opened_path = Path(opened[0])
             self.assertTrue(opened_path.exists())
             self.assertTrue(opened_path.is_file())
@@ -499,19 +542,169 @@ class WebBridgeSmokeTests(unittest.TestCase):
             )
             comics = repo.list_comics(include_missing=False)
             self.assertEqual(len(comics), 1)
+            resource_id = str(comics[0]["resource_id"])
             bridge = UiBridge(repo, set())
             opened: list[str] = []
+            events: list[dict[str, object]] = []
+            bridge.interactionEvent.connect(lambda raw: events.append(json.loads(raw)))
 
             def capture_open(path: str) -> None:
                 opened.append(path)
 
             with patch.object(bridge, "_open_external", side_effect=capture_open):
-                bridge.openResource(PAGE_COMIC, str(comics[0]["resource_id"]))
+                bridge.openResource(PAGE_COMIC, resource_id)
 
             self.assertEqual(opened, [str(cover)])
+            self._assert_open_external_event(events, resource_id)
+
+    def test_open_resource_missing_target_does_not_emit_interaction_event(self) -> None:
+        bridge = self._make_bridge()
+        events: list[dict[str, object]] = []
+        bridge.interactionEvent.connect(lambda raw: events.append(json.loads(raw)))
+
+        with patch.object(bridge, "_open_external") as mocked_open:
+            bridge.openResource(PAGE_LIBRARY, "missing-resource")
+            mocked_open.assert_not_called()
+        self.assertEqual(events, [])
+
+        bridge._repo.upsert_book(
+            {
+                "path": "C:/missing/does-not-exist.epub",
+                "title": "Ghost EPUB",
+                "file_name": "does-not-exist.epub",
+                "extension": ".epub",
+                "resource_type": "epub",
+                "tags_json": "[]",
+            }
+        )
+        bridge.reload_data()
+        items = json.loads(bridge.getBootstrap())["pages"]["library"]["items"]
+        book = next(item for item in items if item.get("title") == "Ghost EPUB")
+
+        with patch.object(bridge, "_open_external") as mocked_open:
+            bridge.openResource(PAGE_LIBRARY, str(book["id"]))
+            mocked_open.assert_called_once()
+        self.assertEqual(events, [])
 
 
 class SettingsUiStructureTests(unittest.TestCase):
+    def test_shortcut_settings_ui_and_both_skins_are_wired(self) -> None:
+        app_js = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+        strings = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web_bridge.py").read_text(encoding="utf-8")
+        locale = (PROJECT_ROOT / "src" / "bookhub" / "i18n" / "locales" / "zh-cn.json").read_text(encoding="utf-8")
+        self.assertIn('["shortcuts", "settings.nav.shortcuts"]', app_js)
+        self.assertIn("function renderSettingsShortcuts(panel)", app_js)
+        self.assertIn('"reopen_recent_collection"', app_js)
+        self.assertIn('"exit_collection"', app_js)
+        self.assertNotIn("toggle_recent_collection", app_js)
+        self.assertIn("function executeAction(actionId, context)", app_js)
+        self.assertIn("function handleShortcutSideButton(event)", app_js)
+        self.assertIn("function handleShortcutMouseDown(event)", app_js)
+        self.assertIn('code === "BrowserBack"', app_js)
+        self.assertIn("buttons & 8", app_js)
+        self.assertIn("keyCode === 166", app_js)
+        self.assertIn("nativeShortcutInput.connect(handleNativeShortcutInput)", app_js)
+        self.assertIn('("settings.nav.shortcuts", "Shortcuts")', strings)
+        self.assertIn('"settings.nav.shortcuts": "快捷键"', locale)
+        css_root = PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "css" / "skins"
+        for skin in ("glass", "vaporwave"):
+            css = (css_root / skin / "components.css").read_text(encoding="utf-8")
+            self.assertIn(".shortcut-row", css)
+            self.assertIn(".shortcut-keycap", css)
+            self.assertIn("grid-template-columns: minmax(0, 1fr)", css)
+
+    @unittest.skipUnless(QT_AVAILABLE, "PySide6/WebEngine is not available")
+    def test_win_side_button_messages_map_to_tokens(self) -> None:
+        from bookhub.ui.web_window import (
+            APPCOMMAND_BROWSER_BACKWARD,
+            APPCOMMAND_BROWSER_FORWARD,
+            WM_APPCOMMAND,
+            WM_XBUTTONDOWN,
+            token_from_win_mouse_message,
+        )
+
+        self.assertEqual(token_from_win_mouse_message(WM_XBUTTONDOWN, 1 << 16), "MouseBack")
+        self.assertEqual(token_from_win_mouse_message(WM_XBUTTONDOWN, 2 << 16), "MouseForward")
+        self.assertEqual(
+            token_from_win_mouse_message(WM_APPCOMMAND, 0, APPCOMMAND_BROWSER_BACKWARD << 16),
+            "MouseBack",
+        )
+        self.assertEqual(
+            token_from_win_mouse_message(WM_APPCOMMAND, 0, APPCOMMAND_BROWSER_FORWARD << 16),
+            "MouseForward",
+        )
+        self.assertIsNone(token_from_win_mouse_message(0x0201, 0, 0))
+
+    @unittest.skipUnless(QT_AVAILABLE, "PySide6/WebEngine is not available")
+    def test_native_web_view_captures_mouse_side_buttons(self) -> None:
+        from PySide6.QtCore import QEvent, QPointF, Qt
+        from PySide6.QtGui import QMouseEvent
+
+        from bookhub.ui.web_window import ShortcutWebView
+
+        app = QApplication.instance() or QApplication([])
+        view = ShortcutWebView()
+        inputs: list[str] = []
+        view.nativeShortcutInput.connect(inputs.append)
+
+        for button in (Qt.BackButton, Qt.ForwardButton):
+            press_event = QMouseEvent(
+                QEvent.MouseButtonPress,
+                QPointF(5, 5),
+                QPointF(5, 5),
+                button,
+                button,
+                Qt.NoModifier,
+            )
+            release_event = QMouseEvent(
+                QEvent.MouseButtonRelease,
+                QPointF(5, 5),
+                QPointF(5, 5),
+                button,
+                Qt.NoButton,
+                Qt.NoModifier,
+            )
+            app.sendEvent(view, press_event)
+            app.sendEvent(view, release_event)
+            self.assertTrue(press_event.isAccepted())
+            self.assertTrue(release_event.isAccepted())
+
+        self.assertEqual(inputs, ["MouseBack", "MouseForward"])
+        view.deleteLater()
+
+    @unittest.skipUnless(QT_AVAILABLE, "PySide6/WebEngine is not available")
+    def test_native_web_view_captures_side_buttons_on_child_widget(self) -> None:
+        from PySide6.QtCore import QEvent, QPointF, Qt
+        from PySide6.QtGui import QMouseEvent
+        from PySide6.QtWidgets import QWidget
+
+        from bookhub.ui.web_window import ShortcutWebView
+
+        app = QApplication.instance() or QApplication([])
+        view = ShortcutWebView()
+
+        class _EatingChild(QWidget):
+            def mousePressEvent(self, event) -> None:  # type: ignore[override]
+                event.accept()
+
+        child = _EatingChild(view)
+        child.resize(40, 40)
+        inputs: list[str] = []
+        view.nativeShortcutInput.connect(inputs.append)
+
+        press_event = QMouseEvent(
+            QEvent.MouseButtonPress,
+            QPointF(5, 5),
+            QPointF(5, 5),
+            Qt.BackButton,
+            Qt.BackButton,
+            Qt.NoModifier,
+        )
+        app.sendEvent(child, press_event)
+        self.assertTrue(press_event.isAccepted())
+        self.assertEqual(inputs, ["MouseBack"])
+        view.deleteLater()
+
     def test_random_recommendation_density_settings_are_exposed(self) -> None:
         app_js = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
         web_window = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web_window.py").read_text(encoding="utf-8")
@@ -539,6 +732,20 @@ class SettingsUiStructureTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("RANDOM_RECOMMENDATIONS_BEHAVIOR_OK", completed.stdout)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is not available")
+    def test_shortcuts_frontend_behavior(self) -> None:
+        script = PROJECT_ROOT / "src" / "tests" / "js" / "test_shortcuts.js"
+        app_js = PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js"
+        completed = subprocess.run(
+            [shutil.which("node") or "node", str(script), str(app_js)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("SHORTCUTS_BEHAVIOR_OK", completed.stdout)
 
     def test_random_recommendations_keep_source_page_for_actions(self) -> None:
         app_js = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")

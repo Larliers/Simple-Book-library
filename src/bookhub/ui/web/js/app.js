@@ -23,6 +23,8 @@ const State = {
   recommendationsLoading: false,
   recommendationRequestId: 0,
   recommendationSelection: null,
+  recentCollections: { collections: null, novel_collections: null, comic_collections: null },
+  shortcutCaptureAction: "",
   _scanRunning: false,
   _taskKind: "scan",
 };
@@ -32,6 +34,65 @@ const COMIC_PAGES = new Set(["comic", "comic_collections"]);
 const LIST_ONLY = new Set(["text_novel"]);
 const SEARCH_PAGES = new Set(["library", "text_novel", "comic", "comic_collections"]);
 const RANDOM_RECOMMENDATIONS_PAGE = "random_recommendations";
+const SHORTCUT_MOUSE_TOKENS = new Set(["MouseBack", "MouseForward"]);
+const SHORTCUT_MODIFIERS = ["Ctrl", "Alt", "Shift", "Meta"];
+const SHORTCUT_SPECIAL_KEY_CODES = new Set([
+  "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
+  "Home", "End", "PageUp", "PageDown", "Insert", "Delete", "Backspace",
+  "Backquote", "Minus", "Equal", "BracketLeft", "BracketRight", "Backslash",
+  "Semicolon", "Quote", "Comma", "Period", "Slash",
+  "NumpadAdd", "NumpadSubtract", "NumpadMultiply", "NumpadDivide", "NumpadDecimal",
+]);
+const RESERVED_SHORTCUT_TOKENS = new Set([
+  "F5", "Ctrl+KeyR", "Ctrl+KeyW", "Ctrl+KeyQ",
+  "Ctrl+Equal", "Ctrl+Shift+Equal", "Ctrl+Minus", "Ctrl+Digit0", "Ctrl+Numpad0",
+  "Ctrl+NumpadAdd", "Ctrl+NumpadSubtract", "Alt+F4",
+]);
+
+function isShortcutKeyCode(code) {
+  return /^(Key[A-Z]|Digit[0-9]|Numpad[0-9]|F(?:[1-9]|1[0-9]|2[0-4]))$/.test(code)
+    || SHORTCUT_SPECIAL_KEY_CODES.has(code);
+}
+
+function isBindableShortcutToken(inputToken) {
+  const token = String(inputToken || "");
+  if (SHORTCUT_MOUSE_TOKENS.has(token)) return true;
+  if (!token || RESERVED_SHORTCUT_TOKENS.has(token)) return false;
+  const parts = token.split("+");
+  const code = parts.pop();
+  const modifiers = parts;
+  const expectedModifiers = SHORTCUT_MODIFIERS.filter((name) => modifiers.includes(name));
+  return modifiers.join("+") === expectedModifiers.join("+") && isShortcutKeyCode(code || "");
+}
+
+function shortcutTokenFromMouseEvent(event) {
+  const button = Number(event && event.button);
+  if (button === 3) return "MouseBack";
+  if (button === 4) return "MouseForward";
+  const which = Number(event && event.which);
+  if (which === 4) return "MouseBack";
+  if (which === 5) return "MouseForward";
+  const buttons = Number(event && event.buttons);
+  if (buttons & 8) return "MouseBack";
+  if (buttons & 16) return "MouseForward";
+  return "";
+}
+
+function shortcutTokenFromKeyboardEvent(event) {
+  const code = String(event && event.code || "");
+  const key = String(event && event.key || "");
+  const keyCode = Number(event && (event.keyCode || event.which));
+  if (code === "BrowserBack" || key === "BrowserBack" || keyCode === 166) return "MouseBack";
+  if (code === "BrowserForward" || key === "BrowserForward" || keyCode === 167) return "MouseForward";
+  if (!isShortcutKeyCode(code)) return "";
+  const modifiers = [];
+  if (event.ctrlKey) modifiers.push("Ctrl");
+  if (event.altKey) modifiers.push("Alt");
+  if (event.shiftKey) modifiers.push("Shift");
+  if (event.metaKey) modifiers.push("Meta");
+  const token = [...modifiers, code].join("+");
+  return isBindableShortcutToken(token) ? token : "";
+}
 
 function isComicCollectionDetail(data) {
   const d = data || currentPageData();
@@ -47,10 +108,85 @@ function isSearchablePage(page) {
 function applyCollectionPageData(json) {
   const d = typeof json === "string" || json == null ? safeParse(json) : json;
   const page = COLLECTION_PAGES.has(State.currentPage) ? State.currentPage : "collections";
+  applyCollectionDataForPage(page, d);
+}
+
+function applyCollectionDataForPage(page, data) {
+  const d = typeof data === "string" || data == null ? safeParse(data) : data;
   if (d) {
     State.pages[page] = d;
     if (State.currentPage === page) scheduleRenderPage();
   }
+}
+
+function isCollectionDetailData(data) {
+  return Boolean(data && data.collectionId && (data.mode === "collection_detail" || data.mode === "comic"));
+}
+
+function rememberRecentCollection(page, data) {
+  if (!COLLECTION_PAGES.has(page) || !isCollectionDetailData(data)) return;
+  State.recentCollections[page] = {
+    collectionId: Number(data.collectionId),
+    collectionName: String(data.collectionName || ""),
+  };
+}
+
+function forgetRecentCollection(page, collectionId) {
+  const recent = State.recentCollections[page];
+  if (recent && Number(recent.collectionId) === Number(collectionId)) {
+    State.recentCollections[page] = null;
+  }
+}
+
+function openCollectionWithHistory(page, collectionId, notifyMissing) {
+  State.bridge.openCollection(page, Number(collectionId), (json) => {
+    const data = safeParse(json);
+    if (data && Number(data.collectionId) === Number(collectionId) && isCollectionDetailData(data)) {
+      rememberRecentCollection(page, data);
+    } else if (notifyMissing) {
+      State.recentCollections[page] = null;
+      showShortcutNotice("shortcut.recent_missing");
+    }
+    applyCollectionDataForPage(page, data);
+  });
+}
+
+function exitCurrentCollection() {
+  const page = State.currentPage;
+  if (!COLLECTION_PAGES.has(page)) {
+    showShortcutNotice("shortcut.not_collection_page");
+    return false;
+  }
+  const data = State.pages[page] || {};
+  if (!isCollectionDetailData(data)) {
+    showShortcutNotice("shortcut.no_collection_to_exit");
+    return false;
+  }
+  rememberRecentCollection(page, data);
+  State.bridge.closeCollection(page, (json) => applyCollectionDataForPage(page, json));
+  renderDetailEmpty();
+  return true;
+}
+
+function reopenRecentCollection() {
+  const page = State.currentPage;
+  if (!COLLECTION_PAGES.has(page)) {
+    showShortcutNotice("shortcut.not_collection_page");
+    return false;
+  }
+  const data = State.pages[page] || {};
+  if (isCollectionDetailData(data)) {
+    showShortcutNotice("shortcut.already_in_collection");
+    return false;
+  }
+  const recent = State.recentCollections[page];
+  if (!recent) {
+    showShortcutNotice("shortcut.no_recent_collection");
+    return false;
+  }
+  openCollectionWithHistory(page, recent.collectionId, true);
+  renderDetailEmpty();
+  return true;
 }
 
 function searchPlaceholderForPage(page) {
@@ -140,8 +276,9 @@ function wireSignals() {
     const data = safeParse(json);
     if (data && data.pages) {
       State.pages = data.pages;
+      const selectionCleared = clearInvalidCurrentSelectionAfterResourceChange();
       if (data.recommendationsInvalidated) {
-        invalidateRandomRecommendations();
+        invalidateRandomRecommendations(true);
       }
       if (State.currentPage === RANDOM_RECOMMENDATIONS_PAGE) {
         if (data.recommendationsInvalidated) {
@@ -149,11 +286,11 @@ function wireSignals() {
           loadRandomRecommendations();
         } else {
           scheduleRenderPage();
-          refreshDetailIfSelected();
+          if (!selectionCleared) refreshDetailIfSelected();
         }
       } else if (State.currentPage !== "settings") {
         scheduleRenderPage();
-        refreshDetailIfSelected();
+        if (!selectionCleared) refreshDetailIfSelected();
       }
     }
   });
@@ -201,6 +338,9 @@ function wireSignals() {
         );
       }
     });
+  }
+  if (b.nativeShortcutInput && b.nativeShortcutInput.connect) {
+    b.nativeShortcutInput.connect(handleNativeShortcutInput);
   }
   if (typeof wireTextRulesSignal === "function") wireTextRulesSignal(b);
 }
@@ -280,6 +420,7 @@ function selectPage(page) {
   // Same-page nav click: avoid wiping/rebuilding hundreds of cards.
   if (page === State.currentPage && page !== "settings") return;
   savePageScroll(State.currentPage);
+  if (page !== "settings") State.shortcutCaptureAction = "";
   State.currentPage = page;
   document.querySelectorAll(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.page === page));
   $("settingsBtn").classList.toggle("active", page === "settings");
@@ -393,9 +534,7 @@ function renderPageTools(page, data) {
   const inCollectionDetail = data.mode === "collection_detail" || isComicCollectionDetail(data);
   if (inCollectionDetail) {
     const back = elem("button", "ghost-btn", t("common.back", "Back"));
-    back.addEventListener("click", () => {
-      State.bridge.closeCollection(page, (json) => applyCollectionPageData(json));
-    });
+    back.addEventListener("click", () => executeAction("exit_collection", null));
     tools.appendChild(back);
     if (data.mode !== "comic") return;
   }
@@ -466,12 +605,18 @@ function getRecommendationColumnsPerCategory(settings) {
   return new Set([1, 2, 3]).has(value) ? value : 2;
 }
 
-function invalidateRandomRecommendations() {
+function invalidateRandomRecommendations(notifyStaleSelection) {
   // Retire any pending callback before requesting against the new source snapshot or item-count setting.
+  const selectedResourceBecameStale = Boolean(
+    notifyStaleSelection
+    && State.currentPage === RANDOM_RECOMMENDATIONS_PAGE
+    && State.recommendationSelection
+  );
   State.recommendationRequestId += 1;
   State.recommendationsLoading = false;
   State.recommendations = null;
   State.recommendationSelection = null;
+  if (selectedResourceBecameStale) showShortcutNotice("shortcut.selection_stale");
 }
 
 const RECOMMENDATION_CARD_MIN_WIDTH = 120;
@@ -712,7 +857,7 @@ function renderCollections(area, items) {
     card.appendChild(elem("div", "card-title", item.title));
     card.appendChild(elem("div", "card-meta", item.meta || ""));
     const openCol = () => {
-      State.bridge.openCollection(page, item.collectionId, (json) => applyCollectionPageData(json));
+      openCollectionWithHistory(page, item.collectionId, false);
     };
     card.addEventListener("click", openCol);
     card.addEventListener("contextmenu", (e) => {
@@ -970,6 +1115,297 @@ function buildDetailBlock(label, value) {
   return block;
 }
 
+/* ---------- actions and shortcuts ---------- */
+function isComicActionContext(context) {
+  return Boolean(context && (context.page === "comic" || context.page === "comic_collections"));
+}
+
+const SHORTCUT_ACTIONS = {
+  exit_collection: {
+    labelKey: "shortcut.action.exit_collection",
+    needsResource: false,
+    available: () => true,
+    run: () => exitCurrentCollection(),
+  },
+  reopen_recent_collection: {
+    labelKey: "shortcut.action.reopen_recent_collection",
+    needsResource: false,
+    available: () => true,
+    run: () => reopenRecentCollection(),
+  },
+  open_resource: {
+    labelKey: "shortcut.action.open_resource",
+    needsResource: true,
+    available: () => true,
+    run: (context) => State.bridge.openResource(context.page, context.item.id),
+  },
+  open_folder: {
+    labelKey: "shortcut.action.open_folder",
+    needsResource: true,
+    available: (context) => !isComicActionContext(context),
+    run: (context) => State.bridge.openFolder(context.item.id),
+  },
+  quick_add: {
+    labelKey: "shortcut.action.quick_add",
+    needsResource: true,
+    available: () => true,
+    run: (context) => openQuickAddModal(context.item, context.page),
+  },
+  edit_cover: {
+    labelKey: "shortcut.action.edit_cover",
+    needsResource: true,
+    available: () => true,
+    run: (context) => State.bridge.editCover(context.item.id),
+  },
+  remove_from_collection: {
+    labelKey: "shortcut.action.remove_from_collection",
+    needsResource: true,
+    available: (context) => Boolean(context.isCollectionDetail && context.collectionId),
+    run: (context) => State.bridge.removeFromCollection(context.item.id, context.collectionId),
+  },
+  remove_from_library: {
+    labelKey: "shortcut.action.remove_from_library",
+    needsResource: true,
+    available: (context) => (
+      context.page === "library" || context.page === "text_novel" || context.page === "comic"
+      || context.isCollectionDetail
+    ),
+    run: (context) => confirmRemoveFromLibrary(context.page, context.item),
+  },
+};
+
+function showShortcutNotice(key, params) {
+  showToast(
+    t("shortcut.notice.title", "Shortcut"),
+    fmt(t(key, key), params || {}),
+    "info"
+  );
+}
+
+function executeAction(actionId, context) {
+  const action = SHORTCUT_ACTIONS[actionId];
+  if (!action) {
+    showShortcutNotice("shortcut.unavailable");
+    return false;
+  }
+  if (action.needsResource && (!context || !context.item || !context.item.id)) {
+    showShortcutNotice("shortcut.no_selection");
+    return false;
+  }
+  if (!action.available(context)) {
+    showShortcutNotice("shortcut.unavailable");
+    return false;
+  }
+  action.run(context);
+  return true;
+}
+
+function selectedResourceActionContext() {
+  if (State.currentPage === RANDOM_RECOMMENDATIONS_PAGE) {
+    const selected = State.recommendationSelection;
+    const columns = State.recommendations && Array.isArray(State.recommendations.columns)
+      ? State.recommendations.columns : [];
+    const column = selected && columns.find((entry) => entry.sourcePage === selected.sourcePage);
+    const item = column && Array.isArray(column.items)
+      ? column.items.find((entry) => String(entry.id) === String(selected.id)) : null;
+    if (!item) {
+      State.recommendationSelection = null;
+      return null;
+    }
+    return {
+      page: column.sourcePage,
+      item,
+      isCollectionDetail: false,
+      collectionId: null,
+    };
+  }
+
+  const page = State.currentPage;
+  const data = State.pages[page] || {};
+  const selectedId = State.selected[page];
+  const items = Array.isArray(data.items) ? data.items : [];
+  const item = items.find((entry) => String(entry.id) === String(selectedId));
+  if (!item) {
+    if (selectedId != null) delete State.selected[page];
+    return null;
+  }
+  return {
+    page,
+    item,
+    isCollectionDetail: isCollectionDetailData(data),
+    collectionId: data.collectionId || null,
+  };
+}
+
+function clearInvalidCurrentSelectionAfterResourceChange() {
+  const page = State.currentPage;
+  if (page === RANDOM_RECOMMENDATIONS_PAGE || page === "settings") return false;
+  const selectedId = State.selected[page];
+  if (selectedId == null) return false;
+  const data = State.pages[page] || {};
+  if (COLLECTION_PAGES.has(page) && !isCollectionDetailData(data)) return false;
+  const items = Array.isArray(data.items) ? data.items : [];
+  if (items.some((item) => String(item.id) === String(selectedId))) return false;
+  delete State.selected[page];
+  renderDetailEmpty();
+  showShortcutNotice("shortcut.selection_stale");
+  return true;
+}
+
+function shortcutBindings() {
+  const bindings = State.settings && State.settings.shortcutBindings;
+  return bindings && typeof bindings === "object" ? bindings : {};
+}
+
+function shortcutActionForInput(inputToken) {
+  return Object.keys(SHORTCUT_ACTIONS).find((actionId) => shortcutBindings()[actionId] === inputToken) || "";
+}
+
+function dispatchShortcutInput(inputToken) {
+  const actionId = shortcutActionForInput(inputToken);
+  if (!actionId) return false;
+  const action = SHORTCUT_ACTIONS[actionId];
+  const context = action.needsResource ? selectedResourceActionContext() : null;
+  return executeAction(actionId, context);
+}
+
+function isVisibleOverlay(id) {
+  const overlay = $(id);
+  return Boolean(overlay && !overlay.classList.contains("hidden"));
+}
+
+function isEditableShortcutTarget(target) {
+  if (!target) return false;
+  const tag = String(target.tagName || "").toLowerCase();
+  if (["input", "select", "textarea"].includes(tag) || target.isContentEditable) return true;
+  return Boolean(target.closest && target.closest("[contenteditable='true']"));
+}
+
+function shortcutInteractionBlocked(event) {
+  const target = event && event.target ? event.target : document.activeElement;
+  return isEditableShortcutTarget(target)
+    || isVisibleOverlay("overlay")
+    || isVisibleOverlay("textRulesOverlay");
+}
+
+function beginShortcutCapture(actionId) {
+  if (!SHORTCUT_ACTIONS[actionId]) return false;
+  State.shortcutCaptureAction = actionId;
+  if (State.currentPage === "settings") renderSettings();
+  return true;
+}
+
+function cancelShortcutCapture() {
+  if (!State.shortcutCaptureAction) return false;
+  State.shortcutCaptureAction = "";
+  if (State.currentPage === "settings") renderSettings();
+  return true;
+}
+
+function persistShortcutBinding(actionId, inputToken) {
+  if (!State.bridge || !State.bridge.setShortcutBinding) return false;
+  State.bridge.setShortcutBinding(actionId, inputToken, (json) => {
+    const result = safeParse(json);
+    if (!result) {
+      showShortcutNotice("shortcut.binding_invalid");
+      return;
+    }
+    if (!result.ok) {
+      if (result.error === "duplicate") {
+        const conflict = SHORTCUT_ACTIONS[result.conflictAction];
+        showShortcutNotice("shortcut.binding_duplicate", {
+          action: conflict ? t(conflict.labelKey, result.conflictAction) : result.conflictAction,
+        });
+      } else {
+        showShortcutNotice("shortcut.binding_invalid");
+      }
+      if (State.currentPage === "settings") renderSettings();
+      return;
+    }
+    State.settings.shortcutBindings = result.bindings || {};
+    State.shortcutCaptureAction = "";
+    if (State.currentPage === "settings") renderSettings();
+  });
+  return true;
+}
+
+function clearShortcutBinding(actionId) {
+  if (State.shortcutCaptureAction === actionId) State.shortcutCaptureAction = "";
+  return persistShortcutBinding(actionId, "");
+}
+
+function captureShortcutInput(inputToken) {
+  if (!State.shortcutCaptureAction || !isBindableShortcutToken(inputToken)) {
+    if (State.shortcutCaptureAction) showShortcutNotice("shortcut.binding_invalid");
+    return false;
+  }
+  return persistShortcutBinding(State.shortcutCaptureAction, inputToken);
+}
+
+function handleShortcutKeydown(event) {
+  if (!event || event.repeat) return false;
+  if (State.shortcutCaptureAction) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.code === "Escape") {
+      cancelShortcutCapture();
+      return true;
+    }
+    const capturedToken = shortcutTokenFromKeyboardEvent(event);
+    if (capturedToken) captureShortcutInput(capturedToken);
+    else if (!/^(Control|Shift|Alt|Meta)(Left|Right)$/.test(String(event.code || ""))) {
+      showShortcutNotice("shortcut.binding_invalid");
+    }
+    return true;
+  }
+  const browserToken = shortcutTokenFromKeyboardEvent(event);
+  if (browserToken && SHORTCUT_MOUSE_TOKENS.has(browserToken)) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (shortcutInteractionBlocked(event)) return false;
+    return dispatchShortcutInput(browserToken);
+  }
+  if (shortcutInteractionBlocked(event)) return false;
+  const inputToken = shortcutTokenFromKeyboardEvent(event);
+  if (!inputToken || !shortcutActionForInput(inputToken)) return false;
+  event.preventDefault();
+  event.stopPropagation();
+  dispatchShortcutInput(inputToken);
+  return true;
+}
+
+let lastSideButtonToken = "";
+let lastSideButtonAt = 0;
+
+function handleShortcutSideButton(event) {
+  const token = shortcutTokenFromMouseEvent(event);
+  if (!token) return false;
+  if (event && event.preventDefault) event.preventDefault();
+  if (event && event.stopPropagation) event.stopPropagation();
+  const now = Date.now();
+  if (token === lastSideButtonToken && now - lastSideButtonAt < 120) return true;
+  lastSideButtonToken = token;
+  lastSideButtonAt = now;
+  if (State.shortcutCaptureAction) return captureShortcutInput(token);
+  if (shortcutInteractionBlocked(event)) return false;
+  return dispatchShortcutInput(token);
+}
+
+function handleShortcutMouseDown(event) {
+  return handleShortcutSideButton(event);
+}
+
+function suppressShortcutMouseNavigation(event) {
+  return handleShortcutSideButton(event);
+}
+
+function handleNativeShortcutInput(inputToken) {
+  const token = String(inputToken || "");
+  if (State.shortcutCaptureAction) return captureShortcutInput(token);
+  if (shortcutInteractionBlocked(null)) return false;
+  return dispatchShortcutInput(token);
+}
+
 /* ---------- context menu ---------- */
 function positionContextMenu(event) {
   const menu = $("contextMenu");
@@ -1003,29 +1439,34 @@ function openContextMenu(event, page, item, isCollectionDetail) {
   const menu = $("contextMenu");
   clear(menu);
   const isComic = page === "comic" || (page === "comic_collections" && isComicCollectionDetail());
+  const context = {
+    page,
+    item,
+    isCollectionDetail: Boolean(isCollectionDetail),
+    collectionId: isCollectionDetail ? currentPageData().collectionId : null,
+  };
   menuAction(
     isComic ? t("menu.open_cover", "Open Cover") : t("menu.open_external", "Open External"),
-    () => State.bridge.openResource(page, item.id)
+    () => executeAction("open_resource", context)
   );
   if (!isComic) {
-    menuAction(t("menu.open_folder", "Open Folder"), () => State.bridge.openFolder(item.id));
+    menuAction(t("menu.open_folder", "Open Folder"), () => executeAction("open_folder", context));
   }
-  menuAction(t("menu.quick_add", "Quick Add Tag / Collection"), () => openQuickAddModal(item, page));
-  menuAction(t("menu.edit_cover", "Edit Cover..."), () => State.bridge.editCover(item.id));
+  menuAction(t("menu.quick_add", "Quick Add Tag / Collection"), () => executeAction("quick_add", context));
+  menuAction(t("menu.edit_cover", "Edit Cover..."), () => executeAction("edit_cover", context));
   if (isCollectionDetail) {
-    const cid = currentPageData().collectionId;
     menu.appendChild(elem("hr"));
     menuAction(
       t("menu.collection_remove", "Remove from Collection"),
-      () => State.bridge.removeFromCollection(item.id, cid),
+      () => executeAction("remove_from_collection", context),
       true
     );
   }
-  if (page === "library" || page === "text_novel" || page === "comic" || isComic) {
+  if (page === "library" || page === "text_novel" || page === "comic" || isCollectionDetail) {
     menu.appendChild(elem("hr"));
     menuAction(
       t("menu.remove_library", "Remove from Library"),
-      () => confirmRemoveFromLibrary(page, item),
+      () => executeAction("remove_from_library", context),
       true
     );
   }
@@ -1209,6 +1650,7 @@ function openDeleteCollectionModal(item) {
     const confirm = elem("button", "danger-btn", t("menu.collection_delete", "Delete"));
     confirm.addEventListener("click", () => {
       State.bridge.deleteCollection(item.collectionId, () => {
+        forgetRecentCollection(State.currentPage, item.collectionId);
         close();
         State.bridge.closeCollection(State.currentPage, (json) => applyCollectionPageData(json));
       });
@@ -1375,6 +1817,7 @@ function openQuickAddModal(item, sourcePage) {
 const SETTINGS_SECTIONS = [
   ["general", "settings.nav.general"],
   ["appearance", "settings.nav.appearance"],
+  ["shortcuts", "settings.nav.shortcuts"],
   ["paths", "settings.nav.paths"],
   ["errors", "settings.nav.errors"],
 ];
@@ -1398,7 +1841,11 @@ function renderSettings() {
   else if (State._settingsSection === "tasks") State._settingsSection = "paths";
   SETTINGS_SECTIONS.forEach(([id, key]) => {
     const btn = elem("button", State._settingsSection === id ? "active" : null, t(key));
-    btn.addEventListener("click", () => { State._settingsSection = id; renderSettings(); });
+    btn.addEventListener("click", () => {
+      if (id !== "shortcuts") State.shortcutCaptureAction = "";
+      State._settingsSection = id;
+      renderSettings();
+    });
     nav.appendChild(btn);
   });
   grid.appendChild(nav);
@@ -1408,6 +1855,7 @@ function renderSettings() {
   const section = State._settingsSection;
   if (section === "general") renderSettingsGeneral(panel);
   else if (section === "appearance") renderSettingsAppearance(panel);
+  else if (section === "shortcuts") renderSettingsShortcuts(panel);
   else if (section === "paths") {
     renderSettingsPaths(panel);
     renderSettingsTasks(panel);
@@ -1459,6 +1907,107 @@ function textField(labelKey, key, value, type) {
   input.addEventListener("change", () => State.bridge.setSetting(key, String(input.value)));
   field.appendChild(input);
   return field;
+}
+
+const SHORTCUT_DISPLAY_CODES = {
+  MouseBack: "shortcut.input.mouse_back",
+  MouseForward: "shortcut.input.mouse_forward",
+  ArrowUp: "↑",
+  ArrowDown: "↓",
+  ArrowLeft: "←",
+  ArrowRight: "→",
+  Backspace: "Backspace",
+  PageUp: "Page Up",
+  PageDown: "Page Down",
+  NumpadAdd: "Num +",
+  NumpadSubtract: "Num −",
+  NumpadMultiply: "Num ×",
+  NumpadDivide: "Num ÷",
+  NumpadDecimal: "Num .",
+};
+
+function shortcutCodeLabel(code) {
+  if (SHORTCUT_DISPLAY_CODES[code]) {
+    const label = SHORTCUT_DISPLAY_CODES[code];
+    return label.startsWith("shortcut.") ? t(label, code) : label;
+  }
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+  if (/^Numpad[0-9]$/.test(code)) return `Num ${code.slice(6)}`;
+  return code;
+}
+
+function shortcutDisplayLabel(inputToken) {
+  const token = String(inputToken || "");
+  if (!token) return t("shortcut.unassigned", "Not assigned");
+  if (SHORTCUT_MOUSE_TOKENS.has(token)) return shortcutCodeLabel(token);
+  const parts = token.split("+");
+  const code = parts.pop() || "";
+  return [...parts, shortcutCodeLabel(code)].join(" + ");
+}
+
+function buildShortcutRow(actionId) {
+  const action = SHORTCUT_ACTIONS[actionId];
+  const token = shortcutBindings()[actionId] || "";
+  const capturing = State.shortcutCaptureAction === actionId;
+  const row = elem("div", `shortcut-row${capturing ? " is-capturing" : ""}`);
+  row.dataset.actionId = actionId;
+  row.appendChild(elem("div", "shortcut-action-label", t(action.labelKey, actionId)));
+
+  const binding = elem("button", "shortcut-binding-btn");
+  binding.type = "button";
+  binding.setAttribute("aria-pressed", capturing ? "true" : "false");
+  binding.setAttribute("aria-label", fmt(
+    t("shortcut.capture_aria", "Set shortcut for {action}"),
+    { action: t(action.labelKey, actionId) }
+  ));
+  binding.appendChild(elem(
+    "span",
+    `shortcut-keycap${token ? "" : " is-empty"}`,
+    capturing ? t("shortcut.capture", "Press a key or mouse side button…") : shortcutDisplayLabel(token)
+  ));
+  binding.addEventListener("click", () => beginShortcutCapture(actionId));
+  row.appendChild(binding);
+
+  const clearButton = elem("button", "ghost-btn shortcut-clear-btn", t("shortcut.clear", "Clear"));
+  clearButton.type = "button";
+  clearButton.disabled = !token;
+  clearButton.addEventListener("click", () => clearShortcutBinding(actionId));
+  row.appendChild(clearButton);
+  return row;
+}
+
+function buildShortcutGroup(titleKey, actionIds) {
+  const card = settingCard(t(titleKey));
+  const list = elem("div", "shortcut-list");
+  actionIds.forEach((actionId) => list.appendChild(buildShortcutRow(actionId)));
+  card.appendChild(list);
+  return card;
+}
+
+function renderSettingsShortcuts(panel) {
+  const intro = settingCard(t("settings.nav.shortcuts", "Shortcuts"));
+  intro.appendChild(elem("p", "small-note", t(
+    "shortcut.scope_hint",
+    "Shortcuts work only while this app is focused. Reserved system, zoom, and accessibility keys cannot be assigned."
+  )));
+  intro.appendChild(elem("p", "small-note", t(
+    "shortcut.capture_hint",
+    "Choose a binding field, then press a key combination or a mouse side button. Press Escape to cancel."
+  )));
+  panel.appendChild(intro);
+  panel.appendChild(buildShortcutGroup("shortcut.section.navigation", [
+    "reopen_recent_collection",
+    "exit_collection",
+  ]));
+  panel.appendChild(buildShortcutGroup("shortcut.section.resource", [
+    "open_resource",
+    "open_folder",
+    "quick_add",
+    "edit_cover",
+    "remove_from_collection",
+    "remove_from_library",
+  ]));
 }
 
 function renderSettingsGeneral(panel) {
@@ -2155,7 +2704,12 @@ function updateSuggestions() {
 function closeSuggestions() { $("suggestions").classList.remove("open"); }
 
 /* ---------- boot ---------- */
+document.addEventListener("pointerdown", handleShortcutSideButton, true);
+document.addEventListener("mousedown", handleShortcutSideButton, true);
+document.addEventListener("mouseup", handleShortcutSideButton, true);
+document.addEventListener("auxclick", handleShortcutSideButton, true);
 document.addEventListener("DOMContentLoaded", () => {
   initTopbar();
   initChannel();
 });
+document.addEventListener("keydown", handleShortcutKeydown, true);

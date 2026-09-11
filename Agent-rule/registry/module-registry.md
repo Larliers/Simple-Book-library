@@ -158,3 +158,18 @@
   "notes": "页面仅 grid，无 list；文本区位于详情缩略图下方"
 }
 ```
+
+### shortcut_action_dispatcher
+```json
+{
+  "module_name": "shortcut_action_dispatcher",
+  "owner_agent": "ui-agent",
+  "status": "active",
+  "purpose": "把右键菜单、键盘快捷键、页面侧键与原生/Windows 侧键消息统一路由到带真实资源上下文的动作入口",
+  "input": ["shortcut_bindings", "keyboard_event_code", "page_mouse_side_input", "native_mouse_side_input", "win_xbutton_appcommand", "selected_resource_context", "recent_collections_by_page"],
+  "output": ["action_execution", "binding_result", "shortcut_notice", "collection_navigation", "interaction_events"],
+  "upstream": ["resource_list_view", "random_recommendations_view", "UiBridge", "ShortcutWebView"],
+  "downstream": ["resource_detail_binding", "external_open_action", "collection_membership", "library_removal"],
+  "notes": "八个固定动作；绑定经 app_settings 持久化且默认留空；退出/进入最近系列分属两个动作，三类合集页会话内独立记忆；侧键经 JS/Qt 子控件/Windows XButton 与 APPCOMMAND 归一为 MouseBack/MouseForward；系统保留键、编辑控件、模态框与 Text Rules 受保护"
+}
+```

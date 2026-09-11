@@ -2,7 +2,7 @@
 
 ## 最新记录
 ```json
-{"log_id":"worklog-20260910-001","timestamp":"2026-09-10T17:16:34+08:00","actor":"ui-agent","task":"随机推荐响应式密度与可控布局","changes":["新增每类数量与内部最大列数持久化设置","推荐抽样上限改为配置驱动","双皮肤推荐栈改为 ResizeObserver 响应式网格"],"affected_files":["src/bookhub/library/repository.py","src/bookhub/ui/web_bridge.py","src/bookhub/ui/web_window.py","src/bookhub/ui/web/js/app.js","src/bookhub/ui/web/css/skins/*/components.css"],"outputs":["默认每类 6 项、内部最多 2 列","卡宽目标 120–260px 且无固定 148px"],"risks":["极窄分类容器会降为单列并允许卡片低于 120px"],"next_actions":["持续观察高 DPI 与超宽屏组合"]}
+{"log_id":"worklog-20260911-005","timestamp":"2026-09-11T13:05:00+08:00","actor":"ui-agent","task":"提交快捷键改动并触发远程 minor Release","changes":["提交快捷键、合集分键与侧键识别，不含 pyc","触发 GitHub Actions Release bump=minor，预期 v2.2.0"],"affected_files":[".github/workflows/release.yml"],"outputs":["origin/main 功能提交","workflow_dispatch Release"],"risks":["工作流会再提交 chore: release 并打 tag","Nuitka 远程构建可能超过一小时"],"next_actions":[]}
 ```
 
 ## 记录规则
@@ -47,6 +47,123 @@
   "outputs": ["v0.1.0 基线规则可用"],
   "risks": ["后续模块扩展需严格遵守字段稳定性"],
   "next_actions": ["执行首轮模块任务拆分并登记 registry"]
+}
+```
+
+## 2026-09-11 - 提交并触发远程 Release
+
+```json
+{
+  "log_id": "worklog-20260911-005",
+  "timestamp": "2026-09-11T13:05:00+08:00",
+  "actor": "ui-agent",
+  "task": "提交快捷键改动并触发远程 minor Release",
+  "changes": [
+    "提交快捷键、合集分键与侧键识别，排除 pyc",
+    "触发 GitHub Actions Release bump=minor"
+  ],
+  "affected_files": [".github/workflows/release.yml"],
+  "outputs": ["origin/main 功能提交", "workflow_dispatch Release"],
+  "risks": ["工作流会再提交 chore: release 并打 tag", "Nuitka 远程构建可能超过一小时"],
+  "next_actions": []
+}
+```
+
+## 2026-09-11 - 快捷键绑定识别鼠标侧键
+
+```json
+{
+  "log_id": "worklog-20260911-004",
+  "timestamp": "2026-09-11T13:10:00+08:00",
+  "actor": "ui-agent",
+  "task": "修复快捷键绑定无法识别鼠标侧键",
+  "changes": [
+    "JS 识别 button/which/buttons、BrowserBack 与 keyCode 166/167，并在 pointerdown/mousedown/mouseup/auxclick 去重录入",
+    "ShortcutWebView 过滤 Chromium 子控件上的 Back/Forward",
+    "Windows 原生过滤 WM_XBUTTONDOWN 与 WM_APPCOMMAND"
+  ],
+  "affected_files": [
+    "src/bookhub/ui/web/js/app.js",
+    "src/bookhub/ui/web_window.py",
+    "src/tests/js/test_shortcuts.js",
+    "src/tests/test_web_bridge_smoke.py",
+    "Agent-rule/contracts/ui-contract.md",
+    "Agent-rule/registry/module-registry.md"
+  ],
+  "outputs": [
+    "侧键三条通道归一为 MouseBack/MouseForward",
+    "专项测试覆盖映射、子控件与 auxclick 去重"
+  ],
+  "risks": [
+    "Chromium 独立 HWND 仍可能不进 Qt 消息泵",
+    "应用内未绑定的侧键不再触发网页前进/后退"
+  ],
+  "next_actions": []
+}
+```
+
+## 2026-09-11 - 合集退出/进入拆分与按页记忆
+
+```json
+{
+  "log_id": "worklog-20260911-003",
+  "timestamp": "2026-09-11T12:55:00+08:00",
+  "actor": "ui-agent",
+  "task": "把合集导航从单一切换拆成退出与进入最近系列，并按合集页独立记忆",
+  "changes": [
+    "新增 exit_collection 与 reopen_recent_collection，移除 toggle_recent_collection",
+    "State.recentCollections 按 collections/novel_collections/comic_collections 分记",
+    "非合集页、列表态退出、详情态进入分别提示"
+  ],
+  "affected_files": [
+    "src/bookhub/library/repository.py",
+    "src/bookhub/ui/web/js/app.js",
+    "src/bookhub/ui/web_bridge.py",
+    "src/bookhub/i18n/locales/zh-cn.json",
+    "src/tests/js/test_shortcuts.js",
+    "src/tests/test_web_bridge_smoke.py",
+    "src/tests/test_cover_grid_settings.py"
+  ],
+  "outputs": [
+    "设置导航组显示进入最近系列与退出当前系列",
+    "专项测试覆盖三类独立记忆与删除失效"
+  ],
+  "risks": [
+    "已保存的 toggle_recent_collection 绑定不会迁移",
+    "全量测试仍有两个既有非法整型失败"
+  ],
+  "next_actions": []
+}
+```
+
+## 2026-09-11 - 关闭 open_resource 可追踪交互事件
+
+```json
+{
+  "log_id": "worklog-20260911-002",
+  "timestamp": "2026-09-11T12:45:00+08:00",
+  "actor": "ui-agent",
+  "task": "接管 Codex 快捷键 WIP 并补齐审查未结案的外部打开事件",
+  "changes": [
+    "openResource 成功解析到存在的目标后发出 event/resource_id/timestamp",
+    "缺失资源或缺失文件不发出成功事件，仍走原有 toast",
+    "同步 Shortcut 合同、shortcut_action_dispatcher 输出与 Bridge 冒烟断言"
+  ],
+  "affected_files": [
+    "src/bookhub/ui/web_bridge.py",
+    "src/tests/test_web_bridge_smoke.py",
+    "Agent-rule/contracts/ui-contract.md",
+    "Agent-rule/registry/module-registry.md"
+  ],
+  "outputs": [
+    "interactionEvent 信号可被测试连接断言",
+    "Repository/Bridge 专项 47 项通过"
+  ],
+  "risks": [
+    "全量测试仍有 2 个既有非法整型设置容错失败",
+    "Vaporwave 仍有 2 个既有 SpaceMono 字体 404"
+  ],
+  "next_actions": []
 }
 ```
 

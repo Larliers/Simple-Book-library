@@ -19,6 +19,7 @@ from bookhub.library.repository import (
     COLLECTION_KIND_COMIC,
     COLLECTION_KIND_TEXT_NOVEL,
     normalize_collection_kind,
+    now_utc_iso,
 )
 from bookhub.library.thumbnail_tasks import resolve_comic_open_path
 from bookhub.ui.viewmodels.library_viewmodel import LibraryViewModel
@@ -163,8 +164,38 @@ def _web_strings() -> dict[str, str]:
         ("settings.nav.general", "General"),
         ("settings.nav.paths", "Paths & Scan"),
         ("settings.nav.appearance", "Appearance & Theme"),
+        ("settings.nav.shortcuts", "Shortcuts"),
         ("settings.nav.tasks", "Scan & Tasks"),
         ("settings.nav.errors", "Error logs"),
+        ("shortcut.section.navigation", "Navigation"),
+        ("shortcut.section.resource", "Current selected resource"),
+        ("shortcut.action.exit_collection", "Exit current series"),
+        ("shortcut.action.reopen_recent_collection", "Reopen recent series"),
+        ("shortcut.action.open_resource", "Open resource"),
+        ("shortcut.action.open_folder", "Open containing folder"),
+        ("shortcut.action.quick_add", "Quick add tag / collection"),
+        ("shortcut.action.edit_cover", "Edit cover"),
+        ("shortcut.action.remove_from_collection", "Remove from collection"),
+        ("shortcut.action.remove_from_library", "Remove from library"),
+        ("shortcut.unassigned", "Not assigned"),
+        ("shortcut.capture", "Press a key or mouse side button…"),
+        ("shortcut.capture_aria", "Set shortcut for {action}"),
+        ("shortcut.clear", "Clear"),
+        ("shortcut.scope_hint", "Shortcuts work only while this app is focused. Reserved system, zoom, and accessibility keys cannot be assigned."),
+        ("shortcut.capture_hint", "Choose a binding field, then press a key combination or a mouse side button. Press Escape to cancel."),
+        ("shortcut.input.mouse_back", "Mouse Back"),
+        ("shortcut.input.mouse_forward", "Mouse Forward"),
+        ("shortcut.notice.title", "Shortcut"),
+        ("shortcut.no_selection", "Select a resource first."),
+        ("shortcut.selection_stale", "The selected resource is no longer available."),
+        ("shortcut.unavailable", "This action is not available for the current resource."),
+        ("shortcut.no_recent_collection", "No series has been opened on this collection page in this session."),
+        ("shortcut.not_collection_page", "Open a book, novel, or comic collection page first."),
+        ("shortcut.no_collection_to_exit", "You are not inside a series."),
+        ("shortcut.already_in_collection", "Already inside a series. Exit first to reopen the recent one."),
+        ("shortcut.recent_missing", "The recent series no longer exists."),
+        ("shortcut.binding_duplicate", "This input is already assigned to “{action}”."),
+        ("shortcut.binding_invalid", "This key cannot be assigned. Try another key or mouse side button."),
         ("settings.language", "Display language"),
         ("settings.font_source", "Font source"),
         ("settings.font_family", "Font family"),
@@ -349,6 +380,8 @@ class UiBridge(QObject):
     languageChanged = Signal(str)
     textRulesOpen = Signal(str)
     updateCheckResult = Signal(str)
+    nativeShortcutInput = Signal(str)
+    interactionEvent = Signal(str)
 
     def __init__(self, repository, allowed_images: set[str], parent=None) -> None:
         super().__init__(parent)
@@ -665,6 +698,7 @@ class UiBridge(QObject):
             "gridColumns": repo.get_grid_columns(),
             "recommendationItemsPerCategory": repo.get_recommendation_items_per_category(),
             "recommendationColumnsPerCategory": repo.get_recommendation_columns_per_category(),
+            "shortcutBindings": repo.get_shortcut_bindings(),
             "comicPlaceholderCopy": repo.get_comic_placeholder_copy_enabled(),
             "autoGenerateComicThumbs": repo.get_auto_generate_comic_thumbnails_after_scan(),
             "comicThumbnailWorkers": repo.get_comic_thumbnail_workers_raw(),
@@ -878,7 +912,20 @@ class UiBridge(QObject):
             target = str(resolved) if resolved else str(detail.get("path") or "")
         else:
             target = str(detail.get("path") or "")
+        if self._external_target_exists(target):
+            self._emit_open_external_event(resource_id)
         self._open_external(target)
+
+    def _external_target_exists(self, path: str) -> bool:
+        file_path = Path(path).expanduser()
+        return bool(str(file_path).strip()) and file_path.exists()
+
+    def _emit_open_external_event(self, resource_id: str) -> None:
+        self.interactionEvent.emit(json.dumps({
+            "event": "open_external",
+            "resource_id": str(resource_id),
+            "timestamp": now_utc_iso(),
+        }, ensure_ascii=False))
 
     def _open_external(self, path: str) -> None:
         file_path = Path(path).expanduser()
@@ -1046,6 +1093,13 @@ class UiBridge(QObject):
         if self._host is not None and hasattr(self._host, "apply_setting"):
             self._host.apply_setting(key, value)
         self.push_settings()
+
+    @Slot(str, str, result=str)
+    def setShortcutBinding(self, action_id: str, input_token: str) -> str:
+        result = self._repo.set_shortcut_binding(action_id, input_token)
+        if result.get("ok"):
+            self.push_settings()
+        return json.dumps(result, ensure_ascii=False)
 
     @Slot(str)
     def setThemeSettings(self, payload_json: str) -> None:

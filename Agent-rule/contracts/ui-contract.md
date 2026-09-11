@@ -88,6 +88,47 @@
 - settings payload 必须提供 `recommendationItemsPerCategory`（3/6/9/12，默认 6）与 `recommendationColumnsPerCategory`（1/2/3，默认 2）。数量变化使会话推荐缓存失效；内部列数变化只重排现有推荐。
 - 外层固定三列；每类内部按行优先排列，设置列数仅为上限。容器宽度不足时按 120px 目标最小宽度从 3→2→1 列降级，卡片最大 260px、间距 18px，极窄时允许继续缩小且不得横向溢出。
 
+## Shortcut Bindings Extension
+
+settings payload 必须提供完整的 `shortcutBindings`，八个固定动作即使未绑定也必须返回空字符串：
+
+```json
+{
+  "shortcutBindings": {
+    "exit_collection": "",
+    "reopen_recent_collection": "",
+    "open_resource": "",
+    "open_folder": "",
+    "quick_add": "",
+    "edit_cover": "",
+    "remove_from_collection": "",
+    "remove_from_library": ""
+  }
+}
+```
+
+`setShortcutBinding(actionId, inputToken)` 返回：
+
+```json
+{
+  "ok": true,
+  "error": "",
+  "conflictAction": "",
+  "bindings": {}
+}
+```
+
+- `inputToken` 使用 `KeyboardEvent.code` 与固定修饰键顺序 `Ctrl+Alt+Shift+Meta+Code`，或 `MouseBack` / `MouseForward`；空字符串表示清除。
+- 一个动作仅允许一个输入，一个输入仅允许一个动作；冲突返回 `error=duplicate` 与占用动作，不覆盖原绑定。
+- `nativeShortcutInput(inputToken)` 与键盘事件进入同一分发器；原生视图必须在自身及 Chromium 子控件上过滤并吞掉鼠标侧键的按下和释放事件，避免网页历史前进/后退。
+- 侧键录入与触发还必须接受页面 `button=3/4`、`which=4/5`、`buttons` 的 X1/X2 位、系统 `BrowserBack`/`BrowserForward`/`keyCode` 166/167，以及 Windows `WM_XBUTTONDOWN` / `WM_APPCOMMAND`，并规范化为 `MouseBack`/`MouseForward`。
+- 同一侧键在 `mousedown` / `mouseup` / `auxclick` / `pointerdown` 上只消费一次，避免重复录入。
+- 快捷键仅在应用聚焦时生效；输入/下拉/可编辑区域、普通模态框及 Text Rules 面板开启时暂停，录入状态除外。
+- 统一动作上下文必须包含当前选中资源的真实页面来源、资源、合集详情标记与合集 ID；无选择或不可用动作必须提示，危险动作继续确认。
+- `open_resource` 必须经 Bridge 在成功解析到可打开目标后发出 `open_external` 交互事件（`event`、`resource_id`、`timestamp`）；资源或文件不存在时不得发出成功事件。
+- 合集导航拆成 `exit_collection`（退出当前系列）与 `reopen_recent_collection`（进入最近系列），语义对应后退/前进；仅在当前合集页生效，书籍/小说/漫画合集各自只记本页最近一次成功打开项。
+- 最近系列仅保存于当前前端会话；成功打开或退出详情时更新对应合集页，重启不恢复；目标删除后只清空该页记忆并提示。
+
 ## Error Shape
 ```json
 {

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import sys
+import time
 
-from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtCore import QAbstractEventDispatcher, QAbstractNativeEventFilter, QEvent, QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase
-from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox
+from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox, QWidget
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineCore import QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
@@ -41,6 +43,191 @@ from bookhub.ui.web_scheme import AppSchemeHandler
 
 APP_INDEX_URL = "app://app/index.html"
 
+WM_XBUTTONDOWN = 0x020B
+WM_XBUTTONDBLCLK = 0x020D
+WM_APPCOMMAND = 0x0319
+APPCOMMAND_BROWSER_BACKWARD = 1
+APPCOMMAND_BROWSER_FORWARD = 2
+
+
+def token_from_win_mouse_message(message: int, wparam: int = 0, lparam: int = 0) -> str | None:
+    if message in (WM_XBUTTONDOWN, WM_XBUTTONDBLCLK):
+        xbutton = (int(wparam) >> 16) & 0xFFFF
+        if xbutton == 1:
+            return "MouseBack"
+        if xbutton == 2:
+            return "MouseForward"
+        return None
+    if message == WM_APPCOMMAND:
+        command = (int(lparam) >> 16) & 0x7FFF
+        if command == APPCOMMAND_BROWSER_BACKWARD:
+            return "MouseBack"
+        if command == APPCOMMAND_BROWSER_FORWARD:
+            return "MouseForward"
+    return None
+
+
+def _win_event_type_name(event_type) -> str:
+    if event_type is None:
+        return ""
+    if isinstance(event_type, str):
+        return event_type.rstrip("\x00")
+    if isinstance(event_type, (bytes, bytearray)):
+        return event_type.decode("ascii", "ignore").rstrip("\x00")
+    try:
+        return bytes(event_type).decode("ascii", "ignore").rstrip("\x00")
+    except (TypeError, ValueError):
+        return str(event_type)
+
+
+if sys.platform == "win32":
+    import ctypes
+    from ctypes import wintypes
+
+    class _WinPoint(ctypes.Structure):
+        _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
+
+    class _WinMsg(ctypes.Structure):
+        _fields_ = [
+            ("hwnd", wintypes.HWND),
+            ("message", wintypes.UINT),
+            ("wParam", wintypes.WPARAM),
+            ("lParam", wintypes.LPARAM),
+            ("time", wintypes.DWORD),
+            ("pt", _WinPoint),
+        ]
+else:
+    ctypes = None  # type: ignore[assignment]
+    _WinMsg = None  # type: ignore[assignment]
+
+
+class _WinSideButtonFilter(QAbstractNativeEventFilter):
+    def __init__(self, emit) -> None:
+        super().__init__()
+        self._emit = emit
+
+    def nativeEventFilter(self, eventType, message):  # type: ignore[override]
+        if ctypes is None or _WinMsg is None:
+            return False
+        name = _win_event_type_name(eventType)
+        if name not in ("windows_generic_MSG", "windows_dispatcher_MSG"):
+            return False
+        try:
+            payload = ctypes.cast(int(message), ctypes.POINTER(_WinMsg)).contents
+            token = token_from_win_mouse_message(int(payload.message), int(payload.wParam), int(payload.lParam))
+        except (TypeError, ValueError, OSError, OverflowError):
+            return False
+        if not token:
+            return False
+        return bool(self._emit(token))
+
+
+class ShortcutWebView(QWebEngineView):
+    nativeShortcutInput = Signal(str)
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._last_side_emit: tuple[str, float] = ("", 0.0)
+        self._native_filter: _WinSideButtonFilter | None = None
+        self.installEventFilter(self)
+        self.destroyed.connect(self._remove_native_filter)
+        self._install_native_filter()
+
+    @staticmethod
+    def _side_button_token(button) -> str | None:
+        return {
+            Qt.BackButton: "MouseBack",
+            Qt.ForwardButton: "MouseForward",
+            Qt.ExtraButton1: "MouseBack",
+            Qt.ExtraButton2: "MouseForward",
+        }.get(button)
+
+    def _is_inside_view(self, watched) -> bool:
+        current = watched
+        while current is not None:
+            if current is self:
+                return True
+            current = current.parent() if isinstance(current, QObject) else None
+        return False
+
+    def _consume_side_button(self, event, *, emit: bool) -> bool:
+        token = self._side_button_token(event.button())
+        if not token:
+            return False
+        event.accept()
+        if emit:
+            self._emit_side_button(token)
+        return True
+
+    def _window_accepts_side_buttons(self) -> bool:
+        if not self.isVisible():
+            return True
+        window = self.window()
+        return window is None or window.isActiveWindow()
+
+    def _emit_side_button(self, token: str) -> bool:
+        if not self._window_accepts_side_buttons():
+            return False
+        now = time.monotonic()
+        last_token, last_at = self._last_side_emit
+        if token == last_token and now - last_at < 0.08:
+            return True
+        self._last_side_emit = (token, now)
+        self.nativeShortcutInput.emit(token)
+        return True
+
+    def _install_native_filter(self) -> None:
+        if sys.platform != "win32" or self._native_filter is not None:
+            return
+        dispatcher = QAbstractEventDispatcher.instance()
+        if dispatcher is None:
+            return
+        self._native_filter = _WinSideButtonFilter(self._emit_side_button)
+        dispatcher.installNativeEventFilter(self._native_filter)
+
+    def _remove_native_filter(self, *_args) -> None:
+        if self._native_filter is None:
+            return
+        dispatcher = QAbstractEventDispatcher.instance()
+        if dispatcher is not None:
+            dispatcher.removeNativeEventFilter(self._native_filter)
+        self._native_filter = None
+
+    def _install_descendant_filters(self, root: QObject | None = None) -> None:
+        target = root or self
+        target.installEventFilter(self)
+        if isinstance(target, QWidget):
+            for child in target.findChildren(QObject):
+                child.installEventFilter(self)
+
+    def eventFilter(self, watched, event):  # type: ignore[override]
+        event_type = event.type()
+        if event_type == QEvent.ChildAdded:
+            child = event.child()
+            if isinstance(child, QObject):
+                self._install_descendant_filters(child)
+            return False
+        if event_type in (QEvent.MouseButtonPress, QEvent.MouseButtonDblClick, QEvent.MouseButtonRelease):
+            if self._is_inside_view(watched) and self._consume_side_button(
+                event, emit=(event_type == QEvent.MouseButtonPress)
+            ):
+                return True
+        return super().eventFilter(watched, event)
+
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        super().showEvent(event)
+        self._install_descendant_filters()
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        if self._consume_side_button(event, emit=True):
+            return
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
+        if self._consume_side_button(event, emit=False):
+            return
+        super().mouseReleaseEvent(event)
+
 
 class WebAppWindow(QMainWindow):
     def __init__(self) -> None:
@@ -65,7 +252,7 @@ class WebAppWindow(QMainWindow):
         self._active_thumbnail_task_scope: str | None = None
         self._pending_auto_comic_thumbnail = False
 
-        self._view = QWebEngineView(self)
+        self._view = ShortcutWebView(self)
         # Suppress Chromium's default English context menu; JS owns all menus.
         self._view.setContextMenuPolicy(Qt.NoContextMenu)
         settings = self._view.settings()
@@ -84,6 +271,7 @@ class WebAppWindow(QMainWindow):
         self._channel = QWebChannel(self)
         self._bridge = UiBridge(self._repository, self._allowed_images, self)
         self._bridge.set_host(self)
+        self._view.nativeShortcutInput.connect(self._bridge.nativeShortcutInput.emit)
         self._channel.registerObject("bridge", self._bridge)
         self._view.page().setWebChannel(self._channel)
 

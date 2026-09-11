@@ -23,6 +23,66 @@ from bookhub.ui.resources.layout_config import (
 
 
 class CoverGridSettingsTests(unittest.TestCase):
+    def test_repository_shortcut_binding_defaults_and_persistence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = LibraryRepository(
+                db_path=root / "library.db",
+                scan_report_path=root / "scan_report.json",
+            )
+            self.assertEqual(
+                repo.get_shortcut_bindings(),
+                {
+                    "exit_collection": "",
+                    "reopen_recent_collection": "",
+                    "open_resource": "",
+                    "open_folder": "",
+                    "quick_add": "",
+                    "edit_cover": "",
+                    "remove_from_collection": "",
+                    "remove_from_library": "",
+                },
+            )
+
+            result = repo.set_shortcut_binding("open_resource", "Ctrl+Shift+KeyO")
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["bindings"]["open_resource"], "Ctrl+Shift+KeyO")
+
+            repo_reload = LibraryRepository(
+                db_path=root / "library.db",
+                scan_report_path=root / "scan_report.json",
+            )
+            self.assertEqual(repo_reload.get_shortcut_bindings()["open_resource"], "Ctrl+Shift+KeyO")
+
+    def test_repository_shortcut_binding_rejects_invalid_and_duplicate_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = LibraryRepository(
+                db_path=root / "library.db",
+                scan_report_path=root / "scan_report.json",
+            )
+
+            invalid_action = repo.set_shortcut_binding("delete_collection", "KeyD")
+            invalid_binding = repo.set_shortcut_binding("open_resource", "Ctrl+KeyR")
+            self.assertEqual(invalid_action["error"], "invalid_action")
+            self.assertEqual(invalid_binding["error"], "invalid_binding")
+            for token in ("MouseLeft", "MouseRight", "MouseMiddle", "ControlLeft", "Ctrl", "Ctrl+Numpad0"):
+                self.assertEqual(
+                    repo.set_shortcut_binding("open_resource", token)["error"],
+                    "invalid_binding",
+                )
+
+            self.assertTrue(repo.set_shortcut_binding("open_resource", "MouseBack")["ok"])
+            duplicate = repo.set_shortcut_binding("quick_add", "MouseBack")
+            self.assertFalse(duplicate["ok"])
+            self.assertEqual(duplicate["error"], "duplicate")
+            self.assertEqual(duplicate["conflictAction"], "open_resource")
+            self.assertEqual(duplicate["bindings"]["quick_add"], "")
+
+            cleared = repo.set_shortcut_binding("open_resource", "")
+            self.assertTrue(cleared["ok"])
+            self.assertEqual(cleared["bindings"]["open_resource"], "")
+
     def test_repository_recommendation_density_defaults_persist_and_normalize(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

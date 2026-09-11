@@ -2,7 +2,7 @@
 
 ## 最新决策
 ```json
-{"decision_id":"decision-20260910-001","timestamp":"2026-09-10T17:16:34+08:00","owner":"ui-agent","title":"推荐密度使用配置上限与容器宽度自适应","context":"固定 148px 推荐卡在 2K 屏幕无法利用新增空间，同时窄窗口不能强制挤出多列","options":["固定像素卡宽","纯 CSS auto-fit","持久化最大列数并由 ResizeObserver 计算有效列数"],"decision":"选择持久化最大列数并由单个 ResizeObserver 按分类容器宽度降级；数量与列数分离","rationale":["用户可控制推荐密度","详情栏与应用缩放变化可即时重排","数量变化才需要重新抽样"],"impact":["新增两项 app_settings","默认每类 6 项、内部最多 2 列","Glass/Vaporwave 移除推荐栈固定 148px"],"followups":["在 2K、1080p、1400×860 与 1120px 验证"]}
+{"decision_id":"decision-20260911-004","timestamp":"2026-09-11T13:10:00+08:00","owner":"ui-agent","title":"侧键走页面、Qt 子控件与 Windows 原生三条通道","context":"绑定框收不到侧键：Chromium 子控件吞 Qt 事件，系统常映射 BrowserBack 或只发 auxclick/APPCOMMAND","options":["只拦 ShortcutWebView.mousePressEvent","只听 JS button 3/4","页面+子控件过滤+Windows XBUTTON/APPCOMMAND"],"decision":"三条通道都归一到 MouseBack/MouseForward，同一次按键去重","rationale":["旧测试只往 WebView 本体 sendEvent 会假绿","Windows 鼠标侧键经常是 APPCOMMAND 而不是 button 3/4","录入与触发必须走同一 token"],"impact":["应用内未绑定侧键也不再走网页历史","原生过滤器在窗口失焦时不抢事件"],"followups":["真机仍失败再考虑低级鼠标钩子"]}
 ```
 
 ## 决策记录规则
@@ -52,6 +52,83 @@
     "在 UI 合同中固化 external_open_action",
     "在 shared-rules 中声明非目标边界"
   ]
+}
+```
+
+## 2026-09-11 - 侧键录入三条通道
+
+```json
+{
+  "decision_id": "decision-20260911-004",
+  "timestamp": "2026-09-11T13:10:00+08:00",
+  "owner": "ui-agent",
+  "title": "侧键走页面、Qt 子控件与 Windows 原生三条通道",
+  "context": "设置页绑定框无法识别鼠标侧键",
+  "options": [
+    "只拦 ShortcutWebView.mousePressEvent",
+    "只听 JS button 3/4",
+    "页面事件 + 子控件过滤 + Windows XBUTTON/APPCOMMAND"
+  ],
+  "decision": "选择第三条；token 统一为 MouseBack/MouseForward，并去重",
+  "rationale": [
+    "Chromium 子控件会吃掉父级 mousePressEvent",
+    "系统常把侧键变成 BrowserBack 或 WM_APPCOMMAND",
+    "auxclick 单独出现时也必须能录入"
+  ],
+  "impact": [
+    "应用聚焦时侧键被吞，未绑定也不走网页历史",
+    "窗口失焦时不拦截原生消息"
+  ],
+  "followups": ["真机仍失败再加低级鼠标钩子"]
+}
+```
+
+## 2026-09-11 - 合集前进/后退分键
+
+```json
+{
+  "decision_id": "decision-20260911-003",
+  "timestamp": "2026-09-11T12:55:00+08:00",
+  "owner": "ui-agent",
+  "title": "合集导航改为前进/后退两个动作且按页记忆",
+  "context": "用户要求退出与进入拆成两个快捷键，并在书籍合集中独立于其他合集页记忆",
+  "options": ["保持全局 toggle", "两个动作共用全局最近项", "两个动作且三类合集页独立记忆"],
+  "decision": "选择按页独立记忆；退出仅在详情生效，进入仅在对应合集列表生效",
+  "rationale": ["浏览器前进/后退不会跨站点串历史", "页面返回按钮不应兼做重入"],
+  "impact": ["绑定表增加 exit_collection 与 reopen_recent_collection", "忽略遗留 toggle_recent_collection"],
+  "followups": []
+}
+```
+
+## 2026-09-11 - 快捷键动作注册表与打开事件收口
+
+```json
+{
+  "decision_id": "decision-20260911-001",
+  "timestamp": "2026-09-11T11:04:30+08:00",
+  "owner": "ui-agent",
+  "title": "快捷键采用统一动作注册表与应用内输入通道",
+  "context": "按钮、右键菜单和合集导航原先各自直调函数，无法安全复用动作，也没有退出后可重新进入的会话目标",
+  "options": ["为每个组件单独增加 keydown", "注册系统级全局热键", "应用内动作注册表 + KeyboardEvent.code + 原生鼠标侧键信号"],
+  "decision": "选择应用内统一动作注册表；绑定持久化，最近系列仅会话保存",
+  "rationale": ["同一可用性判断和危险确认可供右键与快捷键共用", "KeyboardEvent.code 不受键盘布局字符变化影响", "原生视图可阻止 Chromium 把侧键当历史导航", "不引入系统级权限和依赖"],
+  "impact": ["新增 shortcut_bindings 设置和七个固定动作", "Bridge 增加 setShortcutBinding 与 nativeShortcutInput", "设置页增加快捷键导航和录入/清除界面", "合集详情可一键退出并重入最近系列"],
+  "followups": ["已关闭：openResource 发出 open_external interactionEvent，见 decision-20260911-002"]
+}
+```
+
+```json
+{
+  "decision_id": "decision-20260911-002",
+  "timestamp": "2026-09-11T12:45:00+08:00",
+  "owner": "ui-agent",
+  "title": "外部打开事件在 Bridge.openResource 源头发出",
+  "context": "标准审查指出 open_resource 经 executeAction 进入 _open_external 后没有可追踪事件",
+  "options": ["只给快捷键记事件", "在 openResource 源头发 interactionEvent", "落盘日志或新表"],
+  "decision": "目标文件存在时发出合同形状的 open_external 信号；资源或文件缺失不发；不扩展 open_folder 事件名",
+  "rationale": ["覆盖右键、双击和快捷键同一打开入口", "桌面端无需新消费者，测试连接信号即可断言", "避免把历史 telemetry 做成独立子系统"],
+  "impact": ["interactionEvent 信号", "Shortcut 合同与模块输出补 interaction_events"],
+  "followups": []
 }
 ```
 
