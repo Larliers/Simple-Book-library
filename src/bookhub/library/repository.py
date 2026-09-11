@@ -350,6 +350,8 @@ class LibraryRepository:
                     resource_type TEXT NOT NULL DEFAULT 'book',
                     path TEXT NOT NULL UNIQUE,
                     thumbnail_path TEXT,
+                    cover_source TEXT,
+                    cover_fingerprint TEXT,
                     info_text TEXT,
                     is_missing INTEGER NOT NULL DEFAULT 0,
                     missing_reason TEXT,
@@ -404,6 +406,17 @@ class LibraryRepository:
                 """
             )
             self._ensure_column(conn, "books", "info_text", "ALTER TABLE books ADD COLUMN info_text TEXT")
+            self._ensure_column(conn, "books", "cover_source", "ALTER TABLE books ADD COLUMN cover_source TEXT")
+            self._ensure_column(conn, "books", "cover_fingerprint", "ALTER TABLE books ADD COLUMN cover_fingerprint TEXT")
+            conn.execute(
+                """
+                UPDATE books
+                SET cover_source = 'manual'
+                WHERE COALESCE(resource_type, '') = 'text_novel'
+                  AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
+                  AND cover_source IS NULL
+                """
+            )
             self._ensure_column(conn, "comics", "cover_fingerprint", "ALTER TABLE comics ADD COLUMN cover_fingerprint TEXT")
             self._ensure_column(conn, "comics", "folder_size_mtime", "ALTER TABLE comics ADD COLUMN folder_size_mtime TEXT")
             self._ensure_column(conn, "comics", "folder_mtime", "ALTER TABLE comics ADD COLUMN folder_mtime INTEGER")
@@ -458,6 +471,8 @@ class LibraryRepository:
             self.set_setting("cover_selected_border_color_hex", DEFAULT_COVER_SELECTED_BORDER_COLOR)
         if self.get_setting("text_preview_chars", None) is None:
             self.set_setting("text_preview_chars", DEFAULT_TEXT_PREVIEW_CHARS)
+        if self.get_setting("text_novel_view_mode", None) is None:
+            self.set_setting("text_novel_view_mode", "grid")
         if self.get_setting("text_rule_preview_result_height", None) is None:
             self.set_setting("text_rule_preview_result_height", 180)
         if self.get_setting("text_rule_dialog_size", None) is None:
@@ -841,6 +856,17 @@ class LibraryRepository:
 
     def set_grid_columns(self, value: int | str) -> None:
         self.set_setting("grid_columns", self._normalize_grid_columns(value))
+
+    @staticmethod
+    def _normalize_text_novel_view_mode(value: str | None) -> str:
+        normalized = str(value or "").strip().lower()
+        return normalized if normalized in {"grid", "list"} else "grid"
+
+    def get_text_novel_view_mode(self) -> str:
+        return self._normalize_text_novel_view_mode(self.get_setting("text_novel_view_mode", "grid"))
+
+    def set_text_novel_view_mode(self, value: str) -> None:
+        self.set_setting("text_novel_view_mode", self._normalize_text_novel_view_mode(value))
 
     @staticmethod
     def _normalize_recommendation_items_per_category(value: int | str | None) -> int:
@@ -1295,7 +1321,8 @@ class LibraryRepository:
         with self._connection() as conn:
             rows = conn.execute(
                 """
-                SELECT path, fingerprint_sha256, fingerprint_size_mtime, fingerprint_quick
+                SELECT path, thumbnail_path, cover_source, cover_fingerprint,
+                       fingerprint_sha256, fingerprint_size_mtime, fingerprint_quick
                 FROM books
                 WHERE is_missing = 0
                   AND COALESCE(resource_type, '') = 'text_novel'
@@ -1308,6 +1335,9 @@ class LibraryRepository:
                 continue
             mapped[path_value] = {
                 "path": path_value,
+                "thumbnail_path": row["thumbnail_path"],
+                "cover_source": row["cover_source"] or "",
+                "cover_fingerprint": row["cover_fingerprint"] or "",
                 "fingerprint_sha256": row["fingerprint_sha256"] or "",
                 "fingerprint_size_mtime": row["fingerprint_size_mtime"] or "",
                 "fingerprint_quick": row["fingerprint_quick"] or "",
@@ -1320,14 +1350,29 @@ class LibraryRepository:
         fp_sha = self._fingerprint_or_none(payload.get("fingerprint_sha256"))
         fp_size = self._fingerprint_or_none(payload.get("fingerprint_size_mtime"))
         fp_quick = self._fingerprint_or_none(payload.get("fingerprint_quick"))
+        incoming_cover_source = (
+            self._normalize_book_cover_source(payload.get("cover_source"))
+            if "cover_source" in payload
+            else None
+        )
         with self._connection() as conn:
-            existing = conn.execute("SELECT id, resource_id FROM books WHERE path = ?", (path,)).fetchone()
+            existing = conn.execute(
+                "SELECT id, resource_id, cover_source, cover_fingerprint FROM books WHERE path = ?",
+                (path,),
+            ).fetchone()
             if existing:
+                cover_source = incoming_cover_source if "cover_source" in payload else existing["cover_source"]
+                cover_fingerprint = (
+                    payload.get("cover_fingerprint")
+                    if "cover_fingerprint" in payload
+                    else existing["cover_fingerprint"]
+                )
                 conn.execute(
                     """
                     UPDATE books
                     SET file_name = ?, extension = ?, title = ?, author = ?, publisher = ?, language = ?,
-                        tags_json = ?, status = ?, resource_type = ?, thumbnail_path = ?, info_text = ?,
+                        tags_json = ?, status = ?, resource_type = ?, thumbnail_path = ?,
+                        cover_source = ?, cover_fingerprint = ?, info_text = ?,
                         is_missing = 0, missing_reason = NULL,
                         fingerprint_sha256 = COALESCE(?, fingerprint_sha256),
                         fingerprint_size_mtime = COALESCE(?, fingerprint_size_mtime),
@@ -1346,6 +1391,8 @@ class LibraryRepository:
                         payload.get("status", "UNREAD"),
                         payload.get("resource_type", "book"),
                         payload.get("thumbnail_path"),
+                        cover_source,
+                        cover_fingerprint,
                         payload.get("info_text"),
                         fp_sha,
                         fp_size,
@@ -1361,10 +1408,11 @@ class LibraryRepository:
                 """
                 INSERT INTO books(
                     resource_id, file_name, extension, title, author, publisher, language, tags_json,
-                    status, resource_type, path, thumbnail_path, info_text, is_missing, missing_reason,
+                    status, resource_type, path, thumbnail_path, cover_source, cover_fingerprint,
+                    info_text, is_missing, missing_reason,
                     fingerprint_sha256, fingerprint_size_mtime, fingerprint_quick, created_at, updated_at
                 )
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?)
                 """,
                 (
                     resource_id,
@@ -1379,6 +1427,8 @@ class LibraryRepository:
                     payload.get("resource_type", "book"),
                     path,
                     payload.get("thumbnail_path"),
+                    incoming_cover_source,
+                    payload.get("cover_fingerprint"),
                     payload.get("info_text"),
                     fp_sha,
                     fp_size,
@@ -1399,7 +1449,8 @@ class LibraryRepository:
 
         query = f"""
             SELECT resource_id, file_name, extension, title, author, publisher, language, tags_json, status,
-                   resource_type, path, thumbnail_path, info_text, is_missing, missing_reason
+                   resource_type, path, thumbnail_path, cover_source, cover_fingerprint,
+                   info_text, is_missing, missing_reason
             FROM books
             {where_clause}
             ORDER BY lower(COALESCE(title, file_name))
@@ -1430,6 +1481,8 @@ class LibraryRepository:
                     "resource_type": row["resource_type"],
                     "path": row["path"],
                     "thumbnail_path": row["thumbnail_path"],
+                    "cover_source": row["cover_source"],
+                    "cover_fingerprint": row["cover_fingerprint"],
                     "info_text": row["info_text"],
                     "is_missing": bool(row["is_missing"]),
                     "missing_reason": row["missing_reason"],
@@ -1576,6 +1629,32 @@ class LibraryRepository:
                 "UPDATE books SET thumbnail_path = ?, updated_at = ? WHERE id = ?",
                 (thumbnail_path, now_utc_iso(), int(book_id)),
             )
+
+    def update_book_thumbnail_state(
+        self,
+        book_id: int,
+        *,
+        thumbnail_path: str | None,
+        cover_source: str | None,
+        cover_fingerprint: str | None = None,
+    ) -> None:
+        normalized_source = self._normalize_book_cover_source(cover_source)
+        with self._connection() as conn:
+            conn.execute(
+                """
+                UPDATE books
+                SET thumbnail_path = ?, cover_source = ?, cover_fingerprint = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (thumbnail_path, normalized_source, cover_fingerprint, now_utc_iso(), int(book_id)),
+            )
+
+    @staticmethod
+    def _normalize_book_cover_source(value: object) -> str | None:
+        normalized = str(value or "").strip().lower() or None
+        if normalized not in {None, "manual", "sidecar"}:
+            raise ValueError(f"Unsupported cover source: {value}")
+        return normalized
 
     def clear_all_comic_thumbnail_paths(self, roots: list[str] | None = None) -> int:
         if roots:

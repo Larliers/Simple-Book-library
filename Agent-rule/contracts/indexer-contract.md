@@ -10,7 +10,7 @@ scan_roots / comic_roots / text_roots
         → ScanWorker (QThread)
             → scan_roots        # PDF/EPUB/HTML/MD/FB2/DOCX；hash_strategy 指纹跳过
             → scan_comic_roots  # 叶子图片文件夹 + CBZ；folder/file snapshot 跳过；同 comic_root 标题冲突按策略
-            → scan_text_roots   # TXT + 规则链；同 hash_strategy 指纹跳过；text_encoding_preference 读入
+            → scan_text_roots   # TXT + 规则链 + 同名封面；文本/封面指纹共同决定跳过
         → SQLite upsert / 失踪则删除
         → scan_report.json + Scan_error_logs
 ```
@@ -20,7 +20,7 @@ scan_roots / comic_roots / text_roots
 - **局部跳过（非 checkpoint API）**：
   - Library：按有效 `hash_strategy`（`size_mtime` / `quick` / `sha256`）比对已存指纹；未变且缩略图仍在则跳过元数据/封面。支持扩展：`.pdf .epub .html .htm .md .markdown .fb2 .fb2.zip .docx`。封面优先内嵌图，否则标题占位卡（HTML 不做浏览器整页渲染）。docx/fb2.zip 经 zip 安全上限校验。
   - Comic：叶子图片文件夹用 `folder_size_mtime`；**CBZ** 用文件 `size:mtime` 快照与封面成员指纹；`full` 禁用快照短路（文件夹另重读旁注 TXT）；同一 `comic_root` 下同标题冲突按 `comic_title_conflict_policy` 处理。失踪清理同时接受目录或文件源。
-  - Text：按与 Library 相同的有效 `hash_strategy` 比对已存指纹；未变则跳过规则链与 upsert（无缩略图要求）；TXT 正文经 `text_encoding` 按偏好读入。
+  - Text：按与 Library 相同的有效 `hash_strategy` 比对文本指纹；同目录同 stem 封面按 `.webp` → `.png` → `.jpg` → `.jpeg` 选择，封面路径+size+mtime_ns 指纹也参与跳过。自动封面新增、变更、删除均触发更新；`cover_source=manual` 且文件有效时不被自动封面覆盖。TXT 正文经 `text_encoding` 按偏好读入。
 - **目录级策略覆盖**（Settings `per_root_scan_strategy_enabled`，默认关）：
   - **关**：Library/Text 统一用全局 `hash_strategy`；Comic 统一用全局 `comic_scan_strategy`；各根表 `scan_strategy` 列仍持久化覆盖值但不生效。
   - **开**：`library_roots` / `comic_roots` / `text_roots` 可空列 `scan_strategy`；`NULL` 或空串 = 继承对应全局策略。
@@ -66,6 +66,7 @@ scan_roots / comic_roots / text_roots
 - 扫描错误进入 `ScanResult.errors` / `comic_errors` / `text_errors` 或错误日志，不静默吞掉关键失败。
 - `comic_folder` 单元可追踪 `path`、`comic_root`、`cover_image_path`、`image_count`、`info_text`。
 - 同名同扩展冲突（书籍/TXT）写入 `name_conflicts` 与错误日志。
+- Text 同名封面损坏时继续入库 TXT，在 `warnings` 写入 `text_cover_generation_failed` 并返回无封面状态。
 - 漫画同 `comic_root` 同标题冲突按 `comic_title_conflict_policy` 分支，并写入 `name_conflicts` / 错误日志（跨根目录允许同名）。
 
 ## Error Shape (implementation)

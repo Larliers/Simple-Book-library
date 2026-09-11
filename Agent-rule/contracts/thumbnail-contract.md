@@ -57,6 +57,8 @@
 - 保证延迟任务进入 `deferred_queue`。
 - 保证缓存命中与生成统计可追踪。
 - 保证 `comic_folder` 的 `cover_image_path` 与缩略图绑定。
+- 保证 Text Novel 同名封面按 `.webp` → `.png` → `.jpg` → `.jpeg` 选择并输出 360×540 以内 WebP；手动封面不被自动扫描覆盖。
+- Text Novel 同名封面在 `ScanWorker` 后台扫描阶段同步生成，不进入首屏 `deferred_queue`；失败写 `text_cover_generation_failed` 警告并继续入库文本。
 
 ## Error Shape
 ```json

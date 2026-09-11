@@ -24,7 +24,7 @@ A local Windows desktop library for your personal collection. Scan PDF / EPUB / 
 |---------|---------|-----------------|
 | **Library** | PDF, EPUB, HTML/HTM, Markdown, FB2/FB2.ZIP, DOCX | Grid / list view, detail pane, tags, search |
 | **Comic** | **Leaf image folders** and **CBZ** | One folder or CBZ = one volume; waterfall or paginated layout |
-| **Text Novel** | TXT (auto-detects encoding) | List view, text preview, custom import rule chains |
+| **Text Novel** | TXT (auto-detects encoding) | Persistent grid/list view, text preview, custom import rule chains; grid cards show cover and title |
 | **Book Collections** | Library books | Named book lists |
 | **Novel Collections** | Text novels | Named novel lists |
 | **Comic Collections** | Comics | Named comic lists |
@@ -42,6 +42,7 @@ Notes:
 - **Per-directory scan strategy** (optional): assign a strategy per root when enabled; global strategy applies when disabled; saved overrides are kept.
 - **Comic scan**: directory snapshot (fast) or full rescan each time (strict); same-title conflicts: skip incoming / keep both / prefer newer.
 - **TXT encoding preference**: Simplified first / Traditional first / Auto; text rules extract metadata from filename or body.
+- **TXT sidecar covers**: place a same-stem WebP/PNG/JPG/JPEG beside the TXT file. Priority is WebP → PNG → JPG → JPEG; scans cache a thumbnail while manually edited covers remain authoritative.
 - **Thumbnail cache**: default `img_preview/`; relocate under Settings (migrate / rewire index / switch only).
 - Missing sources are logged and removed; same name+extension under different paths is skipped and logged.
 

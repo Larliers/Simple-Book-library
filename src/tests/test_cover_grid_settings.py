@@ -23,6 +23,42 @@ from bookhub.ui.resources.layout_config import (
 
 
 class CoverGridSettingsTests(unittest.TestCase):
+    def test_book_cover_source_rejects_values_outside_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = LibraryRepository(root / "library.db", root / "scan_report.json")
+            with self.assertRaises(ValueError):
+                repo.upsert_book(
+                    {
+                        "path": str(root / "novel.txt"),
+                        "file_name": "novel.txt",
+                        "extension": ".txt",
+                        "title": "Novel",
+                        "resource_type": "text_novel",
+                        "tags_json": "[]",
+                        "cover_source": "unknown",
+                    }
+                )
+
+    def test_text_novel_view_mode_defaults_to_grid_and_persists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = LibraryRepository(
+                db_path=root / "library.db",
+                scan_report_path=root / "scan_report.json",
+            )
+
+            self.assertEqual(repo.get_text_novel_view_mode(), "grid")
+            repo.set_text_novel_view_mode("list")
+
+            repo_reload = LibraryRepository(
+                db_path=root / "library.db",
+                scan_report_path=root / "scan_report.json",
+            )
+            self.assertEqual(repo_reload.get_text_novel_view_mode(), "list")
+            repo_reload.set_text_novel_view_mode("invalid")
+            self.assertEqual(repo_reload.get_text_novel_view_mode(), "grid")
+
     def test_repository_shortcut_binding_defaults_and_persistence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

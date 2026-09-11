@@ -580,7 +580,7 @@ class UiBridge(QObject):
             return {"mode": "grid_or_list", "items": [self._item_payload(i) for i in items]}
         if page == PAGE_TEXT:
             items = self._text_vm.filtered_resources(include_missing=False)
-            return {"mode": "list", "items": [self._item_payload(i) for i in items]}
+            return {"mode": "grid_or_list", "items": [self._item_payload(i) for i in items]}
         if page == PAGE_COMIC:
             items = self._comic_vm.filtered_resources(include_missing=False)
             return self._comic_page_payload_from_items(items, favorite=False)
@@ -696,6 +696,7 @@ class UiBridge(QObject):
             "comicPageSize": repo.get_comic_page_size(),
             "viewportBufferScreens": repo.get_viewport_buffer_screens(),
             "gridColumns": repo.get_grid_columns(),
+            "textNovelViewMode": repo.get_text_novel_view_mode(),
             "recommendationItemsPerCategory": repo.get_recommendation_items_per_category(),
             "recommendationColumnsPerCategory": repo.get_recommendation_columns_per_category(),
             "shortcutBindings": repo.get_shortcut_bindings(),

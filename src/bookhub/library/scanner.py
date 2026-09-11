@@ -49,6 +49,7 @@ from bookhub.library.models import (
     resolve_library_hash_strategy,
 )
 from bookhub.library.preview_paths import build_preview_path, is_preview_variant_uri, uri_to_path
+from bookhub.library.preview_cache_migrate import safe_unlink_under_preview
 from bookhub.library.repository import LibraryRepository
 from bookhub.library.text_rules import ImportRule, RuleContext, apply_rule_chain, load_rules_from_json
 from bookhub.library.text_rules.rule_examples import default_text_title_rule_chain
@@ -60,6 +61,7 @@ from bookhub.library.text_encoding import (
 )
 
 ScanProgressCallback = Callable[[int, int, str, dict[str, object]], None]
+TEXT_COVER_EXTENSIONS = (".webp", ".png", ".jpg", ".jpeg")
 
 
 def _lanczos_resample() -> object:
@@ -90,6 +92,44 @@ def _thumbnail_path_for(repo: LibraryRepository, normalized_path: str) -> Path:
         source_key=normalized_path,
         extension=".webp",
     )
+
+
+def _text_thumbnail_path_for(repo: LibraryRepository, normalized_path: str) -> Path:
+    return build_preview_path(
+        preview_root=repo.preview_dir,
+        resource_type="text_novel",
+        variant="compressed",
+        source_key=normalized_path,
+        extension=".webp",
+    )
+
+
+def _find_text_cover(txt_path: Path) -> Path | None:
+    for extension in TEXT_COVER_EXTENSIONS:
+        candidate = txt_path.with_suffix(extension)
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _text_cover_fingerprint(cover_path: Path | None) -> str:
+    if cover_path is None:
+        return ""
+    stat = cover_path.stat()
+    return f"{cover_path.name}:{stat.st_size}:{stat.st_mtime_ns}"
+
+
+def _generate_text_cover_thumbnail(cover_path: Path, output_path: Path) -> str:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with Image.open(cover_path) as image:
+        try:
+            image.seek(0)
+        except EOFError:
+            pass
+        thumbnail = image.convert("RGB")
+        thumbnail.thumbnail((360, 540), _lanczos_resample())
+        thumbnail.save(output_path, format="WEBP", quality=80, method=4)
+    return output_path.resolve(strict=False).as_uri()
 
 
 def _probe_pdf_backend() -> tuple[bool, str | None]:
@@ -863,6 +903,30 @@ def scan_text_roots(
                     continue
 
                 existing = existing_by_path.get(normalized_path)
+                existing_thumbnail = str(existing.get("thumbnail_path") or "") if isinstance(existing, dict) else ""
+                existing_cover_source = str(existing.get("cover_source") or "") if isinstance(existing, dict) else ""
+                existing_cover_fingerprint = (
+                    str(existing.get("cover_fingerprint") or "") if isinstance(existing, dict) else ""
+                )
+                cover_path = _find_text_cover(file_path)
+                cover_fingerprint = _text_cover_fingerprint(cover_path)
+                cached_thumbnail_path = uri_to_path(existing_thumbnail)
+                cached_thumbnail_exists = bool(cached_thumbnail_path and cached_thumbnail_path.is_file())
+                manual_cover = (
+                    existing_cover_source == "manual"
+                    and bool(existing_thumbnail)
+                    and cached_thumbnail_exists
+                )
+                if manual_cover:
+                    cover_unchanged = True
+                elif cover_path is None:
+                    cover_unchanged = not existing_thumbnail and existing_cover_source != "sidecar"
+                else:
+                    cover_unchanged = (
+                        existing_cover_source == "sidecar"
+                        and existing_cover_fingerprint == cover_fingerprint
+                        and cached_thumbnail_exists
+                    )
                 current_fp = fingerprints.value_for(hash_strategy)
                 existing_fp = ""
                 if isinstance(existing, dict):
@@ -872,7 +936,13 @@ def scan_text_roots(
                         existing_fp = str(existing.get("fingerprint_quick") or "")
                     else:
                         existing_fp = str(existing.get("fingerprint_size_mtime") or "")
-                if isinstance(existing, dict) and current_fp and existing_fp and current_fp == existing_fp:
+                if (
+                    isinstance(existing, dict)
+                    and current_fp
+                    and existing_fp
+                    and current_fp == existing_fp
+                    and cover_unchanged
+                ):
                     result.skipped_unchanged_count += 1
                     _emit_scan_progress(progress_cb, result.text_scanned_files, total_files, normalized_path, result)
                     continue
@@ -894,6 +964,31 @@ def scan_text_roots(
                 if extracted.get("tag"):
                     tags.extend(_split_text_rule_tags(extracted["tag"]))
 
+                thumbnail_path: str | None = None
+                cover_source: str | None = None
+                stored_cover_fingerprint: str | None = None
+                if manual_cover:
+                    thumbnail_path = existing_thumbnail
+                    cover_source = "manual"
+                    stored_cover_fingerprint = existing_cover_fingerprint or None
+                elif cover_path is not None:
+                    cover_source = "sidecar"
+                    stored_cover_fingerprint = cover_fingerprint
+                    try:
+                        thumbnail_path = _generate_text_cover_thumbnail(
+                            cover_path,
+                            _text_thumbnail_path_for(repository, normalized_path),
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        result.warnings.append(
+                            {
+                                "code": "text_cover_generation_failed",
+                                "resource_path": normalized_path,
+                                "cover_path": str(cover_path),
+                                "message": str(exc),
+                            }
+                        )
+
                 payload: dict[str, Any] = {
                     "path": normalized_path,
                     "file_name": file_name(file_path),
@@ -905,7 +1000,9 @@ def scan_text_roots(
                     "tags_json": json.dumps(tags, ensure_ascii=False),
                     "status": "UNREAD",
                     "resource_type": "text_novel",
-                    "thumbnail_path": None,
+                    "thumbnail_path": thumbnail_path,
+                    "cover_source": cover_source,
+                    "cover_fingerprint": stored_cover_fingerprint,
                     "info_text": txt_head_text,
                     "fingerprint_sha256": fingerprints.sha256,
                     "fingerprint_size_mtime": fingerprints.size_mtime,
@@ -928,12 +1025,21 @@ def scan_text_roots(
                     continue
 
                 inserted = repository.upsert_book(payload)
+                if (
+                    existing_cover_source == "sidecar"
+                    and existing_thumbnail
+                    and existing_thumbnail != (thumbnail_path or "")
+                ):
+                    safe_unlink_under_preview(uri_to_path(existing_thumbnail), repository.preview_dir)
                 if inserted:
                     result.text_added_count += 1
                 else:
                     result.text_updated_count += 1
                 existing_by_path[normalized_path] = {
                     "path": normalized_path,
+                    "thumbnail_path": thumbnail_path or "",
+                    "cover_source": cover_source or "",
+                    "cover_fingerprint": stored_cover_fingerprint or "",
                     "fingerprint_sha256": fingerprints.sha256 or "",
                     "fingerprint_size_mtime": fingerprints.size_mtime or "",
                     "fingerprint_quick": fingerprints.quick or "",

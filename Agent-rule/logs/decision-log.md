@@ -2,7 +2,7 @@
 
 ## 最新决策
 ```json
-{"decision_id":"decision-20260911-004","timestamp":"2026-09-11T13:10:00+08:00","owner":"ui-agent","title":"侧键走页面、Qt 子控件与 Windows 原生三条通道","context":"绑定框收不到侧键：Chromium 子控件吞 Qt 事件，系统常映射 BrowserBack 或只发 auxclick/APPCOMMAND","options":["只拦 ShortcutWebView.mousePressEvent","只听 JS button 3/4","页面+子控件过滤+Windows XBUTTON/APPCOMMAND"],"decision":"三条通道都归一到 MouseBack/MouseForward，同一次按键去重","rationale":["旧测试只往 WebView 本体 sendEvent 会假绿","Windows 鼠标侧键经常是 APPCOMMAND 而不是 button 3/4","录入与触发必须走同一 token"],"impact":["应用内未绑定侧键也不再走网页历史","原生过滤器在窗口失焦时不抢事件"],"followups":["真机仍失败再考虑低级鼠标钩子"]}
+{"decision_id":"decision-20260911-005","timestamp":"2026-09-11T16:55:06+08:00","owner":"ui-agent","title":"文本同名封面采用来源优先与独立指纹","context":"TXT 内容未变时，自动封面仍可能新增、修改或删除；用户手动封面不能被扫描覆盖","options":["仅随 TXT 指纹刷新","每次无条件重建封面","单独记录 cover_source 与 cover_fingerprint"],"decision":"manual 优先；sidecar 以扩展名优先级和独立指纹参与增量判断","rationale":["封面与 TXT 生命周期独立","避免未变扫描反复解码图片","旧非空封面可安全视为用户选择"],"impact":["books 增加两个可空字段","自动封面删除后回退标题占位","损坏图片仅产生警告"],"followups":[]}
 ```
 
 ## 决策记录规则
@@ -52,6 +52,35 @@
     "在 UI 合同中固化 external_open_action",
     "在 shared-rules 中声明非目标边界"
   ]
+}
+```
+
+## 2026-09-11 - 文本同名封面来源与指纹
+
+```json
+{
+  "decision_id": "decision-20260911-005",
+  "timestamp": "2026-09-11T16:55:06+08:00",
+  "owner": "ui-agent",
+  "title": "文本同名封面采用来源优先与独立指纹",
+  "context": "TXT 内容未变时，同名封面仍可能新增、修改或删除；用户手动封面不能被扫描覆盖",
+  "options": [
+    "封面仅随 TXT 指纹变化刷新",
+    "每次扫描无条件重建封面",
+    "记录 cover_source 与 cover_fingerprint，封面独立参与增量判断"
+  ],
+  "decision": "选择独立来源与指纹；manual 优先，sidecar 按 webp、png、jpg、jpeg 匹配",
+  "rationale": [
+    "封面与 TXT 内容的生命周期独立",
+    "独立指纹避免未变封面反复解码",
+    "旧 Text Novel 非空封面迁移 manual 可避免覆盖既有用户选择"
+  ],
+  "impact": [
+    "books 增加两个可空字段且无需新表",
+    "自动封面删除后清理缓存并回退标题占位",
+    "损坏封面不阻断小说入库，只记录警告"
+  ],
+  "followups": []
 }
 ```
 

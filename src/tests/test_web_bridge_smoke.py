@@ -60,6 +60,7 @@ class WebBridgeSmokeTests(unittest.TestCase):
         self.assertIn("theme", payload["settings"])
         self.assertEqual(payload["settings"]["recommendationItemsPerCategory"], 6)
         self.assertEqual(payload["settings"]["recommendationColumnsPerCategory"], 2)
+        self.assertEqual(payload["settings"]["textNovelViewMode"], "grid")
         self.assertEqual(
             payload["settings"]["shortcutBindings"],
             {

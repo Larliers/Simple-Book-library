@@ -56,3 +56,30 @@ button:active { transform: translateY(1px) scale(0.985); }
   /* Keep the responsive placement stronger than skin-level .detail-panel rules loaded later. */
   .app-shell > .detail-panel { grid-column: 1 / span 2; grid-row: 3; }
 }
+
+@media (max-width: 600px) {
+  body[data-page="text_novel"] { overflow: auto; }
+  body[data-page="text_novel"] .app-shell {
+    height: auto;
+    min-height: 100vh;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(560px, 1fr) minmax(280px, 0.6fr);
+    padding: 8px;
+    gap: 8px;
+  }
+  body[data-page="text_novel"] .app-shell > .sidebar { grid-column: 1; grid-row: 1; }
+  body[data-page="text_novel"] .app-shell > .topbar {
+    grid-column: 1;
+    grid-row: 2;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+  }
+  body[data-page="text_novel"] .app-shell > .main-stage { grid-column: 1; grid-row: 3; }
+  body[data-page="text_novel"] .app-shell > .detail-panel { grid-column: 1; grid-row: 4; }
+  body[data-page="text_novel"] .app-shell .side-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  body[data-page="text_novel"] .app-shell .side-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body[data-page="text_novel"] .app-shell .top-tools { justify-content: space-between; }
+}

@@ -9,6 +9,7 @@
 - 建立和更新 SQLite 索引（upsert）。
 - Library：`hash_strategy` 指纹比对跳过未变更文件。
 - Comic：叶子含图目录（最大深度 5）；`folder_size_mtime` 快照跳过。
+- Text：扫描 TXT 同目录同 stem 的 `webp/png/jpg/jpeg` 封面，并让封面指纹参与增量跳过判断。
 - 失踪源：写错误日志并删除库记录（不保留「失联待恢复」状态）。
 
 ## Out of Scope

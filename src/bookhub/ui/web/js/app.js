@@ -31,7 +31,6 @@ const State = {
 
 const COLLECTION_PAGES = new Set(["collections", "novel_collections", "comic_collections"]);
 const COMIC_PAGES = new Set(["comic", "comic_collections"]);
-const LIST_ONLY = new Set(["text_novel"]);
 const SEARCH_PAGES = new Set(["library", "text_novel", "comic", "comic_collections"]);
 const RANDOM_RECOMMENDATIONS_PAGE = "random_recommendations";
 const SHORTCUT_MOUSE_TOKENS = new Set(["MouseBack", "MouseForward"]);
@@ -103,6 +102,34 @@ function isSearchablePage(page) {
   if (page === "library" || page === "text_novel" || page === "comic") return true;
   if (page === "comic_collections") return isComicCollectionDetail(State.pages[page] || {});
   return false;
+}
+
+function normalizeViewMode(value) {
+  return String(value || "").toLowerCase() === "list" ? "list" : "grid";
+}
+
+function viewModeForPage(page) {
+  if (page === "text_novel") return normalizeViewMode(State.settings.textNovelViewMode);
+  return normalizeViewMode(State.viewMode);
+}
+
+function syncViewModeToggle(page) {
+  const activeMode = viewModeForPage(page);
+  document.querySelectorAll("#viewModeToggle button").forEach((button) => {
+    button.classList.toggle("active", button.dataset.mode === activeMode);
+  });
+}
+
+function setViewModeForPage(page, value) {
+  const mode = normalizeViewMode(value);
+  if (page === "text_novel") {
+    State.settings.textNovelViewMode = mode;
+    if (State.bridge && State.bridge.setSetting) State.bridge.setSetting("textNovelViewMode", mode);
+  } else {
+    State.viewMode = mode;
+  }
+  syncViewModeToggle(page);
+  if (State.currentPage !== "settings") scheduleRenderPage();
 }
 
 function applyCollectionPageData(json) {
@@ -422,6 +449,8 @@ function selectPage(page) {
   savePageScroll(State.currentPage);
   if (page !== "settings") State.shortcutCaptureAction = "";
   State.currentPage = page;
+  document.body.dataset.page = page;
+  syncViewModeToggle(page);
   document.querySelectorAll(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.page === page));
   $("settingsBtn").classList.toggle("active", page === "settings");
   const detail = $("detailPanel");
@@ -497,7 +526,7 @@ function renderPage(expectedGen) {
     area.classList.add("view-enter");
   }
 
-  const showViewToggle = !COMIC_PAGES.has(page) && !LIST_ONLY.has(page) && data.mode !== "collections" && data.mode !== "recommendations";
+  const showViewToggle = !COMIC_PAGES.has(page) && data.mode !== "collections" && data.mode !== "recommendations";
   $("viewModeToggle").style.display = showViewToggle ? "" : "none";
 
   if (page === RANDOM_RECOMMENDATIONS_PAGE) {
@@ -514,10 +543,14 @@ function renderPage(expectedGen) {
     return;
   }
 
-  if (page === "text_novel") { renderTable(area, data.items, page); return; }
+  if (page === "text_novel") {
+    if (viewModeForPage(page) === "list") renderTable(area, data.items, page);
+    else renderTextNovelGrid(area, data.items, page, gen);
+    return;
+  }
   if (data.mode === "collections") { renderCollections(area, data.items); return; }
   if (page === "comic" || data.mode === "comic") { renderComic(area, data, gen); return; }
-  if (State.viewMode === "list") { renderTable(area, data.items, page); return; }
+  if (viewModeForPage(page) === "list") { renderTable(area, data.items, page); return; }
   renderGrid(area, data.items, page, data.mode === "collection_detail", gen);
 }
 
@@ -849,6 +882,30 @@ function renderGrid(area, items, page, isCollectionDetail, gen) {
   });
 }
 
+function renderTextNovelGrid(area, items, page, gen) {
+  mountVirtualCoverGrid(area, items, page, true, gen, (item) => {
+    const card = elem("article", "book-card");
+    card.setAttribute("role", "button");
+    card.setAttribute("tabindex", "0");
+    card.setAttribute("aria-label", item.title || "");
+    if (State.selected[page] === item.id) card.classList.add("selected");
+    card.appendChild(buildCover(item, "cover"));
+    card.appendChild(elem("div", "card-title", item.title || ""));
+    card.addEventListener("click", () => selectResource(page, item.id, card));
+    card.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      selectResource(page, item.id, card);
+    });
+    card.addEventListener("dblclick", () => State.bridge.openResource(page, item.id));
+    card.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      openContextMenu(event, page, item, false);
+    });
+    return card;
+  });
+}
+
 function renderCollections(area, items) {
   const page = State.currentPage;
   mountVirtualCoverGrid(area, items, page, true, State.renderGen, (item) => {
@@ -915,7 +972,10 @@ function renderTable(area, items, page) {
   const table = elem("table", "table");
   const thead = elem("thead");
   const htr = elem("tr");
-  [t("detail.cover", "Cover"), t("detail.title", "Title"), t("detail.author", "Author"), t("detail.tags", "Tags"), t("detail.path", "Path")]
+  const showCoverColumn = page !== "text_novel";
+  const headers = [t("detail.title", "Title"), t("detail.author", "Author"), t("detail.tags", "Tags"), t("detail.path", "Path")];
+  if (showCoverColumn) headers.unshift(t("detail.cover", "Cover"));
+  headers
     .forEach((h) => htr.appendChild(elem("th", null, h)));
   thead.appendChild(htr);
   table.appendChild(thead);
@@ -945,9 +1005,11 @@ function renderTable(area, items, page) {
       const item = items[i];
       const tr = elem("tr");
       if (State.selected[page] === item.id) tr.classList.add("selected");
-      const coverTd = elem("td");
-      if (item.cover) coverTd.appendChild(buildCover(item, "mini-cover"));
-      tr.appendChild(coverTd);
+      if (showCoverColumn) {
+        const coverTd = elem("td");
+        if (item.cover) coverTd.appendChild(buildCover(item, "mini-cover"));
+        tr.appendChild(coverTd);
+      }
       tr.appendChild(elem("td", null, item.title));
       tr.appendChild(elem("td", null, item.author || ""));
       tr.appendChild(elem("td", null, (item.tags || []).join(", ")));
@@ -2649,10 +2711,7 @@ function initTopbar() {
   }
   document.querySelectorAll("#viewModeToggle button").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll("#viewModeToggle button").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      State.viewMode = btn.dataset.mode;
-      if (State.currentPage !== "settings") scheduleRenderPage();
+      setViewModeForPage(State.currentPage, btn.dataset.mode);
     });
   });
 }

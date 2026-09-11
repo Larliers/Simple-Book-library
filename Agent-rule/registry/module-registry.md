@@ -22,6 +22,21 @@
 
 ## 格式模块（2026-07-18）
 
+### text_novel_sidecar_cover
+```json
+{
+  "module_name": "text_novel_sidecar_cover",
+  "owner_agent": "thumbnail-agent",
+  "status": "active",
+  "purpose": "为 Text Novel 选择同 stem 图片、生成 WebP 缓存并独立跟踪封面变化",
+  "input": ["txt_path", "existing_cover_source", "existing_cover_fingerprint", "preview_root"],
+  "output": ["thumbnail_path", "cover_source", "cover_fingerprint", "scan_warning"],
+  "upstream": ["scanner.scan_text_roots"],
+  "downstream": ["LibraryRepository.upsert_book", "resource_list_view"],
+  "notes": "ScanWorker 后台执行；webp/png/jpg/jpeg 优先；manual 且文件有效时优先；sidecar 缓存不超过 360x540"
+}
+```
+
 ### library_format_extractors
 ```json
 {
@@ -95,7 +110,7 @@
   "output": ["thumbnails", "deferred_queue", "metrics"],
   "upstream": ["comic_folder_scanner"],
   "downstream": ["resource_list_view", "resource_waterfall_view"],
-  "notes": "采用延迟生成策略保障首屏响应"
+  "notes": "Library/Comic 采用延迟生成策略保障首屏响应；Text Novel 同名封面由 ScanWorker 后台扫描阶段生成"
 }
 ```
 
@@ -110,7 +125,7 @@
   "output": ["render_plan", "interaction_events"],
   "upstream": ["filename_parser", "thumbnail_generator"],
   "downstream": ["external_open_action"],
-  "notes": "UI 仅消费数据，不执行扫描"
+  "notes": "UI 仅消费数据，不执行扫描；Text Novel 独立持久化 Grid/List，Grid 虚拟化且显示封面与标题，List 不显示封面列"
 }
 ```
 

@@ -274,6 +274,9 @@
 }
 .book-card:hover .cover { transform: rotate(-1deg) translateY(-3px); box-shadow: 4px 4px 0 var(--vw-hard-shadow), 0 0 14px rgba(255, 113, 206, 0.25); }
 .book-card.selected .cover { outline-color: var(--vw-cyan); box-shadow: 4px 4px 0 var(--vw-hard-shadow), 0 0 14px rgba(1, 205, 254, 0.35); }
+.book-card:focus-visible { outline: none; }
+.book-card:focus-visible .cover,
+.book-card:focus-visible .cover-fallback { outline: 2px solid var(--vw-cyan); outline-offset: 4px; }
 .card-title { margin-top: 8px; color: var(--ink); font-weight: 700; font-size: 13px; overflow-wrap: anywhere; }
 .card-meta { margin-top: 4px; color: var(--muted); font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
 

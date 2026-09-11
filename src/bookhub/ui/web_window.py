@@ -396,6 +396,8 @@ class WebAppWindow(QMainWindow):
             repo.set_viewport_buffer_screens(int(value))
         elif key == "gridColumns":
             repo.set_grid_columns(int(value))
+        elif key == "textNovelViewMode":
+            repo.set_text_novel_view_mode(value)
         elif key == "recommendationItemsPerCategory":
             repo.set_recommendation_items_per_category(value)
         elif key == "recommendationColumnsPerCategory":
@@ -554,7 +556,11 @@ class WebAppWindow(QMainWindow):
         file_url = out_path.as_uri()
         try:
             if book_id is not None:
-                repo.update_book_thumbnail_path(book_id, file_url)
+                repo.update_book_thumbnail_state(
+                    book_id,
+                    thumbnail_path=file_url,
+                    cover_source="manual",
+                )
             else:
                 # Fingerprint prefix marks a manual cover so regenerate tasks can skip overwrite.
                 repo.update_comic_thumbnail_state(

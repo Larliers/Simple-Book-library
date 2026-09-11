@@ -2,7 +2,7 @@
 
 ## 最新记录
 ```json
-{"log_id":"worklog-20260911-005","timestamp":"2026-09-11T13:05:00+08:00","actor":"ui-agent","task":"提交快捷键改动并触发远程 minor Release","changes":["提交快捷键、合集分键与侧键识别，不含 pyc","触发 GitHub Actions Release bump=minor，预期 v2.2.0"],"affected_files":[".github/workflows/release.yml"],"outputs":["origin/main 功能提交","workflow_dispatch Release"],"risks":["工作流会再提交 chore: release 并打 tag","Nuitka 远程构建可能超过一小时"],"next_actions":[]}
+{"log_id":"worklog-20260911-006","timestamp":"2026-09-11T16:55:06+08:00","actor":"ui-agent","task":"文本小说 Grid 与同名封面优化","changes":["Text Novel 独立持久化 Grid/List，首次默认 Grid","扫描同 stem 图片并生成 360x540 内 WebP 缓存，支持自动封面增删改与手动优先","390px 外壳改为单列以保证视图按钮可操作"],"affected_files":["src/bookhub/library/repository.py","src/bookhub/library/scanner.py","src/bookhub/ui/web_bridge.py","src/bookhub/ui/web_window.py","src/bookhub/ui/web/js/app.js","src/bookhub/ui/web/css/base.css"],"outputs":["文本小说封面 Grid 和无封面 List","双皮肤 1920/1440/1280/768/749/390/375 真实 Qt 验收"],"risks":["Vaporwave 既有本地字体资源仍返回 404","全量测试保留两个既有非法整型设置失败"],"next_actions":[]}
 ```
 
 ## 记录规则
@@ -47,6 +47,49 @@
   "outputs": ["v0.1.0 基线规则可用"],
   "risks": ["后续模块扩展需严格遵守字段稳定性"],
   "next_actions": ["执行首轮模块任务拆分并登记 registry"]
+}
+```
+
+## 2026-09-11 - 文本小说 Grid 与同名封面优化
+
+```json
+{
+  "log_id": "worklog-20260911-006",
+  "timestamp": "2026-09-11T16:55:06+08:00",
+  "actor": "ui-agent",
+  "task": "文本小说 Grid 与同名封面优化",
+  "changes": [
+    "Text Novel 独立持久化 Grid/List，首次默认 Grid，List 仅保留标题、作者、标签、路径",
+    "扫描同目录同 stem 的 webp/png/jpg/jpeg，按固定优先级生成 360x540 内 WebP 缓存",
+    "新增 cover_source 与 cover_fingerprint，旧 Text Novel 非空封面迁移 manual，sidecar 增删改随重扫更新",
+    "Grid 保留详情、双击打开、右键、搜索、选中、虚拟化与键盘选择",
+    "修复 390px 下三列外壳裁掉搜索和视图按钮的问题"
+  ],
+  "affected_files": [
+    "src/bookhub/library/repository.py",
+    "src/bookhub/library/scanner.py",
+    "src/bookhub/ui/web_bridge.py",
+    "src/bookhub/ui/web_window.py",
+    "src/bookhub/ui/web/js/app.js",
+    "src/bookhub/ui/web/css/base.css",
+    "src/bookhub/ui/web/css/skins/glass/components.css",
+    "src/bookhub/ui/web/css/skins/vaporwave/components.css",
+    "Agent-rule/registry/module-registry.md",
+    "src/tests/test_text_scan_incremental.py",
+    "src/tests/test_cover_grid_settings.py",
+    "src/tests/test_web_bridge_smoke.py",
+    "src/tests/js/test_random_recommendations.js"
+  ],
+  "outputs": [
+    "同名封面自动缓存、刷新和删除回退",
+    "Text Novel Grid/List 独立视图",
+    "双皮肤多视口 GUI 验收证据"
+  ],
+  "risks": [
+    "Vaporwave 既有 Sora/SpaceMono 字体文件 404，不由本功能引入",
+    "全量测试仍有两个既有 Repository 非法整型设置失败"
+  ],
+  "next_actions": []
 }
 ```
 

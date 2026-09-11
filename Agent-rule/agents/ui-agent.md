@@ -1,7 +1,7 @@
 ﻿# UI Agent
 
 ## Role
-- 负责展示层、列表模式、瀑布流模式、数据绑定与外部打开交互。
+- 负责展示层、封面网格、列表模式、瀑布流模式、数据绑定与外部打开交互。
 
 ## In Scope
 - 渲染资源列表与瀑布流视图。
@@ -9,6 +9,7 @@
 - 实现筛选、排序与检索交互。
 - 实现“使用外部软件打开资源”的交互链路。
 - 渲染独立 `Comic` 页与漫画合集详情（仅 grid 视图）。
+- 渲染 Text Novel 独立持久化的 Grid/List；Grid 展示封面和标题，List 不展示封面列。
 - 在漫画详情侧栏展示同级 `txt` 拼接文本（位于缩略图下方）。
 - 渲染随机推荐三列封面页，并按资源的 `sourcePage` 复用详情、外部打开与合集交互。
 - 维护可持久化快捷键设置页、统一资源动作分发器、原生鼠标侧键输入和会话内最近系列导航。
@@ -32,7 +33,7 @@
 {
   "request_id": "string",
   "task_id": "string",
-  "view_mode": "list|waterfall|comic_grid|recommendation_grid",
+  "view_mode": "list|cover_grid|waterfall|comic_grid|recommendation_grid",
   "data_source": {
     "resources": [
       {
@@ -64,7 +65,7 @@
   "status": "success|partial|failed",
   "output": {
     "render_plan": {
-      "view_mode": "list|waterfall|comic_grid|recommendation_grid",
+      "view_mode": "list|cover_grid|waterfall|comic_grid|recommendation_grid",
       "visible_count": 0,
       "virtualized": true
     },
@@ -87,6 +88,7 @@
 - 外部打开交互必须返回可追踪事件。
 - 渲染失败必须写入 `errors` 并保留可恢复状态。
 - 漫画页面禁止展示 list 切换入口，仅允许 `comic_grid`。
+- Text Novel 首次默认 `grid`，设置 `textNovelViewMode` 仅允许 `grid|list` 并跨启动恢复。
 - 随机推荐页面外层固定三列，每类按设置返回最多 3/6/9/12 项（默认 6）；数量不足时不得重复或跨类补位。
 - 每类内部按行优先布局，最大列数可设 1/2/3（默认 2）；依据分类容器实际宽度自动降列，卡片目标宽度 120–260px、间距 18px，禁止横向溢出。
 - 推荐结果仅在当前应用会话内缓存，数据源变化或用户重新推荐时失效。

@@ -9,6 +9,7 @@
 - 管理缩略图缓存键、过期与重建。
 - 执行延迟生成与后台补全。
 - 对 `comic_folder` 执行自然序首图封面选择（`jpg/png/webp/jpeg`）。
+- 对 `text_novel` 将同目录同 stem 封面压缩为最长边不超过 360×540 的 WebP 缓存。
 
 ## Out of Scope
 - 不负责目录扫描与索引建立。
@@ -73,7 +74,8 @@
 
 ## Response Rules
 - 首次展示场景优先返回可用缓存结果。
-- 延迟任务必须写入 `deferred_queue`。
+- Library/Comic 延迟任务必须写入 `deferred_queue`；Text Novel sidecar 在 `ScanWorker` 后台扫描阶段直接缓存，不占用首屏队列。
 - 缩略图路径必须是可访问的本地路径。
 - 失败项必须进入 `errors` 并给出 `retryable` 语义。
 - `comic_folder` 必须返回用于双击外部打开的 `cover_image_path`。
+- Text Novel 手动封面优先于扫描得到的 `sidecar` 封面；自动封面删除后清理受控缓存并回退标题占位。
