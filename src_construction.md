@@ -254,7 +254,7 @@ src/
 - `src/bookhub/ui/viewmodels/library_viewmodel.py`：Library/Text/Comic 资源查询过滤、字段前缀搜索（`title:`/`author:`/`tag:`）、普通 query 匹配 title/author/tags/path/info_text、视图模式、搜索建议状态。
 
 ## 4. 当前关键实现（简要）
-- 2026-09-11 远程 minor Release 准备：将 Codex 文本小说 Grid/同名封面与缩略图维护 rebase 到已发布的 `v2.2.0` 之上并推入 `main`，经 Actions `Release` workflow `bump=minor` 预期 tag `v2.3.0`、产物 `Simple-Book-library-v2.3.0-win64.zip`。
+- 2026-09-11 远程 minor Release：Codex 文本小说 Grid/同名封面与缩略图维护已发布为 `v2.3.0`（Actions `Release` bump=minor，产物 `Simple-Book-library-v2.3.0-win64.zip`），叠在当天 `v2.2.0` 快捷键之上。
 - 2026-09-11 Text Novel 缩略图维护：Settings 补齐清空/重建两个入口，经既有 `runThumbnailTask` 通道使用 `scope=text_novel`；清空只删除受控缓存并清除封面状态，重建保留有效 manual，否则按当前同名 sidecar 恢复，缺失时维持标题占位。
 - 2026-09-11 Text Novel Grid 与同名封面：首次默认 Grid，并通过 `textNovelViewMode` 独立持久化；Grid 展示封面+标题，Text List 移除封面列。TXT 扫描按 WebP/PNG/JPG/JPEG 优先级匹配同目录同 stem 图片，缓存 360×540 内 WebP；路径+size+mtime_ns 封面指纹独立检测增删改，有效 manual 封面优先，坏图 warning 降级。
 - 2026-09-11 可自定义快捷键：八个固定动作通过 `executeAction` 统一右键菜单与快捷键路径；绑定默认空并持久化，支持稳定键盘组合及鼠标 Back/Forward，拒绝冲突和保留键；输入/模态/Text Rules 屏蔽；合集导航拆成退出当前系列与进入最近系列，三类合集页各自只记本页最近一次成功打开项；Glass/Vaporwave 设置页同步。`openResource` 成功解析到可打开目标后发出 `open_external` 交互事件，关闭审查遗留的可追踪缺口。

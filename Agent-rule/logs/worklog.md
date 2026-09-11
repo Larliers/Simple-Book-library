@@ -2,7 +2,7 @@
 
 ## 最新记录
 ```json
-{"log_id":"worklog-20260911-008","timestamp":"2026-09-11T17:45:00+08:00","actor":"master-agent","task":"推送 Codex 文本小说改动并触发远程 minor Release","changes":["rebase origin/main 接入 chore: release v2.2.0","不提交已跟踪的 pycache","推送封面网格与缩略图维护两个提交","workflow_dispatch bump=minor 预期 v2.3.0"],"affected_files":["Agent-rule/logs/worklog.md","Agent-rule/logs/history/2026-09-11.md","Agent-rule/logs/decision-log.md","src_construction.md"],"outputs":["main 含 Grid/封面/缩略图维护","远程 Nuitka Release"],"risks":["构建超时 120 分钟","bump 在 Nuitka 之前落 tag，失败不能无脑重跑同一 bump"],"next_actions":["等待 Actions 成功后 pull chore: release v2.3.0"]}
+{"log_id":"worklog-20260911-008","timestamp":"2026-09-11T17:45:00+08:00","actor":"master-agent","task":"推送 Codex 文本小说改动并触发远程 minor Release","changes":["rebase origin/main 接入 chore: release v2.2.0","不提交已跟踪的 pycache","推送封面网格与缩略图维护两个提交","workflow_dispatch bump=minor 得到 v2.3.0"],"affected_files":["Agent-rule/logs/worklog.md","Agent-rule/logs/history/2026-09-11.md","Agent-rule/logs/decision-log.md","src_construction.md"],"outputs":["main 含 Grid/封面/缩略图维护","GitHub Release v2.3.0 与 win64 zip"],"risks":["构建超时 120 分钟","bump 在 Nuitka 之前落 tag，失败不能无脑重跑同一 bump"],"next_actions":[]}
 ```
 
 ## 记录规则
@@ -72,15 +72,13 @@
   ],
   "outputs": [
     "main 含 Codex 两个功能提交",
-    "远程 Nuitka 打包 GitHub Release"
+    "远程 Nuitka 打包 GitHub Release v2.3.0"
   ],
   "risks": [
     "工作流先改 version.py 再 Nuitka，构建失败时 tag 已存在",
     "Nuitka 超时上限 120 分钟"
   ],
-  "next_actions": [
-    "Actions 成功后 pull chore: release v2.3.0，确认 APP_VERSION 与 tag 一致"
-  ]
+  "next_actions": []
 }
 ```
 
