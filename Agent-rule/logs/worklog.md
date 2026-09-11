@@ -2,7 +2,7 @@
 
 ## 最新记录
 ```json
-{"log_id":"worklog-20260911-007","timestamp":"2026-09-11T17:29:42+08:00","actor":"thumbnail-agent","task":"补齐文本小说缩略图清空与重建设置项","changes":["Settings 新增 Text Novel 清空/重建按钮并接入既有任务通道","新增 text_novel scope 的安全清空与同名 sidecar 重建逻辑","390px Settings 改为单列并允许长任务按钮换行"],"affected_files":["src/bookhub/library/text_cover.py","src/bookhub/library/thumbnail_tasks.py","src/bookhub/library/thumbnail_worker.py","src/bookhub/library/repository.py","src/bookhub/ui/web/js/app.js","src/bookhub/ui/web/css/base.css"],"outputs":["两项 Text Novel 缩略图维护入口","双皮肤 1440/749/390 真实 Qt 验收"],"risks":["Vaporwave 既有本地字体资源仍返回 404","全量测试保留两个既有非法整型设置失败"],"next_actions":[]}
+{"log_id":"worklog-20260911-008","timestamp":"2026-09-11T17:45:00+08:00","actor":"master-agent","task":"推送 Codex 文本小说改动并触发远程 minor Release","changes":["rebase origin/main 接入 chore: release v2.2.0","不提交已跟踪的 pycache","推送封面网格与缩略图维护两个提交","workflow_dispatch bump=minor 预期 v2.3.0"],"affected_files":["Agent-rule/logs/worklog.md","Agent-rule/logs/history/2026-09-11.md","Agent-rule/logs/decision-log.md","src_construction.md"],"outputs":["main 含 Grid/封面/缩略图维护","远程 Nuitka Release"],"risks":["构建超时 120 分钟","bump 在 Nuitka 之前落 tag，失败不能无脑重跑同一 bump"],"next_actions":["等待 Actions 成功后 pull chore: release v2.3.0"]}
 ```
 
 ## 记录规则
@@ -47,6 +47,40 @@
   "outputs": ["v0.1.0 基线规则可用"],
   "risks": ["后续模块扩展需严格遵守字段稳定性"],
   "next_actions": ["执行首轮模块任务拆分并登记 registry"]
+}
+```
+
+## 2026-09-11 - 推送 Codex 文本小说改动并远程 minor Release
+
+```json
+{
+  "log_id": "worklog-20260911-008",
+  "timestamp": "2026-09-11T17:45:00+08:00",
+  "actor": "master-agent",
+  "task": "扫描最近一次 Codex 对话后推送未发布提交并触发远程 minor Release",
+  "changes": [
+    "确认 Codex 会话 01a08f8b 已完成本地提交：文本小说 Grid/同名封面与设置页缩略图清空/重建",
+    "rebase origin/main，接入已发布的 chore: release v2.2.0，避免漏功能空 bump",
+    "不提交已跟踪的 library_viewmodel pycache",
+    "workflow_dispatch bump=minor，从 latest GitHub Release v2.2.0 递增为预期 v2.3.0"
+  ],
+  "affected_files": [
+    "Agent-rule/logs/worklog.md",
+    "Agent-rule/logs/history/2026-09-11.md",
+    "Agent-rule/logs/decision-log.md",
+    "src_construction.md"
+  ],
+  "outputs": [
+    "main 含 Codex 两个功能提交",
+    "远程 Nuitka 打包 GitHub Release"
+  ],
+  "risks": [
+    "工作流先改 version.py 再 Nuitka，构建失败时 tag 已存在",
+    "Nuitka 超时上限 120 分钟"
+  ],
+  "next_actions": [
+    "Actions 成功后 pull chore: release v2.3.0，确认 APP_VERSION 与 tag 一致"
+  ]
 }
 ```
 

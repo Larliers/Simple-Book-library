@@ -2,7 +2,7 @@
 
 ## 最新决策
 ```json
-{"decision_id":"decision-20260911-006","timestamp":"2026-09-11T17:29:42+08:00","owner":"thumbnail-agent","title":"文本小说缩略图维护区分清空与重建语义","context":"Text Novel 已有自动与手动两类封面，设置页维护任务必须避免误删外部文件或覆盖用户选择","options":["复用 Library 仅清路径语义","清空后立即自动重建","按来源定义 cleanup/regenerate"],"decision":"cleanup 只删除 preview_root 内缓存并清除状态；regenerate 保留有效 manual，否则按当前 sidecar 恢复","rationale":["外部文件不应被缓存任务删除","手动封面优先契约必须延续","清空与重建保持用户可预期的独立动作"],"impact":["新增 text_novel 任务 scope","无 sidecar 时重建维持标题占位","Settings 增加两个入口"],"followups":[]}
+{"decision_id":"decision-20260911-007","timestamp":"2026-09-11T17:45:00+08:00","owner":"master-agent","title":"文本小说 Grid/封面/缩略图维护按 minor 发版","context":"GitHub 已有 v2.2.0；Codex 后半段用户可见能力尚未进 Release","options":["patch → v2.2.1","minor → v2.3.0","不推送 Codex 提交直接 bump"],"decision":"rebase 后 push，再 bump=minor，预期 v2.3.0","rationale":["与快捷键 minor 口径一致","必须先推送否则会发空 bump"],"impact":["下一正式版 v2.3.0","不手改 APP_VERSION"],"followups":["成功后确认 tag 与检查更新对齐"]}
 ```
 
 ## 决策记录规则
@@ -51,6 +51,35 @@
   "followups": [
     "在 UI 合同中固化 external_open_action",
     "在 shared-rules 中声明非目标边界"
+  ]
+}
+```
+
+## 2026-09-11 - 文本小说能力按 minor 发版
+
+```json
+{
+  "decision_id": "decision-20260911-007",
+  "timestamp": "2026-09-11T17:45:00+08:00",
+  "owner": "master-agent",
+  "title": "文本小说 Grid/封面/缩略图维护按 minor 发版",
+  "context": "GitHub 已发布 v2.2.0（快捷键）；Codex 会话后半段的 Grid、同名封面与缩略图维护尚未进入 Release",
+  "options": [
+    "patch → v2.2.1",
+    "minor → v2.3.0",
+    "不对 Codex 提交 push 就对 origin/main 再 bump"
+  ],
+  "decision": "先 rebase/push Codex 两个提交，再 workflow_dispatch bump=minor，预期 v2.3.0",
+  "rationale": [
+    "Grid 与同名封面是用户可见新能力，口径与当天快捷键 minor 一致",
+    "不先 push 会发不含功能的空 bump"
+  ],
+  "impact": [
+    "下一正式版为 v2.3.0",
+    "不手改 APP_VERSION，由 Release workflow 从 latest GitHub Release 递增"
+  ],
+  "followups": [
+    "Actions 成功后确认 tag、zip 与检查更新对齐"
   ]
 }
 ```

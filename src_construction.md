@@ -47,6 +47,8 @@ src/
 │  ├─ test_text_rule_dialog.py
 │  ├─ test_scan_pdf_degrade.py
 │  ├─ test_library_scan_incremental.py
+│  ├─ test_text_scan_incremental.py
+│  ├─ test_text_thumbnail_tasks.py
 │  ├─ test_root_scan_strategy.py
 │  ├─ test_scan_summary_fields.py
 │  ├─ test_text_encoding.py
@@ -153,6 +155,7 @@ src/
 - `src/tests/test_scan_pdf_degrade.py`：PDF 后端降级容错回归测试（PyMuPDF 不可用时的聚合 warning 与入库行为）；Library 扫描进度 `total=0` busy 语义；comic/text 扫描断言真实 total。
 - `src/tests/test_repository_orphan_cleanup.py`：根目录删除 LIKE 通配符误伤回归；整型设置非法值回退/越界 clamp（BUG-6）。
 - `src/tests/test_library_scan_incremental.py`：Library 增量扫描与 `hash_strategy` 分级指纹（未变跳过、touch 强制更新、缺缩略图重处理、COALESCE 保留指纹）；`ScanRequest.roots` 使用 `LibraryScanRoot`。
+- `src/tests/test_text_scan_incremental.py`：Text Novel 同名 sidecar 扫描回归；覆盖 webp/png/jpg/jpeg 优先级、非同名忽略、无封面/坏图 warning、自动封面增删改、TXT 未变时封面仍刷新，以及有效 manual 不被扫描覆盖。
 - `src/tests/test_root_scan_strategy.py`：目录级扫描策略回归（旧库 `scan_strategy` 列迁移、Library/Text per-root 覆盖与全局回退、漫画 snapshot/full 旁注刷新、`set_root_scan_strategy` 合法性与 repository 默认值）。
 - `src/tests/test_scan_summary_fields.py`：扫描摘要字段对齐回归（comic 计入新增、别名键、冲突 `incoming_path`）。
 - `src/tests/test_text_encoding.py`：TXT 编码探测回归（GBK/GB18030、UTF-8 BOM、简/繁偏好、低置信双候选、规则预览 `detectedEncoding`）。
@@ -251,6 +254,7 @@ src/
 - `src/bookhub/ui/viewmodels/library_viewmodel.py`：Library/Text/Comic 资源查询过滤、字段前缀搜索（`title:`/`author:`/`tag:`）、普通 query 匹配 title/author/tags/path/info_text、视图模式、搜索建议状态。
 
 ## 4. 当前关键实现（简要）
+- 2026-09-11 远程 minor Release 准备：将 Codex 文本小说 Grid/同名封面与缩略图维护 rebase 到已发布的 `v2.2.0` 之上并推入 `main`，经 Actions `Release` workflow `bump=minor` 预期 tag `v2.3.0`、产物 `Simple-Book-library-v2.3.0-win64.zip`。
 - 2026-09-11 Text Novel 缩略图维护：Settings 补齐清空/重建两个入口，经既有 `runThumbnailTask` 通道使用 `scope=text_novel`；清空只删除受控缓存并清除封面状态，重建保留有效 manual，否则按当前同名 sidecar 恢复，缺失时维持标题占位。
 - 2026-09-11 Text Novel Grid 与同名封面：首次默认 Grid，并通过 `textNovelViewMode` 独立持久化；Grid 展示封面+标题，Text List 移除封面列。TXT 扫描按 WebP/PNG/JPG/JPEG 优先级匹配同目录同 stem 图片，缓存 360×540 内 WebP；路径+size+mtime_ns 封面指纹独立检测增删改，有效 manual 封面优先，坏图 warning 降级。
 - 2026-09-11 可自定义快捷键：八个固定动作通过 `executeAction` 统一右键菜单与快捷键路径；绑定默认空并持久化，支持稳定键盘组合及鼠标 Back/Forward，拒绝冲突和保留键；输入/模态/Text Rules 屏蔽；合集导航拆成退出当前系列与进入最近系列，三类合集页各自只记本页最近一次成功打开项；Glass/Vaporwave 设置页同步。`openResource` 成功解析到可打开目标后发出 `open_external` 交互事件，关闭审查遗留的可追踪缺口。
@@ -310,7 +314,7 @@ src/
 
 ## 5. 边界与约束
 - 当前导入粒度：目录导入（不支持单文件导入）。
-- 当前支持格式：Library 支持 PDF/EPUB，Comic 支持目录封面提取，Text Novel 支持 TXT（含预览与规则导入）。
+- 当前支持格式：Library 支持 PDF/EPUB/HTML/Markdown/FB2/DOCX，Comic 支持目录封面提取与 CBZ，Text Novel 支持 TXT（含预览、规则导入、同名 sidecar 封面）。
 - 外部打开：依赖系统默认关联程序。
 
 ## 6. 维护要求
