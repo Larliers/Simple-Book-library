@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+
+from pypinyin import Style, lazy_pinyin
 
 from bookhub.app_paths import default_db_path, default_scan_report_path
 from bookhub.library.data_paths import DEFAULT_PREVIEW_DIR, resolve_preview_dir
@@ -44,6 +47,9 @@ COLLECTION_KIND_COMIC = "comic"
 COLLECTION_KINDS = frozenset(
     {COLLECTION_KIND_BOOK, COLLECTION_KIND_TEXT_NOVEL, COLLECTION_KIND_COMIC}
 )
+TAG_MANAGER_SCOPE_KEYS = ("library", "text_novel", "comic")
+DEFAULT_TAG_MANAGER_SCOPES = {key: True for key in TAG_MANAGER_SCOPE_KEYS}
+_LEGACY_FIELD_TAG_RE = re.compile(r"^(author|publisher|language|series)\s*[:：]", re.IGNORECASE)
 DEFAULT_FAVORITES_COLLECTION_NAME = "收藏"
 FAVORITES_MIGRATED_SETTING = "favorites_migrated_to_collections"
 SHORTCUT_ACTION_IDS = (
@@ -374,6 +380,7 @@ class LibraryRepository:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     resource_id TEXT NOT NULL UNIQUE,
                     title TEXT NOT NULL,
+                    tags_json TEXT NOT NULL DEFAULT '[]',
                     path TEXT NOT NULL UNIQUE,
                     comic_root TEXT,
                     cover_image_path TEXT,
@@ -421,6 +428,12 @@ class LibraryRepository:
                 """
             )
             self._ensure_column(conn, "comics", "cover_fingerprint", "ALTER TABLE comics ADD COLUMN cover_fingerprint TEXT")
+            self._ensure_column(
+                conn,
+                "comics",
+                "tags_json",
+                "ALTER TABLE comics ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'",
+            )
             self._ensure_column(conn, "comics", "folder_size_mtime", "ALTER TABLE comics ADD COLUMN folder_size_mtime TEXT")
             self._ensure_column(conn, "comics", "folder_mtime", "ALTER TABLE comics ADD COLUMN folder_mtime INTEGER")
             self._ensure_column(conn, "comics", "folder_modified_at", "ALTER TABLE comics ADD COLUMN folder_modified_at INTEGER")
@@ -510,6 +523,8 @@ class LibraryRepository:
             self.set_setting("recommendation_items_per_category", 6)
         if self.get_setting("recommendation_columns_per_category", None) is None:
             self.set_setting("recommendation_columns_per_category", 2)
+        if self.get_setting("tag_manager_scopes", None) is None:
+            self.set_setting("tag_manager_scopes", DEFAULT_TAG_MANAGER_SCOPES)
         if self.get_setting("shortcut_bindings", None) is None:
             self.set_setting("shortcut_bindings", {})
         if self.get_setting("comic_sort_order_main", None) is None:
@@ -929,6 +944,25 @@ class LibraryRepository:
             "recommendation_items_per_category",
             self._normalize_recommendation_items_per_category(value),
         )
+
+    def get_tag_manager_scopes(self) -> dict[str, bool]:
+        raw = self.get_setting("tag_manager_scopes", DEFAULT_TAG_MANAGER_SCOPES)
+        if not isinstance(raw, dict):
+            return dict(DEFAULT_TAG_MANAGER_SCOPES)
+        scopes = {key: bool(raw.get(key, True)) for key in TAG_MANAGER_SCOPE_KEYS}
+        return scopes if any(scopes.values()) else dict(DEFAULT_TAG_MANAGER_SCOPES)
+
+    def set_tag_manager_scopes(self, scopes: dict[str, Any]) -> dict[str, Any]:
+        current = self.get_tag_manager_scopes()
+        if not isinstance(scopes, dict) or set(scopes) != set(TAG_MANAGER_SCOPE_KEYS):
+            return {"ok": False, "error": "invalid_scope", "scopes": current}
+        if any(not isinstance(scopes[key], bool) for key in TAG_MANAGER_SCOPE_KEYS):
+            return {"ok": False, "error": "invalid_scope", "scopes": current}
+        normalized = {key: scopes[key] for key in TAG_MANAGER_SCOPE_KEYS}
+        if not any(normalized.values()):
+            return {"ok": False, "error": "empty_scope", "scopes": current}
+        self.set_setting("tag_manager_scopes", normalized)
+        return {"ok": True, "error": "", "scopes": normalized}
 
     @staticmethod
     def _normalize_recommendation_columns_per_category(value: int | str | None) -> int:
@@ -1938,7 +1972,7 @@ class LibraryRepository:
         order_clause = self._comic_order_clause(order_by)
 
         query = f"""
-            SELECT resource_id, title, path, comic_root, cover_image_path, thumbnail_path,
+            SELECT resource_id, title, tags_json, path, comic_root, cover_image_path, thumbnail_path,
                    cover_fingerprint, folder_size_mtime, folder_mtime, folder_modified_at,
                    image_count, info_text, is_missing, missing_reason
             FROM comics
@@ -1947,7 +1981,16 @@ class LibraryRepository:
         """
         with self._connection() as conn:
             rows = conn.execute(query).fetchall()
-        return [dict(row) for row in rows]
+        records: list[dict[str, Any]] = []
+        for row in rows:
+            record = dict(row)
+            try:
+                tags = json.loads(record.get("tags_json") or "[]")
+            except (TypeError, json.JSONDecodeError):
+                tags = []
+            record["tags"] = [str(item) for item in tags] if isinstance(tags, list) else []
+            records.append(record)
+        return records
 
     def backfill_book_file_mtime(self) -> int:
         with self._connection() as conn:
@@ -2499,23 +2542,168 @@ class LibraryRepository:
 
     # -- Tags ---------------------------------------------------------
 
-    def get_all_tags(self) -> list[str]:
-        """Return all unique tags across all books, sorted alphabetically."""
-        with self._connection() as conn:
-            rows = conn.execute(
-                "SELECT tags_json FROM books WHERE tags_json IS NOT NULL AND tags_json != '[]'"
-            ).fetchall()
-        tags_set: set[str] = set()
-        for row in rows:
+    @staticmethod
+    def _normalized_tag_values(raw_tags: Any) -> list[str]:
+        if isinstance(raw_tags, str):
             try:
-                tags = json.loads(row[0])
-                if isinstance(tags, list):
-                    for t in tags:
-                        if t and isinstance(t, str):
-                            tags_set.add(t.strip())
-            except Exception:
-                pass
-        return sorted(tags_set)
+                raw_tags = json.loads(raw_tags or "[]")
+            except json.JSONDecodeError:
+                raw_tags = []
+        if not isinstance(raw_tags, list):
+            return []
+        values: list[str] = []
+        seen: set[str] = set()
+        for raw in raw_tags:
+            if not isinstance(raw, str):
+                continue
+            tag = raw.strip()
+            if tag and tag not in seen:
+                seen.add(tag)
+                values.append(tag)
+        return values
+
+    @staticmethod
+    def _is_legacy_field_tag(tag: str) -> bool:
+        return bool(_LEGACY_FIELD_TAG_RE.match(str(tag or "").strip()))
+
+    @classmethod
+    def _visible_tag_values(cls, raw_tags: Any) -> list[str]:
+        return [tag for tag in cls._normalized_tag_values(raw_tags) if not cls._is_legacy_field_tag(tag)]
+
+    @staticmethod
+    def _tag_sort_key(tag: str) -> str:
+        parts = lazy_pinyin(str(tag), style=Style.NORMAL, errors=lambda chars: list(chars))
+        return "".join(parts).casefold()
+
+    @classmethod
+    def _tag_group_letter(cls, tag: str) -> str:
+        key = cls._tag_sort_key(tag)
+        return key[0].upper() if key and "a" <= key[0] <= "z" else "#"
+
+    def _active_tag_records(self, scopes: dict[str, bool] | None = None) -> list[dict[str, Any]]:
+        selected = scopes or self.get_tag_manager_scopes()
+        records: list[dict[str, Any]] = []
+        if selected.get("library"):
+            records.extend(
+                {**row, "source_page": "library"}
+                for row in self.list_books(include_missing=False, exclude_resource_type=COLLECTION_KIND_TEXT_NOVEL)
+            )
+        if selected.get("text_novel"):
+            records.extend(
+                {**row, "source_page": "text_novel"}
+                for row in self.list_books(
+                    include_missing=False,
+                    resource_type=COLLECTION_KIND_TEXT_NOVEL,
+                    order_by=self.get_text_novel_sort_order_main(),
+                )
+            )
+        if selected.get("comic"):
+            records.extend(
+                {**row, "source_page": "comic"}
+                for row in self.list_comics(
+                    include_missing=False,
+                    order_by=self.get_comic_sort_order_main(),
+                )
+            )
+        return records
+
+    def get_tag_catalog(self, order: str = "asc") -> dict[str, Any]:
+        counts: dict[str, int] = {}
+        for record in self._active_tag_records():
+            for tag in self._visible_tag_values(record.get("tags", record.get("tags_json"))):
+                counts[tag] = counts.get(tag, 0) + 1
+
+        grouped: dict[str, list[str]] = {}
+        for tag in counts:
+            grouped.setdefault(self._tag_group_letter(tag), []).append(tag)
+
+        descending = str(order or "").strip().lower() == "desc"
+        letters = sorted((letter for letter in grouped if letter != "#"), reverse=descending)
+        if "#" in grouped:
+            letters.append("#")
+        groups = []
+        for letter in letters:
+            names = sorted(
+                grouped[letter],
+                key=lambda value: (self._tag_sort_key(value), value.casefold(), value),
+                reverse=descending,
+            )
+            groups.append(
+                {
+                    "letter": letter,
+                    "tagCount": len(names),
+                    "items": [{"name": name, "resourceCount": counts[name]} for name in names],
+                }
+            )
+        return {
+            "mode": "tag_index",
+            "order": "desc" if descending else "asc",
+            "tagCount": len(counts),
+            "groups": groups,
+        }
+
+    def get_resources_by_tag(self, tag: str) -> list[dict[str, Any]]:
+        target = str(tag or "").strip()
+        if not target:
+            return []
+        return [
+            record
+            for record in self._active_tag_records()
+            if target in self._normalized_tag_values(record.get("tags", record.get("tags_json")))
+        ]
+
+    @staticmethod
+    def _resource_tag_target(page: str) -> tuple[str, str] | None:
+        if page in {"library", "collections"}:
+            return "books", "COALESCE(resource_type, '') != 'text_novel'"
+        if page in {"text_novel", "novel_collections"}:
+            return "books", "COALESCE(resource_type, '') = 'text_novel'"
+        if page in {"comic", "comic_collections"}:
+            return "comics", "1 = 1"
+        return None
+
+    def _set_resource_tag(self, page: str, resource_id: str, tag: str, present: bool) -> bool:
+        target = self._resource_tag_target(str(page or ""))
+        normalized_tag = str(tag or "").strip()
+        if target is None or not normalized_tag:
+            return False
+        table, kind_clause = target
+        with self._connection() as conn:
+            row = conn.execute(
+                f"SELECT id, tags_json FROM {table} WHERE resource_id = ? AND {kind_clause}",  # noqa: S608
+                (str(resource_id),),
+            ).fetchone()
+            if not row:
+                return False
+            tags = self._normalized_tag_values(row["tags_json"])
+            before = list(tags)
+            if present and normalized_tag not in tags:
+                tags.append(normalized_tag)
+            elif not present:
+                tags = [value for value in tags if value != normalized_tag]
+            if tags == before:
+                return False
+            conn.execute(
+                f"UPDATE {table} SET tags_json = ?, updated_at = ? WHERE id = ?",  # noqa: S608
+                (json.dumps(tags, ensure_ascii=False), now_utc_iso(), int(row["id"])),
+            )
+        return True
+
+    def add_resource_tag(self, page: str, resource_id: str, tag: str) -> bool:
+        return self._set_resource_tag(page, resource_id, tag, True)
+
+    def remove_resource_tag(self, page: str, resource_id: str, tag: str) -> bool:
+        return self._set_resource_tag(page, resource_id, tag, False)
+
+    def get_all_tags(self) -> list[str]:
+        """Return all unique active-resource tags across every source."""
+        all_scopes = {key: True for key in TAG_MANAGER_SCOPE_KEYS}
+        tags_set = {
+            tag
+            for record in self._active_tag_records(all_scopes)
+            for tag in self._visible_tag_values(record.get("tags", record.get("tags_json")))
+        }
+        return sorted(tags_set, key=lambda value: (self._tag_sort_key(value), value.casefold(), value))
 
     def add_tag_to_book(self, book_id: int, tag: str) -> None:
         """Add a tag to a book's tag list (idempotent)."""

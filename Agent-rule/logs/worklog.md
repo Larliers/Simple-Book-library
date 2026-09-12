@@ -2,7 +2,7 @@
 
 ## 最新记录
 ```json
-{"log_id":"worklog-20260911-012","timestamp":"2026-09-11T19:15:00+08:00","actor":"maintenance-agent","task":"提交文本小说排序与规则扫描改动并触发远程 minor Release","changes":["提交功能改动并 push origin/main","workflow_dispatch bump=minor 预期 v2.4.0"],"affected_files":[".github/workflows/release.yml"],"outputs":["origin/main 功能提交","远程 Nuitka 打包 Release"],"risks":["工作流另提 chore: release 提交","Nuitka 远程构建可能超过一小时"],"next_actions":[]}
+{"log_id":"worklog-20260912-003","timestamp":"2026-09-12T10:45:00+08:00","actor":"ui-agent","task":"截掉字段前缀标签并为标签页接入前进后退","changes":["目录与 get_all_tags 截掉 author/publisher/language/series 前缀","build_metadata_tags 不再写入字段标签","exit_collection/reopen_recent_collection 在标签页退出或重开最近标签"],"affected_files":["src/bookhub/library/metadata.py","src/bookhub/library/repository.py","src/bookhub/ui/web/js/app.js","src/bookhub/ui/web_bridge.py","src/bookhub/i18n/locales/zh-cn.json","src/tests/test_tag_management.py","src/tests/js/test_tag_management.js","src/tests/js/test_shortcuts.js"],"outputs":["字段标签不再出现在标签目录","同一后退/前进绑定可用于标签详情"],"risks":["存量 tags_json 需重扫才从书本详情清掉","图书详情仍可能显示旧字段标签"],"next_actions":["等待确认是否提交（排除 pycache）"]}
 ```
 
 ## 记录规则
@@ -23,6 +23,30 @@
   "risks": ["string"],
   "next_actions": ["string"]
 }
+```
+
+## 2026-09-12 - 截掉字段标签并接入标签前进后退
+
+完整记录见 `logs/history/2026-09-12.md`。
+
+```json
+{"log_id":"worklog-20260912-003","timestamp":"2026-09-12T10:45:00+08:00","actor":"ui-agent","task":"截掉字段前缀标签并为标签页接入前进后退","changes":["目录与 get_all_tags 截掉 author/publisher/language/series 前缀","build_metadata_tags 不再写入字段标签","exit_collection/reopen_recent_collection 在标签页退出或重开最近标签"],"affected_files":["src/bookhub/library/metadata.py","src/bookhub/library/repository.py","src/bookhub/ui/web/js/app.js","src/bookhub/ui/web_bridge.py","src/bookhub/i18n/locales/zh-cn.json"],"outputs":["字段标签不再出现在标签目录","同一后退/前进绑定可用于标签详情"],"risks":["存量 tags_json 需重扫才从书本详情清掉","图书详情仍可能显示旧字段标签"],"next_actions":["等待确认是否提交（排除 pycache）"]}
+```
+
+## 2026-09-12 - 补齐 open_tag 交互事件
+
+完整记录见 `logs/history/2026-09-12.md`。
+
+```json
+{"log_id":"worklog-20260912-002","timestamp":"2026-09-12T10:30:00+08:00","actor":"ui-agent","task":"补齐标签目录 open_tag 可追踪事件","changes":["Bridge.openTag 仅在用户点目录标签时发出 open_tag","目录 click 先 openTag 再拉详情，刷新路径不发","同步 UI contract 与 ui-agent 输出枚举"],"affected_files":["src/bookhub/ui/web_bridge.py","src/bookhub/ui/web/js/app.js","src/tests/test_web_bridge_smoke.py","src/tests/js/test_tag_management.js","Agent-rule/contracts/ui-contract.md","Agent-rule/agents/ui-agent.md"],"outputs":["open_tag 合同闭环","标签专项与 Bridge 冒烟覆盖发出/不发出"],"risks":["loading 硬锁与改范围双请求仍在","add_root 可能过宽置位 tagCatalogInvalidated","未提交且勿带 pycache"],"next_actions":["等待确认是否提交（排除 pycache）"]}
+```
+
+## 2026-09-12 - 标签管理目录与混合资源详情
+
+完整记录见 `logs/history/2026-09-12.md`，GUI 证据见 `logs/evidence/2026-09-12-tag-management-gui.md`。
+
+```json
+{"log_id":"worklog-20260912-001","timestamp":"2026-09-12T10:08:29+08:00","actor":"ui-agent","task":"新增标签管理目录、混合资源详情与三类范围设置","changes":["漫画标签持久化与三类 Repository 汇总","Bridge 标签接口和独立失效信号","双皮肤目录/详情/设置与请求竞态保护"],"affected_files":["requirements.txt","src/bookhub/library/repository.py","src/bookhub/ui/web_bridge.py","src/bookhub/ui/web_window.py","src/bookhub/ui/web/js/app.js"],"outputs":["标签管理功能","50 项专项测试","真实 Qt WebEngine GUI 验收"],"risks":["两个既有非法整型设置测试仍失败","既有 Vaporwave 字体 404"],"next_actions":[]}
 ```
 
 ## 2026-09-11 - 提交并触发 minor Release

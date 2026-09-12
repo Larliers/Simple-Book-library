@@ -49,14 +49,9 @@ def _format_authors(creators: list[str]) -> str | None:
 
 
 def build_metadata_tags(metadata: ParsedMetadata) -> list[str]:
-    tags: list[str] = []
-    if metadata.author:
-        tags.append(f"author: {metadata.author}")
-    if metadata.publisher:
-        tags.append(f"publisher: {metadata.publisher}")
-    if metadata.language:
-        tags.append(f"language: {metadata.language}")
-    return tags
+    # Author/publisher/language stay on dedicated columns. Do not copy them
+    # into tags_json as "author:" / "language:" prefixes.
+    return []
 
 
 def compute_fingerprints(

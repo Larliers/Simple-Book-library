@@ -25,7 +25,14 @@ try:
     from bookhub.library import LibraryRepository
     from bookhub.library.models import ComicScanRequest, ComicScanRoot
     from bookhub.library.scanner import scan_comic_roots
-    from bookhub.ui.web_bridge import PAGE_COMIC, PAGE_LIBRARY, PAGE_RANDOM_RECOMMENDATIONS, UiBridge, NAV_ITEMS
+    from bookhub.ui.web_bridge import (
+        PAGE_COMIC,
+        PAGE_LIBRARY,
+        PAGE_RANDOM_RECOMMENDATIONS,
+        PAGE_TAG_MANAGER,
+        UiBridge,
+        NAV_ITEMS,
+    )
     from bookhub.ui.web_scheme import WEB_ROOT, to_local_path
 
     QT_AVAILABLE = True
@@ -62,6 +69,10 @@ class WebBridgeSmokeTests(unittest.TestCase):
         self.assertEqual(payload["settings"]["recommendationColumnsPerCategory"], 2)
         self.assertEqual(payload["settings"]["textNovelViewMode"], "grid")
         self.assertEqual(
+            payload["settings"]["tagManagerScopes"],
+            {"library": True, "text_novel": True, "comic": True},
+        )
+        self.assertEqual(
             payload["settings"]["shortcutBindings"],
             {
                 "exit_collection": "",
@@ -76,6 +87,86 @@ class WebBridgeSmokeTests(unittest.TestCase):
         )
         page_keys = {page for page, _, _ in NAV_ITEMS}
         self.assertEqual(set(payload["pages"].keys()), page_keys)
+        pages = [page for page, _, _ in NAV_ITEMS]
+        self.assertEqual(pages[-2:], [PAGE_RANDOM_RECOMMENDATIONS, PAGE_TAG_MANAGER])
+
+    def test_tag_manager_bridge_catalog_detail_and_scope_contract(self) -> None:
+        bridge = self._make_bridge()
+        bridge._repo.upsert_book(
+            {
+                "resource_id": "book-tagged",
+                "path": r"C:\library\book-tagged.pdf",
+                "title": "Tagged Book",
+                "file_name": "book-tagged.pdf",
+                "extension": ".pdf",
+                "resource_type": "book",
+                "tags_json": "[]",
+            }
+        )
+        bridge.reload_data()
+        self.assertTrue(bridge.addResourceTag(PAGE_LIBRARY, "book-tagged", "白色"))
+
+        catalog = json.loads(bridge.getTagCatalog("asc"))
+        detail = json.loads(bridge.getTagResources("白色"))
+        saved = json.loads(
+            bridge.setTagManagerScopes(
+                json.dumps({"library": True, "text_novel": False, "comic": False})
+            )
+        )
+        rejected = json.loads(
+            bridge.setTagManagerScopes(
+                json.dumps({"library": False, "text_novel": False, "comic": False})
+            )
+        )
+
+        self.assertEqual(catalog["groups"][0]["letter"], "B")
+        self.assertEqual(detail["mode"], "tag_detail")
+        self.assertEqual(detail["tag"], "白色")
+        self.assertEqual(detail["items"][0]["sourcePage"], PAGE_LIBRARY)
+        self.assertTrue(saved["ok"])
+        self.assertEqual(saved["scopes"], {"library": True, "text_novel": False, "comic": False})
+        self.assertEqual(rejected["error"], "empty_scope")
+
+    def test_open_tag_emits_interaction_event_only_for_user_open(self) -> None:
+        bridge = self._make_bridge()
+        events: list[dict[str, object]] = []
+        bridge.interactionEvent.connect(lambda raw: events.append(json.loads(raw)))
+
+        json.loads(bridge.getTagResources("白色"))
+        self.assertEqual(events, [])
+
+        bridge.openTag("")
+        bridge.openTag("   ")
+        self.assertEqual(events, [])
+
+        bridge.openTag("白色")
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["event"], "open_tag")
+        self.assertEqual(events[0]["resource_id"], "白色")
+        parsed = datetime.fromisoformat(str(events[0]["timestamp"]))
+        self.assertIsNotNone(parsed.tzinfo)
+
+    def test_comic_tags_use_page_aware_bridge_and_invalidate_catalog(self) -> None:
+        bridge = self._make_bridge()
+        bridge._repo.upsert_comic(
+            {
+                "resource_id": "comic-tagged",
+                "path": r"C:\comics\comic-tagged",
+                "title": "Tagged Comic",
+                "image_count": 3,
+            }
+        )
+        bridge.reload_data()
+        resource_payloads: list[dict[str, object]] = []
+        bridge.resourcesChanged.connect(lambda raw: resource_payloads.append(json.loads(raw)))
+
+        self.assertTrue(bridge.addResourceTag(PAGE_COMIC, "comic-tagged", "漫画标签"))
+        self.assertEqual(json.loads(bridge.getDetail(PAGE_COMIC, "comic-tagged"))["tags"], ["漫画标签"])
+        self.assertTrue(resource_payloads[-1]["tagCatalogInvalidated"])
+
+        self.assertTrue(bridge.removeResourceTag(PAGE_COMIC, "comic-tagged", "漫画标签"))
+        self.assertEqual(json.loads(bridge.getDetail(PAGE_COMIC, "comic-tagged"))["tags"], [])
+        self.assertTrue(resource_payloads[-1]["tagCatalogInvalidated"])
 
     def test_shortcut_binding_bridge_returns_conflicts_and_emits_native_input(self) -> None:
         bridge = self._make_bridge()
@@ -102,9 +193,12 @@ class WebBridgeSmokeTests(unittest.TestCase):
 
         bridge.push_resources()
         bridge.push_resources(recommendations_invalidated=True)
+        bridge.push_resources(tag_catalog_invalidated=True)
 
         self.assertFalse(payloads[0]["recommendationsInvalidated"])
+        self.assertFalse(payloads[0]["tagCatalogInvalidated"])
         self.assertTrue(payloads[1]["recommendationsInvalidated"])
+        self.assertTrue(payloads[2]["tagCatalogInvalidated"])
 
     def test_library_payload_includes_extension(self) -> None:
         bridge = self._make_bridge()
@@ -359,6 +453,7 @@ class WebBridgeSmokeTests(unittest.TestCase):
                 "comic",
                 "comic_collections",
                 "random_recommendations",
+                "tag_manager",
             ],
         )
         self.assertEqual(PAGE_RANDOM_RECOMMENDATIONS, "random_recommendations")
@@ -735,6 +830,18 @@ class SettingsUiStructureTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("RANDOM_RECOMMENDATIONS_BEHAVIOR_OK", completed.stdout)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is not available")
+    def test_tag_management_frontend_behavior(self) -> None:
+        script = PROJECT_ROOT / "src" / "tests" / "js" / "test_tag_management.js"
+        app_js = PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js"
+        completed = subprocess.run(
+            [shutil.which("node") or "node", str(script), str(app_js)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertIn("TAG_MANAGEMENT_BEHAVIOR_OK", completed.stdout)
 
     def test_text_novel_thumbnail_tasks_are_exposed_in_settings_and_worker(self) -> None:
         app_js = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")

@@ -172,6 +172,12 @@
   min-width: 220px; padding: 6px 10px; border-radius: var(--radius);
   border: 1px solid var(--line); background: var(--control-bg); color: var(--ink); font: inherit;
 }
+.tag-link { color: var(--ink); }
+.tag-link:hover { background: var(--hover-bg); border-color: rgba(57, 119, 194, 0.24); }
+.tag-link:focus-visible { background: var(--hover-bg); }
+.tag-source-badge { color: var(--accent); background: rgba(57, 119, 194, 0.1); border: 1px solid rgba(57, 119, 194, 0.24); }
+.tag-source-text_novel { color: #76539d; background: rgba(118, 83, 157, 0.1); border-color: rgba(118, 83, 157, 0.24); }
+.tag-source-comic { color: #9a5c36; background: rgba(154, 92, 54, 0.1); border-color: rgba(154, 92, 54, 0.24); }
 .cover-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 148px));
   gap: 18px; align-content: start;

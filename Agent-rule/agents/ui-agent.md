@@ -13,6 +13,7 @@
 - 渲染 Text Novel 主页与小说合集详情的排序下拉（文件日期/标题四档），并消费后端已排好序的列表。
 - 在漫画详情侧栏展示同级 `txt` 拼接文本（位于缩略图下方）。
 - 渲染随机推荐三列封面页，并按资源的 `sourcePage` 复用详情、外部打开与合集交互。
+- 渲染标签目录与标签详情混合封面网格，维护会话排序、请求失效和来源感知交互。
 - 维护可持久化快捷键设置页、统一资源动作分发器、原生鼠标侧键输入和会话内最近系列导航。
 
 ## Out of Scope
@@ -27,6 +28,7 @@
 - `external_open_action`
 - `comic_sidebar_binding`
 - `random_recommendations_view`
+- `tag_management_view`
 - `shortcut_action_dispatcher`
 
 ## Accepted Input Format
@@ -34,7 +36,7 @@
 {
   "request_id": "string",
   "task_id": "string",
-  "view_mode": "list|cover_grid|waterfall|comic_grid|recommendation_grid",
+  "view_mode": "list|cover_grid|waterfall|comic_grid|recommendation_grid|tag_index|tag_detail",
   "data_source": {
     "resources": [
       {
@@ -66,13 +68,13 @@
   "status": "success|partial|failed",
   "output": {
     "render_plan": {
-      "view_mode": "list|cover_grid|waterfall|comic_grid|recommendation_grid",
+      "view_mode": "list|cover_grid|waterfall|comic_grid|recommendation_grid|tag_index|tag_detail",
       "visible_count": 0,
       "virtualized": true
     },
     "interaction_events": [
       {
-        "event": "open_external|filter|sort|paginate|comic_favorite_toggle|reroll_recommendations",
+        "event": "open_external|filter|sort|paginate|comic_favorite_toggle|reroll_recommendations|open_tag",
         "resource_id": "string|null",
         "timestamp": "ISO-8601"
       }
@@ -93,6 +95,11 @@
 - 随机推荐页面外层固定三列，每类按设置返回最多 3/6/9/12 项（默认 6）；数量不足时不得重复或跨类补位。
 - 每类内部按行优先布局，最大列数可设 1/2/3（默认 2）；依据分类容器实际宽度自动降列，卡片目标宽度 120–260px、间距 18px，禁止横向溢出。
 - 推荐结果仅在当前应用会话内缓存，数据源变化或用户重新推荐时失效。
+- 标签目录按中文拼音/英文 A–Z 分组，`#` 始终置尾；A→Z/Z→A 仅会话保存，目录与详情请求用 request id 拒绝旧响应。
+- 用户从标签目录进入详情时发出 `open_tag`；`getTagResources`、改范围、改排序、失效重载和返回目录后重载不发。
+- 标签详情固定按 Library/Text Novel/Comic 来源顺序混排，每张卡必须用真实 `sourcePage` 路由详情、双击、右键和快捷操作；两套皮肤及 1120px 响应式不得横向溢出。
+- 设置页标签范围为 Library/Text Novel/Comic 三个独立复选项，至少保留一个；范围变化立即刷新当前标签目录或详情。
 - 右键菜单和快捷键必须通过相同动作 ID 执行；当前资源上下文从页面选择解析，随机推荐继承列级 `sourcePage`。
 - 快捷键录入使用 `KeyboardEvent.code` 或 `MouseBack`/`MouseForward`，拒绝冲突与保留按键；非录入状态在输入控件、模态框及 Text Rules 内不得触发。
-- 合集导航拆成退出当前系列与进入最近系列两个动作，语义对应后退/前进；书籍/小说/漫画合集各自只保留本次启动中该页最后一次成功打开项，重启不恢复；失效目标必须清除并提示。
+- 合集导航拆成退出当前系列与进入最近系列两个动作，语义对应后退/前进；书籍/小说/漫画合集各自只保留本次启动中该页最后一次成功打开项；同一动作在标签管理页退出/重开最近标签；重启不恢复；失效目标必须清除并提示。
+- 标签目录不展示 `author:` / `publisher:` / `language:` / `series:` 字段前缀标签。

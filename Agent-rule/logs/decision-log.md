@@ -2,7 +2,7 @@
 
 ## 最新决策
 ```json
-{"decision_id":"decision-20260911-010","timestamp":"2026-09-11T19:15:00+08:00","owner":"maintenance-agent","title":"本批功能走 minor 发布为 v2.4.0","context":"用户要求 commit、push 并远程打包发布；latest tag 为 v2.3.0","options":["patch","minor","major"],"decision":"workflow_dispatch bump=minor，预期 v2.4.0","rationale":["含小说排序、loop_inline、扫描每次重抽规则等用户可见能力","与 v2.2.0/v2.3.0 功能批次同级"],"impact":["工作流会再提交 chore: release 并打 tag","Nuitka 远程构建可能超过一小时"],"followups":["发布完成后核对 zip 与 Release 页"]}
+{"decision_id":"decision-20260912-003","timestamp":"2026-09-12T10:45:00+08:00","owner":"ui-agent","title":"字段标签从目录截掉并复用合集前进后退","context":"早期扫描把 author/language 写入 tags_json；标签详情没有前进后退快捷识别","options":["只改 CSS 省略号","目录过滤并停写","复用合集动作","新增标签专用动作"],"decision":"目录和快捷添加截掉字段前缀；扫描不再写入；exit_collection/reopen_recent_collection 在标签页同样生效","rationale":["这些不是用户标签","已有后退/前进绑定无需重绑"],"impact":["存量字段标签立刻从目录消失","书本详情仍可能显示旧值直到重扫"],"followups":["不批量改写库内 tags_json"]}
 ```
 
 ## 决策记录规则
@@ -24,6 +24,30 @@
   "impact": ["string"],
   "followups": ["string"]
 }
+```
+
+## 2026-09-12 - 字段标签截断与标签前进后退
+
+完整决策记录见 `logs/history/2026-09-12.md`。
+
+```json
+{"decision_id":"decision-20260912-003","timestamp":"2026-09-12T10:45:00+08:00","owner":"ui-agent","title":"字段标签从目录截掉并复用合集前进后退","context":"早期扫描把 author/language 写入 tags_json；标签详情没有前进后退快捷识别","options":["只改 CSS 省略号","目录过滤并停写","复用合集动作","新增标签专用动作"],"decision":"目录和快捷添加截掉字段前缀；扫描不再写入；exit_collection/reopen_recent_collection 在标签页同样生效","rationale":["这些不是用户标签","已有后退/前进绑定无需重绑"],"impact":["存量字段标签立刻从目录消失","书本详情仍可能显示旧值直到重扫"],"followups":["不批量改写库内 tags_json"]}
+```
+
+## 2026-09-12 - open_tag 只从目录点击发出
+
+完整决策记录见 `logs/history/2026-09-12.md`。
+
+```json
+{"decision_id":"decision-20260912-002","timestamp":"2026-09-12T10:30:00+08:00","owner":"ui-agent","title":"open_tag 只从目录点击经 Bridge 发出","context":"合同已登记 open_tag 但无发出点；getTagResources 同时服务刷新","options":["getTagResources 一律发","前端自记事件","Bridge.openTag 仅用户点目录时发"],"decision":"新增 openTag Slot，形状对齐 open_external；resource_id 为精确标签名；空标签不发，空详情仍发；刷新/改范围/改排序/失效重载不发","rationale":["与 09-11 open_external 同一可追踪入口","避免刷新误记为打开"],"impact":["interactionEvent 增加 open_tag","目录 click 先 openTag 再 loadTagResources"],"followups":["loading 硬锁与改范围双请求本轮不修"]}
+```
+
+## 2026-09-12 - 标签身份、分组与失效边界
+
+完整决策记录见 `logs/history/2026-09-12.md`。
+
+```json
+{"decision_id":"decision-20260912-001","timestamp":"2026-09-12T10:08:29+08:00","owner":"ui-agent","title":"标签保持精确身份并通过统一来源 seam 聚合","context":"标签目录需要同时覆盖图书、文本小说和漫画，又不能破坏既有资源动作语义","options":["独立标签索引表","Repository 统一汇总现有 tags_json","前端直接拼接三类 payload"],"decision":"Repository 统一聚合，详情携带真实 sourcePage，并用独立失效信号和 request id 防旧响应","rationale":["避免第二份索引漂移","兼容既有标签身份和资源动作"],"impact":["comics 增加 tags_json","新增 tagManagerScopes 与标签 Bridge 接口","锁定 pypinyin==0.55.0"],"followups":[]}
 ```
 
 ## 2026-09-11 - 扫描字段刷新与 loop_inline

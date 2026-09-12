@@ -32,6 +32,7 @@ PAGE_NOVEL_COLLECTIONS = "novel_collections"
 PAGE_COMIC = "comic"
 PAGE_COMIC_COLLECTIONS = "comic_collections"
 PAGE_RANDOM_RECOMMENDATIONS = "random_recommendations"
+PAGE_TAG_MANAGER = "tag_manager"
 
 COLLECTION_PAGE_KINDS = {
     PAGE_COLLECTIONS: COLLECTION_KIND_BOOK,
@@ -47,6 +48,7 @@ NAV_ITEMS = [
     (PAGE_COMIC, "sidebar.comic", "Comic"),
     (PAGE_COMIC_COLLECTIONS, "sidebar.comic_collections", "Comic Collections"),
     (PAGE_RANDOM_RECOMMENDATIONS, "sidebar.random_recommendations", "Random Recommendations"),
+    (PAGE_TAG_MANAGER, "sidebar.tag_manager", "Tag Manager"),
 ]
 
 COMIC_PAGES = {PAGE_COMIC, PAGE_COMIC_COLLECTIONS}
@@ -75,6 +77,7 @@ def _web_strings() -> dict[str, str]:
         ("sidebar.comic", "Comic"),
         ("sidebar.comic_collections", "Comic Collections"),
         ("sidebar.random_recommendations", "Random Recommendations"),
+        ("sidebar.tag_manager", "Tag Manager"),
         ("view.grid", "Grid"),
         ("view.list", "List"),
         ("topbar.scan", "Scan"),
@@ -82,6 +85,21 @@ def _web_strings() -> dict[str, str]:
         ("topbar.search_text_placeholder", "Search text novels by title, author, tag, or path..."),
         ("topbar.search_comic_placeholder", "Search comics by title, path, or notes..."),
         ("topbar.search_recommendations_placeholder", "Search is unavailable on recommendations."),
+        ("topbar.search_tags_placeholder", "Search is unavailable in tag manager."),
+        ("tags.sort.label", "Tag order"),
+        ("tags.sort.asc", "A-Z"),
+        ("tags.sort.desc", "Z-A"),
+        ("tags.loading", "Loading tags..."),
+        ("tags.empty", "No tags in the selected resource types."),
+        ("tags.count", "{count} tags"),
+        ("tags.scope.title", "Tag Manager Sources"),
+        ("tags.scope.library", "Books"),
+        ("tags.scope.text_novel", "Text Novels"),
+        ("tags.scope.comic", "Comics"),
+        ("tags.scope.required", "Keep at least one resource type selected."),
+        ("tags.source.library", "Book"),
+        ("tags.source.text_novel", "Novel"),
+        ("tags.source.comic", "Comic"),
         ("recommendations.refresh", "Recommend Again"),
         ("recommendations.books", "Books"),
         ("recommendations.novels", "Novels"),
@@ -174,8 +192,8 @@ def _web_strings() -> dict[str, str]:
         ("settings.nav.errors", "Error logs"),
         ("shortcut.section.navigation", "Navigation"),
         ("shortcut.section.resource", "Current selected resource"),
-        ("shortcut.action.exit_collection", "Exit current series"),
-        ("shortcut.action.reopen_recent_collection", "Reopen recent series"),
+        ("shortcut.action.exit_collection", "Exit current series or tag"),
+        ("shortcut.action.reopen_recent_collection", "Reopen recent series or tag"),
         ("shortcut.action.open_resource", "Open resource"),
         ("shortcut.action.open_folder", "Open containing folder"),
         ("shortcut.action.quick_add", "Quick add tag / collection"),
@@ -198,6 +216,9 @@ def _web_strings() -> dict[str, str]:
         ("shortcut.not_collection_page", "Open a book, novel, or comic collection page first."),
         ("shortcut.no_collection_to_exit", "You are not inside a series."),
         ("shortcut.already_in_collection", "Already inside a series. Exit first to reopen the recent one."),
+        ("shortcut.no_recent_tag", "No tag has been opened in this session."),
+        ("shortcut.no_tag_to_exit", "You are not inside a tag."),
+        ("shortcut.already_in_tag", "Already inside a tag. Exit first to reopen the recent one."),
         ("shortcut.recent_missing", "The recent series no longer exists."),
         ("shortcut.binding_duplicate", "This input is already assigned to “{action}”."),
         ("shortcut.binding_invalid", "This key cannot be assigned. Try another key or mouse side button."),
@@ -468,7 +489,7 @@ class UiBridge(QObject):
             resource_id=record.get("resource_id", ""),
             title=record.get("title") or Path(str(record.get("path") or "")).name or "Comic",
             author="",
-            tags=[],
+            tags=self._row_tags(record),
             resource_type="comic_folder",
             path=record.get("path") or "",
             thumbnail_path=record.get("thumbnail_path"),
@@ -540,7 +561,7 @@ class UiBridge(QObject):
             "id": row.get("resource_id", ""),
             "title": row.get("title") or Path(str(row.get("path") or "")).name or "Comic",
             "author": "",
-            "tags": [],
+            "tags": self._row_tags(row),
             "path": row.get("path") or "",
             "type": "comic_folder",
             "cover": self._cover_url(row.get("thumbnail_path"), row.get("cover_image_path")),
@@ -556,7 +577,7 @@ class UiBridge(QObject):
             "id": item.resource_id,
             "title": item.title,
             "author": "",
-            "tags": [],
+            "tags": list(item.tags or []),
             "path": item.path or "",
             "type": "comic_folder",
             "cover": self._cover_url(item.thumbnail_path, item.cover_image_path),
@@ -602,6 +623,8 @@ class UiBridge(QObject):
             return self._comic_page_payload_from_items(items, favorite=False)
         if page == PAGE_RANDOM_RECOMMENDATIONS:
             return {"mode": "recommendations", "columns": []}
+        if page == PAGE_TAG_MANAGER:
+            return {"mode": "tag_index", "order": "asc", "tagCount": 0, "groups": []}
         if page in COLLECTION_PAGE_KINDS:
             return self._collections_payload(page)
         return {"mode": "grid_or_list", "items": []}
@@ -723,6 +746,7 @@ class UiBridge(QObject):
             "textNovelViewMode": repo.get_text_novel_view_mode(),
             "recommendationItemsPerCategory": repo.get_recommendation_items_per_category(),
             "recommendationColumnsPerCategory": repo.get_recommendation_columns_per_category(),
+            "tagManagerScopes": repo.get_tag_manager_scopes(),
             "shortcutBindings": repo.get_shortcut_bindings(),
             "comicPlaceholderCopy": repo.get_comic_placeholder_copy_enabled(),
             "autoGenerateComicThumbs": repo.get_auto_generate_comic_thumbnails_after_scan(),
@@ -818,12 +842,17 @@ class UiBridge(QObject):
             return
         self._repo.set_setting("ui_skin", skin)
 
-    def push_resources(self, recommendations_invalidated: bool = False) -> None:
+    def push_resources(
+        self,
+        recommendations_invalidated: bool = False,
+        tag_catalog_invalidated: bool = False,
+    ) -> None:
         self.resourcesChanged.emit(
             json.dumps(
                 {
                     "pages": self._pages_payload(),
                     "recommendationsInvalidated": bool(recommendations_invalidated),
+                    "tagCatalogInvalidated": bool(tag_catalog_invalidated),
                 },
                 ensure_ascii=False,
             )
@@ -957,6 +986,13 @@ class UiBridge(QObject):
             "timestamp": now_utc_iso(),
         }, ensure_ascii=False))
 
+    def _emit_open_tag_event(self, tag: str) -> None:
+        self.interactionEvent.emit(json.dumps({
+            "event": "open_tag",
+            "resource_id": str(tag),
+            "timestamp": now_utc_iso(),
+        }, ensure_ascii=False))
+
     def _open_external(self, path: str) -> None:
         file_path = Path(path).expanduser()
         if not str(file_path).strip() or not file_path.exists():
@@ -1003,6 +1039,58 @@ class UiBridge(QObject):
         return json.dumps(self._repo.get_all_tags(), ensure_ascii=False)
 
     @Slot(str, result=str)
+    def getTagCatalog(self, order: str) -> str:
+        return json.dumps(self._repo.get_tag_catalog(order), ensure_ascii=False)
+
+    @Slot(str, result=str)
+    def getTagResources(self, tag: str) -> str:
+        normalized_tag = str(tag or "").strip()
+        items: list[dict[str, Any]] = []
+        for row in self._repo.get_resources_by_tag(normalized_tag):
+            source_page = str(row.get("source_page") or PAGE_LIBRARY)
+            payload = self._comic_payload(row) if source_page == PAGE_COMIC else self._book_payload(row)
+            payload["sourcePage"] = source_page
+            items.append(payload)
+        return json.dumps(
+            {"mode": "tag_detail", "tag": normalized_tag, "items": items},
+            ensure_ascii=False,
+        )
+
+    @Slot(str)
+    def openTag(self, tag: str) -> None:
+        normalized = str(tag or "").strip()
+        if not normalized:
+            return
+        self._emit_open_tag_event(normalized)
+
+    @Slot(str, result=str)
+    def setTagManagerScopes(self, payload_json: str) -> str:
+        try:
+            payload = json.loads(payload_json)
+        except (TypeError, ValueError):
+            payload = None
+        result = self._repo.set_tag_manager_scopes(payload)
+        if result.get("ok"):
+            self.push_settings()
+        return json.dumps(result, ensure_ascii=False)
+
+    @Slot(str, str, str, result=bool)
+    def addResourceTag(self, page: str, resource_id: str, tag: str) -> bool:
+        changed = self._repo.add_resource_tag(page, resource_id, tag)
+        if changed:
+            self.reload_data()
+            self.push_resources(tag_catalog_invalidated=True)
+        return changed
+
+    @Slot(str, str, str, result=bool)
+    def removeResourceTag(self, page: str, resource_id: str, tag: str) -> bool:
+        changed = self._repo.remove_resource_tag(page, resource_id, tag)
+        if changed:
+            self.reload_data()
+            self.push_resources(tag_catalog_invalidated=True)
+        return changed
+
+    @Slot(str, result=str)
     def getCollections(self, page: str) -> str:
         kind = _kind_for_page(page)
         collections = self._repo.get_all_collections(kind)
@@ -1015,7 +1103,7 @@ class UiBridge(QObject):
             return
         self._repo.add_tag_to_book(book_id, tag.strip())
         self.reload_data()
-        self.push_resources()
+        self.push_resources(tag_catalog_invalidated=True)
 
     @Slot(str, str)
     def removeTag(self, resource_id: str, tag: str) -> None:
@@ -1024,7 +1112,7 @@ class UiBridge(QObject):
             return
         self._repo.remove_tag_from_book(book_id, tag)
         self.reload_data()
-        self.push_resources()
+        self.push_resources(tag_catalog_invalidated=True)
 
     @Slot(str, str, result=int)
     def createCollection(self, page: str, name: str) -> int:

@@ -159,6 +159,21 @@
 }
 ```
 
+### tag_management_view
+```json
+{
+  "module_name": "tag_management_view",
+  "owner_agent": "ui-agent",
+  "status": "active",
+  "purpose": "按中文拼音与英文字母分组展示标签目录，并在标签详情中以统一网格展示三类关联资源",
+  "input": ["library_tags", "text_novel_tags", "comic_tags", "tag_manager_scopes", "tag_order", "tag_request_id"],
+  "output": ["tag_index", "tag_detail", "mixed_resources_with_source_page", "interaction_events"],
+  "upstream": ["LibraryRepository", "UiBridge", "filename_parser", "comic_folder_scanner"],
+  "downstream": ["resource_detail_binding", "external_open_action", "shortcut_action_dispatcher"],
+  "notes": "侧边栏位于随机推荐之后；A→Z/Z→A 仅会话保存，# 始终置尾；只统计所选范围内未缺失资源；请求以 request id 丢弃旧响应；Glass/Vaporwave 共用结构并支持键盘与窄屏"
+}
+```
+
 ### comic_sidebar_binding
 ```json
 {

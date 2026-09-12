@@ -23,6 +23,13 @@ const State = {
   recommendationsLoading: false,
   recommendationRequestId: 0,
   recommendationSelection: null,
+  tagCatalog: null,
+  tagDetail: null,
+  tagLoading: false,
+  tagRequestId: 0,
+  tagOrder: "asc",
+  tagSelection: null,
+  recentTag: null,
   recentCollections: { collections: null, novel_collections: null, comic_collections: null },
   shortcutCaptureAction: "",
   _scanRunning: false,
@@ -33,6 +40,7 @@ const COLLECTION_PAGES = new Set(["collections", "novel_collections", "comic_col
 const COMIC_PAGES = new Set(["comic", "comic_collections"]);
 const SEARCH_PAGES = new Set(["library", "text_novel", "comic", "comic_collections"]);
 const RANDOM_RECOMMENDATIONS_PAGE = "random_recommendations";
+const TAG_MANAGER_PAGE = "tag_manager";
 const SHORTCUT_MOUSE_TOKENS = new Set(["MouseBack", "MouseForward"]);
 const SHORTCUT_MODIFIERS = ["Ctrl", "Alt", "Shift", "Meta"];
 const SHORTCUT_SPECIAL_KEY_CODES = new Set([
@@ -183,7 +191,47 @@ function openCollectionWithHistory(page, collectionId, notifyMissing) {
   });
 }
 
+function rememberRecentTag(tag) {
+  const normalized = String(tag || "").trim();
+  if (normalized) State.recentTag = normalized;
+}
+
+function exitCurrentTag() {
+  const tag = State.tagDetail ? String(State.tagDetail.tag || "").trim() : "";
+  if (!tag) {
+    showShortcutNotice("shortcut.no_tag_to_exit");
+    return false;
+  }
+  rememberRecentTag(tag);
+  closeTagDetail();
+  return true;
+}
+
+function reopenRecentTag() {
+  if (State.tagDetail && String(State.tagDetail.tag || "").trim()) {
+    showShortcutNotice("shortcut.already_in_tag");
+    return false;
+  }
+  if (!State.recentTag) {
+    showShortcutNotice("shortcut.no_recent_tag");
+    return false;
+  }
+  openTagFromCatalog(State.recentTag);
+  return true;
+}
+
+function openTagFromCatalog(tag) {
+  const normalized = String(tag || "").trim();
+  if (!normalized) return;
+  rememberRecentTag(normalized);
+  if (State.bridge && State.bridge.openTag) State.bridge.openTag(normalized);
+  State.tagRequestId += 1;
+  State.tagLoading = false;
+  loadTagResources(normalized);
+}
+
 function exitCurrentCollection() {
+  if (State.currentPage === TAG_MANAGER_PAGE) return exitCurrentTag();
   const page = State.currentPage;
   if (!COLLECTION_PAGES.has(page)) {
     showShortcutNotice("shortcut.not_collection_page");
@@ -201,6 +249,7 @@ function exitCurrentCollection() {
 }
 
 function reopenRecentCollection() {
+  if (State.currentPage === TAG_MANAGER_PAGE) return reopenRecentTag();
   const page = State.currentPage;
   if (!COLLECTION_PAGES.has(page)) {
     showShortcutNotice("shortcut.not_collection_page");
@@ -223,6 +272,7 @@ function reopenRecentCollection() {
 
 function searchPlaceholderForPage(page) {
   if (page === RANDOM_RECOMMENDATIONS_PAGE) return t("topbar.search_recommendations_placeholder", "Search is unavailable on recommendations.");
+  if (page === TAG_MANAGER_PAGE) return t("topbar.search_tags_placeholder", "Search is unavailable in tag manager.");
   if (page === "text_novel") return t("topbar.search_text_placeholder");
   if (page === "comic" || (page === "comic_collections" && isComicCollectionDetail(State.pages[page] || {}))) {
     return t("topbar.search_comic_placeholder");
@@ -232,7 +282,7 @@ function searchPlaceholderForPage(page) {
 
 function syncSearchInputFromPage(page) {
   const input = $("searchInput");
-  if (page === RANDOM_RECOMMENDATIONS_PAGE) {
+  if (page === RANDOM_RECOMMENDATIONS_PAGE || page === TAG_MANAGER_PAGE) {
     State.searchQuery = "";
     input.value = "";
     input.disabled = true;
@@ -312,6 +362,9 @@ function wireSignals() {
       if (data.recommendationsInvalidated) {
         invalidateRandomRecommendations(true);
       }
+      if (data.tagCatalogInvalidated) {
+        invalidateTagManager(true);
+      }
       if (State.currentPage === RANDOM_RECOMMENDATIONS_PAGE) {
         if (data.recommendationsInvalidated) {
           renderDetailEmpty();
@@ -320,6 +373,9 @@ function wireSignals() {
           scheduleRenderPage();
           if (!selectionCleared) refreshDetailIfSelected();
         }
+      } else if (State.currentPage === TAG_MANAGER_PAGE) {
+        if (data.tagCatalogInvalidated) loadCurrentTagPage();
+        else scheduleRenderPage();
       } else if (State.currentPage !== "settings") {
         scheduleRenderPage();
         if (!selectionCleared) refreshDetailIfSelected();
@@ -334,6 +390,7 @@ function wireSignals() {
     if (!d) return;
     const previousItemCount = getRecommendationItemsPerCategory(State.settings);
     const previousColumnCount = getRecommendationColumnsPerCategory(State.settings);
+    const previousTagScopes = JSON.stringify((State.settings || {}).tagManagerScopes || {});
     State.settings = d;
     const itemCountChanged = previousItemCount !== getRecommendationItemsPerCategory(d);
     const columnCountChanged = previousColumnCount !== getRecommendationColumnsPerCategory(d);
@@ -345,6 +402,10 @@ function wireSignals() {
       }
     }
     else if (columnCountChanged && State.currentPage === RANDOM_RECOMMENDATIONS_PAGE) scheduleRenderPage();
+    if (previousTagScopes !== JSON.stringify(d.tagManagerScopes || {})) {
+      invalidateTagManager(true);
+      if (State.currentPage === TAG_MANAGER_PAGE) loadCurrentTagPage();
+    }
     if (d.theme) applyThemeConfig(d.theme);
     if (d.uiSkin) State.uiSkin = normalizeUiSkin(d.uiSkin);
     if (State.currentPage === "settings") renderSettings();
@@ -470,6 +531,9 @@ function selectPage(page) {
   syncSearchInputFromPage(page);
   if (page === RANDOM_RECOMMENDATIONS_PAGE && !State.recommendations) {
     loadRandomRecommendations();
+  } else if (page === TAG_MANAGER_PAGE) {
+    if (State.tagDetail) scheduleRenderPage();
+    else loadTagCatalog();
   } else if (isSearchablePage(page) && (State.searchQueries[page] || "").trim()) {
     commitSearch();
   } else {
@@ -496,6 +560,9 @@ function scheduleRenderPage() {
 /* ---------- page rendering ---------- */
 function currentPageData() {
   if (State.currentPage === RANDOM_RECOMMENDATIONS_PAGE && State.recommendations) return State.recommendations;
+  if (State.currentPage === TAG_MANAGER_PAGE) {
+    return State.tagDetail || State.tagCatalog || { mode: "tag_index", order: State.tagOrder, tagCount: 0, groups: [] };
+  }
   return State.pages[State.currentPage] || { items: [], mode: "grid_or_list" };
 }
 
@@ -503,6 +570,7 @@ function pageItemCount(data) {
   if (data && data.mode === "recommendations") {
     return (data.columns || []).reduce((total, column) => total + (column.items || []).length, 0);
   }
+  if (data && data.mode === "tag_index") return Number(data.tagCount || 0);
   return (data.items || []).length;
 }
 
@@ -511,9 +579,14 @@ function renderPage(expectedGen) {
   const page = State.currentPage;
   const data = currentPageData();
   const titleItem = State.nav.find((n) => n.page === page);
-  $("pageTitle").textContent = (data.mode === "collection_detail" && data.collectionName) ? data.collectionName : (titleItem ? titleItem.label : page);
+  $("pageTitle").textContent = data.mode === "tag_detail" && data.tag
+    ? data.tag
+    : ((data.mode === "collection_detail" && data.collectionName) ? data.collectionName : (titleItem ? titleItem.label : page));
   const count = pageItemCount(data);
-  $("pageSubtitle").textContent = fmt(t("page.count", "{count} items"), { count });
+  $("pageSubtitle").textContent = fmt(
+    t(data.mode === "tag_index" ? "tags.count" : "page.count", data.mode === "tag_index" ? "{count} tags" : "{count} items"),
+    { count }
+  );
 
   renderPageTools(page, data);
 
@@ -531,7 +604,11 @@ function renderPage(expectedGen) {
     area.classList.add("view-enter");
   }
 
-  const showViewToggle = !COMIC_PAGES.has(page) && data.mode !== "collections" && data.mode !== "recommendations";
+  const showViewToggle = !COMIC_PAGES.has(page)
+    && data.mode !== "collections"
+    && data.mode !== "recommendations"
+    && data.mode !== "tag_index"
+    && data.mode !== "tag_detail";
   $("viewModeToggle").style.display = showViewToggle ? "" : "none";
 
   if (page === RANDOM_RECOMMENDATIONS_PAGE) {
@@ -539,6 +616,17 @@ function renderPage(expectedGen) {
       area.appendChild(buildEmpty(t("recommendations.loading", "Loading recommendations...")));
     } else {
       renderRecommendations(area, data);
+    }
+    return;
+  }
+
+  if (page === TAG_MANAGER_PAGE) {
+    if (State.tagLoading && !State.tagCatalog && !State.tagDetail) {
+      area.appendChild(buildEmpty(t("tags.loading", "Loading tags...")));
+    } else if (data.mode === "tag_detail") {
+      renderTagDetail(area, data, gen);
+    } else {
+      renderTagCatalog(area, data);
     }
     return;
   }
@@ -567,6 +655,27 @@ function renderPageTools(page, data) {
     refresh.disabled = State.recommendationsLoading;
     refresh.addEventListener("click", () => loadRandomRecommendations(true));
     tools.appendChild(refresh);
+    return;
+  }
+  if (page === TAG_MANAGER_PAGE) {
+    if (data.mode === "tag_detail") {
+      const back = elem("button", "ghost-btn", t("common.back", "Back"));
+      back.addEventListener("click", () => executeAction("exit_collection", null));
+      tools.appendChild(back);
+    } else {
+      const wrap = elem("div", "page-sort");
+      wrap.appendChild(elem("span", "small-note", t("tags.sort.label", "Tag order")));
+      const sel = elem("select", "sort-select");
+      [["asc", "tags.sort.asc", "A-Z"], ["desc", "tags.sort.desc", "Z-A"]].forEach(([value, key, fallback]) => {
+        const option = elem("option", null, t(key, fallback));
+        option.value = value;
+        option.selected = State.tagOrder === value;
+        sel.appendChild(option);
+      });
+      sel.addEventListener("change", () => setTagOrder(sel.value));
+      wrap.appendChild(sel);
+      tools.appendChild(wrap);
+    }
     return;
   }
   const inCollectionDetail = data.mode === "collection_detail" || isComicCollectionDetail(data);
@@ -679,6 +788,169 @@ function invalidateRandomRecommendations(notifyStaleSelection) {
   State.recommendations = null;
   State.recommendationSelection = null;
   if (selectedResourceBecameStale) showShortcutNotice("shortcut.selection_stale");
+}
+
+function invalidateTagManager(preserveDetailTag) {
+  const activeTag = preserveDetailTag && State.tagDetail ? String(State.tagDetail.tag || "") : "";
+  const selectedBecameStale = Boolean(State.currentPage === TAG_MANAGER_PAGE && State.tagSelection);
+  State.tagRequestId += 1;
+  State.tagLoading = false;
+  State.tagCatalog = null;
+  State.tagDetail = activeTag ? { mode: "tag_detail", tag: activeTag, items: [] } : null;
+  State.tagSelection = null;
+  if (selectedBecameStale) showShortcutNotice("shortcut.selection_stale");
+}
+
+function loadCurrentTagPage() {
+  if (State.tagDetail && State.tagDetail.tag) loadTagResources(State.tagDetail.tag);
+  else loadTagCatalog(true);
+}
+
+function loadTagCatalog(force) {
+  if (!State.bridge || State.tagLoading) return;
+  if (!force && State.tagCatalog && !State.tagDetail) {
+    if (State.currentPage === TAG_MANAGER_PAGE) scheduleRenderPage();
+    return;
+  }
+  State.tagLoading = true;
+  const requestId = ++State.tagRequestId;
+  if (State.currentPage === TAG_MANAGER_PAGE) scheduleRenderPage();
+  State.bridge.getTagCatalog(State.tagOrder, (json) => {
+    if (requestId !== State.tagRequestId) return;
+    State.tagLoading = false;
+    const data = safeParse(json);
+    State.tagCatalog = data && data.mode === "tag_index"
+      ? data
+      : { mode: "tag_index", order: State.tagOrder, tagCount: 0, groups: [] };
+    State.tagDetail = null;
+    State.tagSelection = null;
+    if (State.currentPage === TAG_MANAGER_PAGE) {
+      clearPageScroll(TAG_MANAGER_PAGE);
+      renderDetailEmpty();
+      scheduleRenderPage();
+    }
+  });
+}
+
+function loadTagResources(tag) {
+  if (!State.bridge || State.tagLoading) return;
+  const normalizedTag = String(tag || "").trim();
+  if (!normalizedTag) return;
+  State.tagLoading = true;
+  State.tagDetail = { mode: "tag_detail", tag: normalizedTag, items: [] };
+  State.tagSelection = null;
+  const requestId = ++State.tagRequestId;
+  if (State.currentPage === TAG_MANAGER_PAGE) scheduleRenderPage();
+  State.bridge.getTagResources(normalizedTag, (json) => {
+    if (requestId !== State.tagRequestId) return;
+    State.tagLoading = false;
+    const data = safeParse(json);
+    State.tagDetail = data && data.mode === "tag_detail"
+      ? data
+      : { mode: "tag_detail", tag: normalizedTag, items: [] };
+    State.tagSelection = null;
+    if (State.currentPage === TAG_MANAGER_PAGE) {
+      clearPageScroll(TAG_MANAGER_PAGE);
+      renderDetailEmpty();
+      scheduleRenderPage();
+    }
+  });
+}
+
+function closeTagDetail() {
+  State.tagRequestId += 1;
+  State.tagLoading = false;
+  State.tagDetail = null;
+  State.tagSelection = null;
+  clearPageScroll(TAG_MANAGER_PAGE);
+  renderDetailEmpty();
+  if (State.tagCatalog) scheduleRenderPage();
+  else loadTagCatalog(true);
+}
+
+function setTagOrder(value) {
+  const order = String(value || "").toLowerCase() === "desc" ? "desc" : "asc";
+  if (State.tagOrder === order && State.tagCatalog) return;
+  State.tagOrder = order;
+  invalidateTagManager(false);
+  loadTagCatalog(true);
+}
+
+function renderTagCatalog(area, data) {
+  const groups = Array.isArray(data.groups) ? data.groups : [];
+  if (!groups.length) {
+    area.appendChild(buildEmpty(t("tags.empty", "No tags in the selected resource types.")));
+    return;
+  }
+  const root = elem("div", "tag-catalog");
+  groups.forEach((group) => {
+    const section = elem("section", "tag-group");
+    const heading = elem("h2", "tag-group-title");
+    heading.appendChild(document.createTextNode(String(group.letter || "#")));
+    heading.appendChild(elem("span", "tag-group-count", `(${Number(group.tagCount || 0)})`));
+    section.appendChild(heading);
+    const grid = elem("div", "tag-list");
+    (group.items || []).forEach((item) => {
+      const button = elem("button", "tag-link");
+      button.type = "button";
+      button.setAttribute("aria-label", `${item.name} (${Number(item.resourceCount || 0)})`);
+      button.appendChild(elem("span", "tag-bullet", "•"));
+      button.appendChild(elem("span", "tag-name", item.name || ""));
+      button.appendChild(elem("span", "tag-resource-count", `(${Number(item.resourceCount || 0)})`));
+      button.addEventListener("click", () => openTagFromCatalog(item.name));
+      grid.appendChild(button);
+    });
+    section.appendChild(grid);
+    root.appendChild(section);
+  });
+  area.appendChild(root);
+}
+
+function tagSourceLabel(sourcePage) {
+  const keys = {
+    library: ["tags.source.library", "Book"],
+    text_novel: ["tags.source.text_novel", "Novel"],
+    comic: ["tags.source.comic", "Comic"],
+  };
+  const entry = keys[sourcePage] || ["tags.source.library", "Book"];
+  return t(entry[0], entry[1]);
+}
+
+function renderTagDetail(area, data, gen) {
+  const items = Array.isArray(data.items) ? data.items : [];
+  if (!items.length) {
+    if (State.tagLoading) area.appendChild(buildEmpty(t("tags.loading", "Loading tags...")));
+    else area.appendChild(buildEmpty(t("empty.default", "Nothing here yet.")));
+    return;
+  }
+  mountVirtualCoverGrid(area, items, TAG_MANAGER_PAGE, true, gen, (item) => {
+    const sourcePage = String(item.sourcePage || "library");
+    const card = elem("article", "book-card tag-resource-card");
+    card.tabIndex = 0;
+    card.setAttribute("role", "button");
+    card.setAttribute("aria-label", `${tagSourceLabel(sourcePage)}: ${item.title || ""}`);
+    const selected = State.tagSelection;
+    if (selected && selected.sourcePage === sourcePage && String(selected.id) === String(item.id)) {
+      card.classList.add("selected");
+    }
+    card.appendChild(buildCoverSlot(item, "cover", sourcePage === "library"));
+    const meta = elem("div", "tag-card-meta");
+    meta.appendChild(elem("div", "card-title", item.title || ""));
+    meta.appendChild(elem("span", `tag-source-badge tag-source-${sourcePage}`, tagSourceLabel(sourcePage)));
+    card.appendChild(meta);
+    card.addEventListener("click", () => selectTaggedResource(sourcePage, item.id, card));
+    card.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      selectTaggedResource(sourcePage, item.id, card);
+    });
+    card.addEventListener("dblclick", () => State.bridge.openResource(sourcePage, item.id));
+    card.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      openContextMenu(event, sourcePage, item, false);
+    });
+    return card;
+  });
 }
 
 const RECOMMENDATION_CARD_MIN_WIDTH = 120;
@@ -1136,9 +1408,28 @@ function selectRecommendedResource(sourcePage, id, node) {
   });
 }
 
+function selectTaggedResource(sourcePage, id, node) {
+  State.tagSelection = { sourcePage, id };
+  const area = $("contentArea");
+  if (area) area.querySelectorAll(".selected").forEach((selected) => selected.classList.remove("selected"));
+  node.classList.add("selected");
+  State.bridge.getDetail(sourcePage, id, (json) => {
+    const selected = State.tagSelection;
+    if (State.currentPage !== TAG_MANAGER_PAGE || !selected || selected.sourcePage !== sourcePage || selected.id !== id) return;
+    renderDetail(safeParse(json), sourcePage);
+  });
+}
+
 function refreshDetailIfSelected() {
   if (State.currentPage === RANDOM_RECOMMENDATIONS_PAGE) {
     const selected = State.recommendationSelection;
+    if (selected) {
+      State.bridge.getDetail(selected.sourcePage, selected.id, (json) => renderDetail(safeParse(json), selected.sourcePage));
+    }
+    return;
+  }
+  if (State.currentPage === TAG_MANAGER_PAGE) {
+    const selected = State.tagSelection;
     if (selected) {
       State.bridge.getDetail(selected.sourcePage, selected.id, (json) => renderDetail(safeParse(json), selected.sourcePage));
     }
@@ -1209,6 +1500,12 @@ function buildDetailBlock(label, value) {
 /* ---------- actions and shortcuts ---------- */
 function isComicActionContext(context) {
   return Boolean(context && (context.page === "comic" || context.page === "comic_collections"));
+}
+
+function tagSourcePage(page) {
+  if (page === "comic" || page === "comic_collections") return "comic";
+  if (page === "text_novel" || page === "novel_collections") return "text_novel";
+  return "library";
 }
 
 const SHORTCUT_ACTIONS = {
@@ -1311,6 +1608,24 @@ function selectedResourceActionContext() {
     };
   }
 
+  if (State.currentPage === TAG_MANAGER_PAGE) {
+    const selected = State.tagSelection;
+    const items = State.tagDetail && Array.isArray(State.tagDetail.items) ? State.tagDetail.items : [];
+    const item = selected
+      ? items.find((entry) => entry.sourcePage === selected.sourcePage && String(entry.id) === String(selected.id))
+      : null;
+    if (!item) {
+      State.tagSelection = null;
+      return null;
+    }
+    return {
+      page: selected.sourcePage,
+      item,
+      isCollectionDetail: false,
+      collectionId: null,
+    };
+  }
+
   const page = State.currentPage;
   const data = State.pages[page] || {};
   const selectedId = State.selected[page];
@@ -1330,7 +1645,7 @@ function selectedResourceActionContext() {
 
 function clearInvalidCurrentSelectionAfterResourceChange() {
   const page = State.currentPage;
-  if (page === RANDOM_RECOMMENDATIONS_PAGE || page === "settings") return false;
+  if (page === RANDOM_RECOMMENDATIONS_PAGE || page === TAG_MANAGER_PAGE || page === "settings") return false;
   const selectedId = State.selected[page];
   if (selectedId == null) return false;
   const data = State.pages[page] || {};
@@ -1753,11 +2068,10 @@ function openDeleteCollectionModal(item) {
 
 function openQuickAddModal(item, sourcePage) {
   const actionPage = sourcePage || State.currentPage;
+  const resourceTagPage = tagSourcePage(actionPage);
   openModal((modal, close) => {
     modalHeader(modal, t("detail.quick_add", "Quick Add"), close);
     modal.appendChild(elem("p", "small-note", item.title || ""));
-    const skipTags = actionPage === "comic" || actionPage === "comic_collections";
-
     if (!Array.isArray(item.tags)) item.tags = [];
     const workingTags = item.tags.slice();
 
@@ -1778,7 +2092,8 @@ function openQuickAddModal(item, sourcePage) {
         chip.appendChild(document.createTextNode(tag));
         const x = elem("span", "chip-x", "×");
         x.addEventListener("click", () => {
-          State.bridge.removeTag(item.id, tag);
+          if (State.bridge.removeResourceTag) State.bridge.removeResourceTag(resourceTagPage, item.id, tag);
+          else State.bridge.removeTag(item.id, tag);
           const idx = workingTags.indexOf(tag);
           if (idx >= 0) workingTags.splice(idx, 1);
           item.tags = workingTags.slice();
@@ -1792,7 +2107,8 @@ function openQuickAddModal(item, sourcePage) {
     const addTagValue = (value) => {
       const tag = String(value || "").trim();
       if (!tag || workingTags.includes(tag)) return;
-      State.bridge.addTag(item.id, tag);
+      if (State.bridge.addResourceTag) State.bridge.addResourceTag(resourceTagPage, item.id, tag);
+      else State.bridge.addTag(item.id, tag);
       workingTags.push(tag);
       item.tags = workingTags.slice();
       renderCurrentChips();
@@ -1808,22 +2124,20 @@ function openQuickAddModal(item, sourcePage) {
     tagField.appendChild(currentChips);
     tagField.appendChild(elem("div", "kicker mt", t("quick_add.recent_tags", "Recent tags")));
     tagField.appendChild(recentWrap);
-    if (!skipTags) {
-      modal.appendChild(tagField);
+    modal.appendChild(tagField);
 
-      State.bridge.getTags((tjson) => {
-        const allTags = safeParse(tjson) || [];
-        clear(recentWrap);
-        allTags.slice(0, 12).forEach((tag) => {
-          const chip = elem("button", "chip chip-btn", tag);
-          chip.type = "button";
-          chip.addEventListener("click", () => addTagValue(tag));
-          recentWrap.appendChild(chip);
-        });
+    State.bridge.getTags((tjson) => {
+      const allTags = safeParse(tjson) || [];
+      clear(recentWrap);
+      allTags.slice(0, 12).forEach((tag) => {
+        const chip = elem("button", "chip chip-btn", tag);
+        chip.type = "button";
+        chip.addEventListener("click", () => addTagValue(tag));
+        recentWrap.appendChild(chip);
       });
+    });
 
-      modal.appendChild(elem("hr", "modal-divider"));
-    }
+    modal.appendChild(elem("hr", "modal-divider"));
 
     const collField = elem("div", "field");
     collField.appendChild(elem("label", null, t("detail.collections", "Collections")));
@@ -1895,12 +2209,8 @@ function openQuickAddModal(item, sourcePage) {
     actions.appendChild(cancel);
     actions.appendChild(confirm);
     modal.appendChild(actions);
-    if (!skipTags) {
-      renderCurrentChips();
-      tagInput.focus();
-    } else {
-      searchInput.focus();
-    }
+    renderCurrentChips();
+    tagInput.focus();
   });
 }
 
@@ -1982,6 +2292,57 @@ function switchField(labelKey, key, checked) {
   const sw = elem("label", "switch");
   const input = elem("input"); input.type = "checkbox"; input.checked = !!checked;
   input.addEventListener("change", () => State.bridge.setSetting(key, input.checked ? "true" : "false"));
+  sw.appendChild(input);
+  sw.appendChild(elem("span", "track"));
+  field.appendChild(label);
+  field.appendChild(sw);
+  return field;
+}
+
+function setTagManagerScope(scope, checked) {
+  const current = Object.assign(
+    { library: true, text_novel: true, comic: true },
+    State.settings.tagManagerScopes || {}
+  );
+  if (!(scope in current)) return false;
+  const next = Object.assign({}, current, { [scope]: Boolean(checked) });
+  if (!Object.values(next).some(Boolean)) {
+    showToast(
+      t("tags.scope.title", "Tag Manager Sources"),
+      t("tags.scope.required", "Keep at least one resource type selected."),
+      "warning"
+    );
+    return false;
+  }
+  State.bridge.setTagManagerScopes(JSON.stringify(next), (json) => {
+    const result = safeParse(json);
+    if (!result || !result.ok) {
+      showToast(
+        t("tags.scope.title", "Tag Manager Sources"),
+        t("tags.scope.required", "Keep at least one resource type selected."),
+        "warning"
+      );
+      if (State.currentPage === "settings") renderSettings();
+      return;
+    }
+    State.settings.tagManagerScopes = result.scopes;
+    invalidateTagManager(true);
+    if (State.currentPage === TAG_MANAGER_PAGE) loadCurrentTagPage();
+  });
+  return true;
+}
+
+function tagScopeField(labelKey, scope, checked) {
+  const field = elem("div", "field field-inline");
+  const label = elem("label", null, t(labelKey));
+  label.style.marginBottom = "0";
+  const sw = elem("label", "switch");
+  const input = elem("input");
+  input.type = "checkbox";
+  input.checked = Boolean(checked);
+  input.addEventListener("change", () => {
+    if (!setTagManagerScope(scope, input.checked)) input.checked = !input.checked;
+  });
   sw.appendChild(input);
   sw.appendChild(elem("span", "track"));
   field.appendChild(label);
@@ -2147,6 +2508,21 @@ function renderSettingsGeneral(panel) {
   toggles.appendChild(switchField("settings.comic.auto_thumb_after_scan", "autoGenerateComicThumbs", s.autoGenerateComicThumbs));
   card.appendChild(toggles);
   panel.appendChild(card);
+  const tagCard = settingCard(t("tags.scope.title", "Tag Manager Sources"));
+  tagCard.appendChild(elem("p", "small-note", t(
+    "tags.scope.required",
+    "Keep at least one resource type selected."
+  )));
+  const tagScopes = Object.assign(
+    { library: true, text_novel: true, comic: true },
+    s.tagManagerScopes || {}
+  );
+  const tagGrid = elem("div", "form-grid");
+  tagGrid.appendChild(tagScopeField("tags.scope.library", "library", tagScopes.library));
+  tagGrid.appendChild(tagScopeField("tags.scope.text_novel", "text_novel", tagScopes.text_novel));
+  tagGrid.appendChild(tagScopeField("tags.scope.comic", "comic", tagScopes.comic));
+  tagCard.appendChild(tagGrid);
+  panel.appendChild(tagCard);
   renderSettingsAbout(panel);
 }
 

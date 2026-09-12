@@ -243,6 +243,13 @@
   box-shadow: var(--shadow-soft);
 }
 .page-sort .sort-select:focus { border-color: var(--vw-cyan); box-shadow: 0 0 0 2px rgba(1, 205, 254, 0.2); }
+.tag-group-title { color: var(--vw-cyan); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; }
+.tag-link { color: var(--ink); font-family: var(--font-mono); font-size: 12px; }
+.tag-link:hover, .tag-link:focus-visible { background: var(--hover-bg); border-color: rgba(1, 205, 254, 0.45); }
+.tag-bullet { color: var(--vw-primary); text-shadow: 0 0 8px rgba(255, 113, 206, 0.65); }
+.tag-source-badge { color: var(--vw-cyan); background: rgba(1, 205, 254, 0.12); border: 1px solid rgba(1, 205, 254, 0.45); font-family: var(--font-mono); }
+.tag-source-text_novel { color: var(--vw-secondary); background: rgba(185, 103, 255, 0.12); border-color: rgba(185, 103, 255, 0.45); }
+.tag-source-comic { color: var(--vw-primary); background: rgba(255, 113, 206, 0.12); border-color: rgba(255, 113, 206, 0.45); }
 .cover-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 148px));
   gap: 18px; align-content: start;

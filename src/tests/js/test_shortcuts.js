@@ -222,6 +222,37 @@ assert.strictEqual(State.recentCollections.comic_collections, null);
 forgetRecentCollection("collections", 999);
 assert.deepStrictEqual(State.recentCollections.collections, { collectionId: 31, collectionName: "Recent" });
 
+State.bridge.getTagResources = (tag, callback) => {
+  callback(JSON.stringify({ mode: "tag_detail", tag, items: [] }));
+};
+const tagOpens = [];
+State.bridge.openTag = (tag) => tagOpens.push(tag);
+State.currentPage = TAG_MANAGER_PAGE;
+State.tagCatalog = { mode: "tag_index", order: "asc", tagCount: 1, groups: [] };
+State.tagDetail = { mode: "tag_detail", tag: "白色", items: [] };
+State.recentTag = null;
+assert.strictEqual(exitCurrentCollection(), true);
+assert.strictEqual(State.recentTag, "白色");
+assert.strictEqual(State.tagDetail, null);
+assert.strictEqual(reopenRecentCollection(), true);
+assert.deepStrictEqual(tagOpens, ["白色"]);
+assert.strictEqual(State.tagDetail.tag, "白色");
+assert.strictEqual(reopenRecentCollection(), false);
+assert.strictEqual(calls.notices.at(-1), "shortcut.already_in_tag");
+assert.strictEqual(exitCurrentCollection(), true);
+State.tagDetail = null;
+State.recentTag = null;
+assert.strictEqual(exitCurrentCollection(), false);
+assert.strictEqual(calls.notices.at(-1), "shortcut.no_tag_to_exit");
+assert.strictEqual(reopenRecentCollection(), false);
+assert.strictEqual(calls.notices.at(-1), "shortcut.no_recent_tag");
+State.settings = { shortcutBindings: { exit_collection: "MouseBack", reopen_recent_collection: "MouseForward" } };
+State.tagDetail = { mode: "tag_detail", tag: "城市", items: [] };
+assert.strictEqual(dispatchShortcutInput("MouseBack"), true);
+assert.strictEqual(State.recentTag, "城市");
+assert.strictEqual(dispatchShortcutInput("MouseForward"), true);
+assert.deepStrictEqual(tagOpens.at(-1), "城市");
+
 State.currentPage = "library";
 State.pages.library = { mode: "grid_or_list", items: [{ id: "b2", title: "Selected Book" }] };
 State.selected.library = "b2";
