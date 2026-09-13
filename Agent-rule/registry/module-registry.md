@@ -125,7 +125,7 @@
   "output": ["render_plan", "interaction_events"],
   "upstream": ["filename_parser", "thumbnail_generator"],
   "downstream": ["external_open_action"],
-  "notes": "UI 仅消费数据，不执行扫描；Text Novel 独立持久化 Grid/List，Grid 虚拟化且显示封面与标题，List 不显示封面列"
+  "notes": "UI 仅消费数据，不执行扫描；Text Novel 独立持久化 Grid/List，Grid 虚拟化且显示封面与标题；主页与小说合集 List 固定标题/作者/标签/路径四列，表头与十档下拉共享 setPageSort，主页和合集分别持久化"
 }
 ```
 

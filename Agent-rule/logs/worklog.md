@@ -2,7 +2,7 @@
 
 ## 最新记录
 ```json
-{"log_id":"worklog-20260912-003","timestamp":"2026-09-12T10:45:00+08:00","actor":"ui-agent","task":"截掉字段前缀标签并为标签页接入前进后退","changes":["目录与 get_all_tags 截掉 author/publisher/language/series 前缀","build_metadata_tags 不再写入字段标签","exit_collection/reopen_recent_collection 在标签页退出或重开最近标签"],"affected_files":["src/bookhub/library/metadata.py","src/bookhub/library/repository.py","src/bookhub/ui/web/js/app.js","src/bookhub/ui/web_bridge.py","src/bookhub/i18n/locales/zh-cn.json","src/tests/test_tag_management.py","src/tests/js/test_tag_management.js","src/tests/js/test_shortcuts.js"],"outputs":["字段标签不再出现在标签目录","同一后退/前进绑定可用于标签详情"],"risks":["存量 tags_json 需重扫才从书本详情清掉","图书详情仍可能显示旧字段标签"],"next_actions":["等待确认是否提交（排除 pycache）"]}
+{"log_id":"worklog-20260913-001","timestamp":"2026-09-13T13:30:05+08:00","actor":"ui-agent","task":"文本小说主页与小说合集 List 表头排序","changes":["Repository 扩展为文件日期及四列表头十档排序","表头原生按钮与下拉共享 setPageSort 和持久化状态","Glass/Vaporwave 增加方向、焦点和窄屏样式"],"affected_files":["src/bookhub/library/repository.py","src/bookhub/ui/web/js/app.js","src/bookhub/ui/web_bridge.py","src/bookhub/ui/web/css/base.css","src/bookhub/ui/web/css/skins/glass/components.css","src/bookhub/ui/web/css/skins/vaporwave/components.css"],"outputs":["主页与合集四列表头升降序","双皮肤 1440/749/390 Qt WebEngine 验收"],"risks":["全量测试仍有两个既有非法整型设置失败","兼容性：旧四档设置继续有效，非法值仍回退 file_mtime_desc；无数据库或资源 payload 迁移","回滚方案：回退本功能提交即可；旧版本读到新增枚举时会回退 file_mtime_desc，无需数据库回滚"],"next_actions":[]}
 ```
 
 ## 记录规则
@@ -23,6 +23,14 @@
   "risks": ["string"],
   "next_actions": ["string"]
 }
+```
+
+## 2026-09-13 - 文本小说列表表头排序
+
+完整记录见 `logs/history/2026-09-13.md`，GUI 证据见 `logs/evidence/2026-09-13-text-novel-column-sort-gui.md`。
+
+```json
+{"log_id":"worklog-20260913-001","timestamp":"2026-09-13T13:30:05+08:00","actor":"ui-agent","task":"文本小说主页与小说合集 List 表头排序","changes":["Repository 扩展为文件日期及四列表头十档排序","表头原生按钮与下拉共享 setPageSort 和持久化状态","Glass/Vaporwave 增加方向、焦点和窄屏样式"],"affected_files":["src/bookhub/library/repository.py","src/bookhub/ui/web/js/app.js","src/bookhub/ui/web_bridge.py","src/bookhub/ui/web/css/base.css","src/bookhub/ui/web/css/skins/glass/components.css","src/bookhub/ui/web/css/skins/vaporwave/components.css"],"outputs":["主页与合集四列表头升降序","双皮肤 1440/749/390 Qt WebEngine 验收"],"risks":["全量测试仍有两个既有非法整型设置失败","兼容性：旧四档设置继续有效，非法值仍回退 file_mtime_desc；无数据库或资源 payload 迁移","回滚方案：回退本功能提交即可；旧版本读到新增枚举时会回退 file_mtime_desc，无需数据库回滚"],"next_actions":[]}
 ```
 
 ## 2026-09-12 - 截掉字段标签并接入标签前进后退

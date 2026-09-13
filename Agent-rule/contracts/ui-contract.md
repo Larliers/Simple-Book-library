@@ -61,7 +61,7 @@
 - 保证关键交互事件可追踪。
 - 保证 `comic_grid` 模式可展示 `info_text`。
 - 保证 Text Novel 的 `grid` 显示封面和标题，`list` 不渲染封面列；两种模式复用详情、打开和右键交互。
-- 保证 Text Novel 主页与小说合集详情提供四档排序：`file_mtime_desc` / `file_mtime_asc` / `title_asc` / `title_desc`；主页与合集分键持久化，默认 `file_mtime_desc`；合集详情按所选 SQL 排序。图书馆、书籍合集与随机推荐不受影响。
+- 保证 Text Novel 主页与小说合集详情提供十档排序：`file_mtime_asc|desc`、`title_asc|desc`、`author_asc|desc`、`tags_asc|desc`、`path_asc|desc`；主页与合集分键持久化，默认 `file_mtime_desc`。List 的四个字段表头与下拉共享排序状态，活动表头显示方向并提供 `aria-sort`；合集详情按所选 SQL 排序。图书馆、书籍合集与随机推荐不受影响。
 - 保证随机推荐按 Library/Text Novel/Comic 三个来源分别返回最多 `recommendationItemsPerCategory` 个不重复且未缺失的资源；允许值为 3/6/9/12，默认 6。
 - 保证每个推荐列携带 `sourcePage`，列内卡片继承该来源上下文；详情与打开动作必须使用该来源上下文。
 - 保证标签目录和详情仅统计当前 `tagManagerScopes` 纳入的未缺失资源；混合卡片携带真实 `sourcePage` 并复用来源动作。
@@ -92,7 +92,7 @@
 - `tagCatalogInvalidated=true` 仅表示标签候选集合因扫描、资源删除或标签增删而变化；收藏、合集、封面与缩略图更新保持 `false`。前端必须用 request id 丢弃旧目录/详情响应。
 - settings payload 必须提供 `recommendationItemsPerCategory`（3/6/9/12，默认 6）与 `recommendationColumnsPerCategory`（1/2/3，默认 2）。数量变化使会话推荐缓存失效；内部列数变化只重排现有推荐。
 - settings payload 必须提供 `textNovelViewMode`（`grid|list`，默认 `grid`）；Text Novel 顶部切换后立即持久化，Library 的现有视图状态不受影响。
-- Text Novel 主页 payload 必须提供 `sort`（`file_mtime_desc|file_mtime_asc|title_asc|title_desc`，默认 `file_mtime_desc`），对应设置键 `text_novel_sort_order_main`；小说合集详情另用 `text_novel_sort_order_fav`，成员列表必须按所选排序。
+- Text Novel 主页 payload 必须提供 `sort`（`file_mtime_asc|desc`、`title_asc|desc`、`author_asc|desc`、`tags_asc|desc`、`path_asc|desc`，默认 `file_mtime_desc`），对应设置键 `text_novel_sort_order_main`；小说合集详情另用 `text_novel_sort_order_fav`，成员列表必须按所选排序。
 - Settings 的缩略图管理必须分别提供 Library、Comic 与 Text Novel 的清空/重建入口；Text Novel 两个入口通过 `scope=text_novel` 调用既有任务通道。
 - 外层固定三列；每类内部按行优先排列，设置列数仅为上限。容器宽度不足时按 120px 目标最小宽度从 3→2→1 列降级，卡片最大 260px、间距 18px，极窄时允许继续缩小且不得横向溢出。
 

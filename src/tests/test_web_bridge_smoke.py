@@ -24,12 +24,15 @@ try:
 
     from bookhub.library import LibraryRepository
     from bookhub.library.models import ComicScanRequest, ComicScanRoot
+    from bookhub.library.repository import COLLECTION_KIND_TEXT_NOVEL
     from bookhub.library.scanner import scan_comic_roots
     from bookhub.ui.web_bridge import (
         PAGE_COMIC,
         PAGE_LIBRARY,
+        PAGE_NOVEL_COLLECTIONS,
         PAGE_RANDOM_RECOMMENDATIONS,
         PAGE_TAG_MANAGER,
+        PAGE_TEXT,
         UiBridge,
         NAV_ITEMS,
     )
@@ -422,6 +425,9 @@ class WebBridgeSmokeTests(unittest.TestCase):
             "favorites.sort.added_desc",
             "text_novel.sort.file_mtime_desc",
             "text_novel.sort.title_asc",
+            "text_novel.sort.author_asc",
+            "text_novel.sort.tags_desc",
+            "text_novel.sort.path_asc",
             "settings.comic.placeholder_copy",
             "settings.delete_confirm_title",
             "settings.scan_summary_title",
@@ -440,6 +446,56 @@ class WebBridgeSmokeTests(unittest.TestCase):
             self.assertIn(key, strings)
         self.assertIn("Fast", strings["settings.hash.hint"])
         self.assertIn("Paths", strings["settings.nav.paths"])
+
+    def test_text_novel_page_sort_updates_main_and_collection_payloads(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="bookhub_text_sort_") as tmp:
+            repo = LibraryRepository(db_path=str(Path(tmp) / "library.db"))
+            for payload in (
+                {
+                    "path": "Z:/novels/alpha.txt",
+                    "file_name": "alpha.txt",
+                    "extension": ".txt",
+                    "title": "Alpha",
+                    "author": "Zulu",
+                    "tags_json": '["Alpha"]',
+                    "resource_type": "text_novel",
+                },
+                {
+                    "path": "A:/novels/beta.txt",
+                    "file_name": "beta.txt",
+                    "extension": ".txt",
+                    "title": "Beta",
+                    "author": "Alpha",
+                    "tags_json": '["Zulu"]',
+                    "resource_type": "text_novel",
+                },
+            ):
+                repo.upsert_book(payload)
+
+            collection_id = repo.create_collection("Novels", kind=COLLECTION_KIND_TEXT_NOVEL)
+            for row in repo.list_books(include_missing=False, resource_type="text_novel"):
+                book_id = repo.get_book_int_id(str(row["resource_id"]))
+                self.assertIsNotNone(book_id)
+                repo.add_book_to_collection(int(book_id), collection_id)
+
+            bridge = UiBridge(repo, set())
+            interaction_events: list[dict[str, object]] = []
+            bridge.interactionEvent.connect(lambda raw: interaction_events.append(json.loads(raw)))
+            main_payload = json.loads(bridge.setPageSort(PAGE_TEXT, "author_asc"))
+            self.assertEqual(main_payload["sort"], "author_asc")
+            self.assertEqual([item["title"] for item in main_payload["items"]], ["Beta", "Alpha"])
+
+            bridge.openCollection(PAGE_NOVEL_COLLECTIONS, collection_id)
+            collection_payload = json.loads(bridge.setPageSort(PAGE_NOVEL_COLLECTIONS, "tags_desc"))
+            self.assertEqual(collection_payload["sort"], "tags_desc")
+            self.assertEqual([item["title"] for item in collection_payload["items"]], ["Beta", "Alpha"])
+            self.assertEqual(repo.get_text_novel_sort_order_main(), "author_asc")
+            self.assertEqual(repo.get_text_novel_sort_order_fav(), "tags_desc")
+            self.assertEqual([event["event"] for event in interaction_events], ["sort", "sort"])
+            self.assertTrue(all(event["resource_id"] is None for event in interaction_events))
+
+            bridge.setPageSort(PAGE_COMIC, "folder_mtime_desc")
+            self.assertEqual(len(interaction_events), 2)
 
     def test_nav_items_typed_collections_order(self) -> None:
         pages = [page for page, _, _ in NAV_ITEMS]

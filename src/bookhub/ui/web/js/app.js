@@ -111,6 +111,30 @@ function isNovelCollectionDetail(page, data) {
   return page === "novel_collections" && Boolean(d && d.mode === "collection_detail" && d.collectionId);
 }
 
+const TEXT_NOVEL_SORT_OPTIONS = [
+  ["file_mtime_desc", "text_novel.sort.file_mtime_desc", "File Date: Newest First"],
+  ["file_mtime_asc", "text_novel.sort.file_mtime_asc", "File Date: Oldest First"],
+  ["title_asc", "text_novel.sort.title_asc", "Title: A-Z"],
+  ["title_desc", "text_novel.sort.title_desc", "Title: Z-A"],
+  ["author_asc", "text_novel.sort.author_asc", "Author: A-Z"],
+  ["author_desc", "text_novel.sort.author_desc", "Author: Z-A"],
+  ["tags_asc", "text_novel.sort.tags_asc", "Tags: A-Z"],
+  ["tags_desc", "text_novel.sort.tags_desc", "Tags: Z-A"],
+  ["path_asc", "text_novel.sort.path_asc", "Path: A-Z"],
+  ["path_desc", "text_novel.sort.path_desc", "Path: Z-A"],
+];
+
+function setTextNovelPageSort(page, order) {
+  if (!State.bridge || !State.bridge.setPageSort) return;
+  State.bridge.setPageSort(page, order, (json) => {
+    const data = safeParse(json);
+    if (!data) return;
+    State.pages[page] = data;
+    clearPageScroll(page);
+    scheduleRenderPage();
+  });
+}
+
 function isSearchablePage(page) {
   if (page === "library" || page === "text_novel" || page === "comic") return true;
   if (page === "comic_collections") return isComicCollectionDetail(State.pages[page] || {});
@@ -578,6 +602,7 @@ function renderPage(expectedGen) {
   const gen = expectedGen != null ? expectedGen : State.renderGen;
   const page = State.currentPage;
   const data = currentPageData();
+  document.body.dataset.pageMode = String(data.mode || "");
   const titleItem = State.nav.find((n) => n.page === page);
   $("pageTitle").textContent = data.mode === "tag_detail" && data.tag
     ? data.tag
@@ -637,13 +662,16 @@ function renderPage(expectedGen) {
   }
 
   if (page === "text_novel") {
-    if (viewModeForPage(page) === "list") renderTable(area, data.items, page);
+    if (viewModeForPage(page) === "list") renderTable(area, data.items, page, data.sort);
     else renderTextNovelGrid(area, data.items, page, gen);
     return;
   }
   if (data.mode === "collections") { renderCollections(area, data.items); return; }
   if (page === "comic" || data.mode === "comic") { renderComic(area, data, gen); return; }
-  if (viewModeForPage(page) === "list") { renderTable(area, data.items, page); return; }
+  if (viewModeForPage(page) === "list") {
+    renderTable(area, data.items, page, isNovelCollectionDetail(page, data) ? data.sort : "");
+    return;
+  }
   renderGrid(area, data.items, page, data.mode === "collection_detail", gen);
 }
 
@@ -719,23 +747,13 @@ function renderPageTools(page, data) {
     const wrap = elem("div", "page-sort");
     wrap.appendChild(elem("span", "small-note", t("text_novel.sort.label", "Sort")));
     const sel = elem("select", "sort-select");
-    [
-      ["file_mtime_desc", "text_novel.sort.file_mtime_desc", "File Date: Newest First"],
-      ["file_mtime_asc", "text_novel.sort.file_mtime_asc", "File Date: Oldest First"],
-      ["title_asc", "text_novel.sort.title_asc", "Title: A-Z"],
-      ["title_desc", "text_novel.sort.title_desc", "Title: Z-A"],
-    ].forEach(([value, key, fb]) => {
+    TEXT_NOVEL_SORT_OPTIONS.forEach(([value, key, fb]) => {
       const opt = elem("option", null, t(key, fb));
       opt.value = value;
       if ((data.sort || "file_mtime_desc") === value) opt.selected = true;
       sel.appendChild(opt);
     });
-    sel.addEventListener("change", () => {
-      State.bridge.setPageSort(page, sel.value, (json) => {
-        const d = safeParse(json);
-        if (d) { State.pages[page] = d; clearPageScroll(page); scheduleRenderPage(); }
-      });
-    });
+    sel.addEventListener("change", () => setTextNovelPageSort(page, sel.value));
     wrap.appendChild(sel);
     tools.appendChild(wrap);
   }
@@ -1267,17 +1285,45 @@ function renderComic(area, data, gen) {
   }
 }
 
-function renderTable(area, items, page) {
+function renderTable(area, items, page, textNovelSort) {
   const gen = State.renderGen;
   const topSpacer = elem("div", "virt-spacer-top");
   const table = elem("table", "table");
   const thead = elem("thead");
   const htr = elem("tr");
-  const showCoverColumn = page !== "text_novel";
-  const headers = [t("detail.title", "Title"), t("detail.author", "Author"), t("detail.tags", "Tags"), t("detail.path", "Path")];
-  if (showCoverColumn) headers.unshift(t("detail.cover", "Cover"));
-  headers
-    .forEach((h) => htr.appendChild(elem("th", null, h)));
+  const sortableTextNovel = page === "text_novel" || (page === "novel_collections" && Boolean(textNovelSort));
+  const showCoverColumn = !sortableTextNovel;
+  const headers = [
+    ["title", t("detail.title", "Title")],
+    ["author", t("detail.author", "Author")],
+    ["tags", t("detail.tags", "Tags")],
+    ["path", t("detail.path", "Path")],
+  ];
+  if (showCoverColumn) htr.appendChild(elem("th", null, t("detail.cover", "Cover")));
+  headers.forEach(([field, label]) => {
+    if (!sortableTextNovel) {
+      htr.appendChild(elem("th", null, label));
+      return;
+    }
+    const th = elem("th", "sortable-column-header");
+    const currentSort = String(textNovelSort || "file_mtime_desc");
+    const ascending = currentSort === `${field}_asc`;
+    const descending = currentSort === `${field}_desc`;
+    th.setAttribute("aria-sort", ascending ? "ascending" : (descending ? "descending" : "none"));
+    const button = elem("button", "column-sort-button");
+    button.type = "button";
+    button.appendChild(elem("span", "column-sort-label", label));
+    if (ascending || descending) {
+      button.classList.add("active");
+      button.appendChild(elem("span", "column-sort-indicator", ascending ? "▲" : "▼"));
+    }
+    button.addEventListener("click", () => {
+      const nextOrder = ascending ? `${field}_desc` : `${field}_asc`;
+      setTextNovelPageSort(page, nextOrder);
+    });
+    th.appendChild(button);
+    htr.appendChild(th);
+  });
   thead.appendChild(htr);
   table.appendChild(thead);
   const tbody = elem("tbody");

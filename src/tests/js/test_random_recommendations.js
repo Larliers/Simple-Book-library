@@ -76,6 +76,7 @@ const nodes = {
   detailEmpty: new FakeNode(),
   detailContent: new FakeNode(),
   contextMenu: new FakeNode(),
+  pageHeadTools: new FakeNode(),
 };
 
 const observerStats = { created: 0, disconnected: 0 };
@@ -213,10 +214,65 @@ assert.strictEqual(typeof area._virtCleanup, "function", "Text Novel grid keeps 
 teardownVirtualWindow(area);
 clear(area);
 State.renderGen += 1;
-renderTable(area, [{ id: "n-list", title: "List Novel", author: "A", tags: [], path: "N.txt" }], "text_novel");
+const novelListItem = { id: "n-list", title: "List Novel", author: "A", tags: ["tag"], path: "N.txt" };
+const pageSortCalls = [];
+State.bridge.setPageSort = (page, order, callback) => {
+  pageSortCalls.push([page, order]);
+  callback(JSON.stringify({ mode: "grid_or_list", sort: order, items: [novelListItem] }));
+};
+renderTable(area, [novelListItem], "text_novel", "file_mtime_desc");
 const textTable = area.children[1];
 assert.strictEqual(textTable.children[0].children[0].children.length, 4, "Text Novel list omits cover column");
 assert.strictEqual(textTable.children[1].children[0].children[0].children.length, 4, "Text Novel rows align without cover cell");
+const sortableHeaders = textTable.children[0].children[0].children;
+sortableHeaders.forEach((header) => {
+  assert.strictEqual(header.children[0].tagName, "BUTTON", "Text Novel headers use native buttons");
+  assert.strictEqual(header.attributes["aria-sort"], "none", "File-date sorting leaves columns inactive");
+});
+
+const clickNovelHeader = (columnIndex, currentSort) => {
+  teardownVirtualWindow(area);
+  clear(area);
+  State.renderGen += 1;
+  renderTable(area, [novelListItem], "text_novel", currentSort);
+  const header = area.children[1].children[0].children[0].children[columnIndex];
+  header.children[0].dispatch("click");
+  return header;
+};
+[
+  [0, "title_asc"],
+  [1, "author_asc"],
+  [2, "tags_asc"],
+  [3, "path_asc"],
+].forEach(([columnIndex, expectedOrder]) => {
+  clickNovelHeader(columnIndex, "file_mtime_desc");
+  assert.deepStrictEqual(pageSortCalls.at(-1), ["text_novel", expectedOrder]);
+  clickNovelHeader(columnIndex, expectedOrder);
+  assert.deepStrictEqual(pageSortCalls.at(-1), ["text_novel", expectedOrder.replace("_asc", "_desc")]);
+});
+
+const activeTitleHeader = clickNovelHeader(0, "title_asc");
+assert.strictEqual(activeTitleHeader.attributes["aria-sort"], "ascending");
+assert.strictEqual(activeTitleHeader.children[0].children.at(-1).textContent, "▲");
+
+clear(document.getElementById("pageHeadTools"));
+renderPageTools("text_novel", { mode: "grid_or_list", sort: "author_desc", items: [novelListItem] });
+const textSortSelect = document.getElementById("pageHeadTools").children[0].children.at(-1);
+assert.strictEqual(textSortSelect.children.length, 10, "Text Novel dropdown exposes every supported order");
+assert.strictEqual(textSortSelect.children.find((option) => option.selected).value, "author_desc");
+textSortSelect.value = "path_asc";
+textSortSelect.dispatch("change");
+assert.deepStrictEqual(pageSortCalls.at(-1), ["text_novel", "path_asc"]);
+
+teardownVirtualWindow(area);
+clear(area);
+State.renderGen += 1;
+renderTable(area, [novelListItem], "novel_collections", "tags_desc");
+const collectionHeaders = area.children[1].children[0].children[0].children;
+assert.strictEqual(collectionHeaders.length, 4, "Novel collection list uses the same four text fields");
+assert.strictEqual(collectionHeaders[2].attributes["aria-sort"], "descending");
+collectionHeaders[1].children[0].dispatch("click");
+assert.deepStrictEqual(pageSortCalls.at(-1), ["novel_collections", "author_asc"]);
 
 teardownVirtualWindow(area);
 clear(area);
@@ -224,6 +280,7 @@ State.renderGen += 1;
 renderTable(area, [{ id: "b-list", title: "Book", author: "A", tags: [], path: "B.pdf" }], "library");
 const libraryTable = area.children[1];
 assert.strictEqual(libraryTable.children[0].children[0].children.length, 5, "Library list keeps cover column");
+assert.strictEqual(libraryTable.children[0].children[0].children[1].children.length, 0, "Library headers stay non-sortable");
 
 State.searchQueries.library = "preserved query";
 syncSearchInputFromPage(RANDOM_RECOMMENDATIONS_PAGE);

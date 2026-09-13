@@ -165,6 +165,12 @@ def _web_strings() -> dict[str, str]:
         ("text_novel.sort.file_mtime_asc", "File Date: Oldest First"),
         ("text_novel.sort.title_asc", "Title: A-Z"),
         ("text_novel.sort.title_desc", "Title: Z-A"),
+        ("text_novel.sort.author_asc", "Author: A-Z"),
+        ("text_novel.sort.author_desc", "Author: Z-A"),
+        ("text_novel.sort.tags_asc", "Tags: A-Z"),
+        ("text_novel.sort.tags_desc", "Tags: Z-A"),
+        ("text_novel.sort.path_asc", "Path: A-Z"),
+        ("text_novel.sort.path_desc", "Path: Z-A"),
         ("favorites.sort.label", "Sort"),
         ("favorites.sort.added_desc", "Added Time: Newest First"),
         ("favorites.sort.added_asc", "Added Time: Oldest First"),
@@ -896,6 +902,7 @@ class UiBridge(QObject):
     @Slot(str, str, result=str)
     def setPageSort(self, page: str, order: str) -> str:
         value = str(order or "").strip().lower()
+        emit_sort_event = False
         if page == PAGE_COMIC:
             self._repo.set_comic_sort_order_main(value)
             self._reload_comic_vms()
@@ -905,10 +912,14 @@ class UiBridge(QObject):
         elif page == PAGE_TEXT:
             self._repo.set_text_novel_sort_order_main(value)
             self._reload_text_vm()
+            emit_sort_event = True
         elif page == PAGE_NOVEL_COLLECTIONS:
             self._repo.set_text_novel_sort_order_fav(value)
+            emit_sort_event = True
         else:
             return json.dumps(self._page_resources(page), ensure_ascii=False)
+        if emit_sort_event:
+            self._emit_sort_event()
         self.push_resources()
         return json.dumps(self._page_resources(page), ensure_ascii=False)
 
@@ -990,6 +1001,13 @@ class UiBridge(QObject):
         self.interactionEvent.emit(json.dumps({
             "event": "open_tag",
             "resource_id": str(tag),
+            "timestamp": now_utc_iso(),
+        }, ensure_ascii=False))
+
+    def _emit_sort_event(self) -> None:
+        self.interactionEvent.emit(json.dumps({
+            "event": "sort",
+            "resource_id": None,
             "timestamp": now_utc_iso(),
         }, ensure_ascii=False))
 

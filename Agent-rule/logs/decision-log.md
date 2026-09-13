@@ -2,7 +2,7 @@
 
 ## 最新决策
 ```json
-{"decision_id":"decision-20260912-003","timestamp":"2026-09-12T10:45:00+08:00","owner":"ui-agent","title":"字段标签从目录截掉并复用合集前进后退","context":"早期扫描把 author/language 写入 tags_json；标签详情没有前进后退快捷识别","options":["只改 CSS 省略号","目录过滤并停写","复用合集动作","新增标签专用动作"],"decision":"目录和快捷添加截掉字段前缀；扫描不再写入；exit_collection/reopen_recent_collection 在标签页同样生效","rationale":["这些不是用户标签","已有后退/前进绑定无需重绑"],"impact":["存量字段标签立刻从目录消失","书本详情仍可能显示旧值直到重扫"],"followups":["不批量改写库内 tags_json"]}
+{"decision_id":"decision-20260913-001","timestamp":"2026-09-13T13:30:05+08:00","owner":"ui-agent","title":"Text Novel 表头与下拉复用后端排序 seam","context":"List 四列需要资源管理器式点击排序，同时保持 Grid、主页与合集的现有持久化语义","options":["仅前端临时排序","为表头新增独立状态","扩展现有 setPageSort 与排序枚举"],"decision":"扩展现有 setPageSort 为十档；表头和下拉共享 payload sort，主页与合集继续分键持久化","rationale":["避免前后端顺序漂移","Grid/List 切换继续复用同一排序","不增加 Bridge 方法或数据库迁移"],"impact":["Text Novel 主页与合集 List 支持四列表头升降序","Library 与漫画行为不变","兼容性：旧四档设置继续有效，非法值仍回退 file_mtime_desc；无数据库或资源 payload 迁移","回滚方案：回退本功能提交即可；旧版本读到新增枚举时会回退 file_mtime_desc，无需数据库回滚"],"followups":[]}
 ```
 
 ## 决策记录规则
@@ -24,6 +24,14 @@
   "impact": ["string"],
   "followups": ["string"]
 }
+```
+
+## 2026-09-13 - Text Novel 表头与下拉共享排序 seam
+
+完整决策记录见 `logs/history/2026-09-13.md`。
+
+```json
+{"decision_id":"decision-20260913-001","timestamp":"2026-09-13T13:30:05+08:00","owner":"ui-agent","title":"Text Novel 表头与下拉复用后端排序 seam","context":"List 四列需要资源管理器式点击排序，同时保持 Grid、主页与合集的现有持久化语义","options":["仅前端临时排序","为表头新增独立状态","扩展现有 setPageSort 与排序枚举"],"decision":"扩展现有 setPageSort 为十档；表头和下拉共享 payload sort，主页与合集继续分键持久化","rationale":["避免前后端顺序漂移","Grid/List 切换继续复用同一排序","不增加 Bridge 方法或数据库迁移"],"impact":["Text Novel 主页与合集 List 支持四列表头升降序","Library 与漫画行为不变","兼容性：旧四档设置继续有效，非法值仍回退 file_mtime_desc；无数据库或资源 payload 迁移","回滚方案：回退本功能提交即可；旧版本读到新增枚举时会回退 file_mtime_desc，无需数据库回滚"],"followups":[]}
 ```
 
 ## 2026-09-12 - 字段标签截断与标签前进后退

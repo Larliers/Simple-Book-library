@@ -227,11 +227,21 @@
 /* Table (list mode / text novel) */
 .table { width: 100%; border-collapse: separate; border-spacing: 0 8px; font-size: 13px; }
 .table th { color: var(--muted); text-align: left; font-size: 11px; text-transform: uppercase; padding: 0 10px 4px; }
+.table th.sortable-column-header { padding: 0 4px 4px; }
+.table .column-sort-button {
+  appearance: none; min-width: 0; padding: 4px 6px; border: 0; border-radius: 6px;
+  display: inline-flex; align-items: center; gap: 5px;
+  background: transparent; color: inherit; font: inherit; text-transform: inherit; cursor: pointer;
+}
+.table .column-sort-button:hover { color: var(--ink); background: var(--hover-bg); }
+.table .column-sort-button.active { color: var(--accent); }
+.table .column-sort-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.table .column-sort-indicator { font-size: 9px; line-height: 1; }
 .table td {
   padding: 10px; background: var(--card-bg); border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line); vertical-align: middle;
 }
-.table tr { cursor: pointer; }
+.table tbody tr { cursor: pointer; }
 .table tbody tr:hover td { background: var(--hover-bg); }
 .table tr.selected td { background: var(--hover-bg); box-shadow: inset 3px 0 0 var(--accent); }
 .table td:first-child { border-left: 1px solid var(--line); border-radius: var(--radius) 0 0 var(--radius); }

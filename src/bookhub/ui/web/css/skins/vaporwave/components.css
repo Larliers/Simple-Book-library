@@ -303,11 +303,22 @@
   color: var(--vw-cyan); text-align: left; font-family: var(--font-mono); font-size: 10px;
   text-transform: uppercase; letter-spacing: 0.1em; padding: 0 10px 4px;
 }
+.table th.sortable-column-header { padding: 0 4px 4px; }
+.table .column-sort-button {
+  appearance: none; min-width: 0; padding: 4px 6px; border: 0; border-radius: 3px;
+  display: inline-flex; align-items: center; gap: 5px;
+  background: transparent; color: inherit; font: inherit; letter-spacing: inherit;
+  text-transform: inherit; cursor: pointer;
+}
+.table .column-sort-button:hover { color: var(--vw-primary-soft); background: var(--hover-bg); }
+.table .column-sort-button.active { color: var(--vw-primary); text-shadow: 0 0 8px rgba(255, 113, 206, 0.55); }
+.table .column-sort-button:focus-visible { outline: 2px solid var(--vw-cyan); outline-offset: 1px; }
+.table .column-sort-indicator { font-size: 9px; line-height: 1; }
 .table td {
   padding: 10px; background: var(--card-bg); border-top: 1px solid var(--line-dark);
   border-bottom: 1px solid var(--line-dark); vertical-align: middle;
 }
-.table tr { cursor: pointer; }
+.table tbody tr { cursor: pointer; }
 .table tbody tr:hover td { background: var(--hover-bg); }
 .table tr.selected td { background: var(--hover-bg); box-shadow: inset 3px 0 0 var(--vw-cyan); }
 .table td:first-child { border-left: 1px solid var(--line-dark); border-radius: var(--radius) 0 0 var(--radius); }

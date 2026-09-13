@@ -65,6 +65,80 @@ class TextNovelSortTests(unittest.TestCase):
             self.assertEqual(self._titles(by_title_desc), ["B_beta", "A_alpha"])
             self.assertGreater(int(by_mtime_desc[0].get("file_mtime") or 0), int(by_mtime_desc[1].get("file_mtime") or 0))
 
+    def test_text_novel_sort_order_by_list_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            repo = LibraryRepository(base / "library.db", base / "scan_report.json")
+            for payload in [
+                {
+                    "path": "Z:/novels/alpha.txt",
+                    "file_name": "alpha.txt",
+                    "extension": ".txt",
+                    "title": "Alpha",
+                    "author": "Same",
+                    "tags_json": '["beta"]',
+                    "resource_type": "text_novel",
+                },
+                {
+                    "path": "a:/novels/beta.txt",
+                    "file_name": "beta.txt",
+                    "extension": ".txt",
+                    "title": "Beta",
+                    "author": "",
+                    "tags_json": "[]",
+                    "resource_type": "text_novel",
+                },
+                {
+                    "path": "M:/novels/gamma.txt",
+                    "file_name": "gamma.txt",
+                    "extension": ".txt",
+                    "title": "Gamma",
+                    "author": "same",
+                    "tags_json": '["Alpha", "Omega"]',
+                    "resource_type": "text_novel",
+                },
+            ]:
+                repo.upsert_book(payload)
+
+            def sorted_titles(order: str) -> list[str]:
+                return self._titles(
+                    repo.list_books(
+                        include_missing=False,
+                        resource_type="text_novel",
+                        order_by=order,
+                    )
+                )
+
+            self.assertEqual(sorted_titles("author_asc"), ["Beta", "Alpha", "Gamma"])
+            self.assertEqual(sorted_titles("author_desc"), ["Alpha", "Gamma", "Beta"])
+            self.assertEqual(sorted_titles("tags_asc"), ["Beta", "Gamma", "Alpha"])
+            self.assertEqual(sorted_titles("tags_desc"), ["Alpha", "Gamma", "Beta"])
+            self.assertEqual(sorted_titles("path_asc"), ["Beta", "Gamma", "Alpha"])
+            self.assertEqual(sorted_titles("path_desc"), ["Alpha", "Gamma", "Beta"])
+
+    def test_tag_sort_uses_the_same_joined_text_shown_in_the_list(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            repo = LibraryRepository(base / "library.db", base / "scan_report.json")
+            for title, tags_json in (("Zulu Bracket", '["[Beta]"]'), ("Alpha Plain", '["Beta"]')):
+                repo.upsert_book(
+                    {
+                        "path": str(base / f"{title}.txt"),
+                        "file_name": f"{title}.txt",
+                        "extension": ".txt",
+                        "title": title,
+                        "tags_json": tags_json,
+                        "resource_type": "text_novel",
+                    }
+                )
+
+            rows = repo.list_books(
+                include_missing=False,
+                resource_type="text_novel",
+                order_by="tags_asc",
+            )
+            self.assertEqual(self._titles(rows), ["Zulu Bracket", "Alpha Plain"])
+
     def test_collection_members_follow_requested_order_not_added_at(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             base = Path(tmp_dir)

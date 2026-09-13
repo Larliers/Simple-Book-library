@@ -893,7 +893,18 @@ class LibraryRepository:
     @staticmethod
     def _normalize_text_novel_sort_order(value: str | None) -> str:
         normalized = str(value or "").strip().lower()
-        allowed = {"file_mtime_asc", "file_mtime_desc", "title_asc", "title_desc"}
+        allowed = {
+            "file_mtime_asc",
+            "file_mtime_desc",
+            "title_asc",
+            "title_desc",
+            "author_asc",
+            "author_desc",
+            "tags_asc",
+            "tags_desc",
+            "path_asc",
+            "path_desc",
+        }
         return normalized if normalized in allowed else "file_mtime_desc"
 
     @staticmethod
@@ -902,13 +913,34 @@ class LibraryRepository:
         normalized = LibraryRepository._normalize_text_novel_sort_order(order_by)
         mtime_expr = f"COALESCE({prefix}file_mtime, 0)"
         title_expr = f"lower(COALESCE({prefix}title, {prefix}file_name))"
+        author_expr = f"lower(COALESCE({prefix}author, ''))"
+        tags_json_expr = f"{prefix}tags_json"
+        tags_expr = (
+            f"lower(CASE WHEN json_valid({tags_json_expr}) THEN "
+            f"CASE WHEN json_type({tags_json_expr}) = 'array' THEN "
+            f"COALESCE((SELECT group_concat(tag_value, ', ') FROM ("
+            f"SELECT CAST(value AS TEXT) AS tag_value FROM json_each({tags_json_expr}) "
+            f"ORDER BY CAST(key AS INTEGER))), '') ELSE '' END ELSE '' END)"
+        )
+        path_expr = f"lower(COALESCE({prefix}path, ''))"
+        stable_tail = f"{title_expr} ASC, {path_expr} ASC"
         if normalized == "file_mtime_asc":
-            return f"{mtime_expr} ASC, {title_expr} ASC"
+            return f"{mtime_expr} ASC, {stable_tail}"
         if normalized == "title_asc":
-            return f"{title_expr} ASC"
+            return f"{title_expr} ASC, {path_expr} ASC"
         if normalized == "title_desc":
-            return f"{title_expr} DESC"
-        return f"{mtime_expr} DESC, {title_expr} ASC"
+            return f"{title_expr} DESC, {path_expr} ASC"
+        field_orders = {
+            "author_asc": f"{author_expr} ASC",
+            "author_desc": f"{author_expr} DESC",
+            "tags_asc": f"{tags_expr} ASC",
+            "tags_desc": f"{tags_expr} DESC",
+            "path_asc": f"{path_expr} ASC",
+            "path_desc": f"{path_expr} DESC",
+        }
+        if normalized in field_orders:
+            return f"{field_orders[normalized]}, {stable_tail}"
+        return f"{mtime_expr} DESC, {stable_tail}"
 
     def get_text_novel_sort_order_main(self) -> str:
         return self._normalize_text_novel_sort_order(
