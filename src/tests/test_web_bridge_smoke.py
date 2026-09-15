@@ -28,6 +28,8 @@ try:
     from bookhub.library.scanner import scan_comic_roots
     from bookhub.ui.web_bridge import (
         PAGE_COMIC,
+        PAGE_COMIC_COLLECTIONS,
+        PAGE_COLLECTIONS,
         PAGE_LIBRARY,
         PAGE_NOVEL_COLLECTIONS,
         PAGE_RANDOM_RECOMMENDATIONS,
@@ -407,6 +409,135 @@ class WebBridgeSmokeTests(unittest.TestCase):
         self.assertTrue(bridge.deleteCollection(cid))
         collections = json.loads(bridge.getCollections("collections"))
         self.assertFalse(any(c["id"] == cid for c in collections))
+
+    def test_collection_membership_change_does_not_broadcast_full_page_refresh(self) -> None:
+        bridge = self._make_bridge()
+        bridge._repo.upsert_book(
+            {
+                "resource_id": "scroll-book",
+                "path": r"C:\library\scroll-book.pdf",
+                "title": "Scroll Book",
+                "file_name": "scroll-book.pdf",
+                "extension": ".pdf",
+                "resource_type": "book",
+                "tags_json": "[]",
+            }
+        )
+        bridge.reload_data()
+        cid = bridge.createCollection(PAGE_LIBRARY, "Scroll Test")
+        emitted: list[dict[str, object]] = []
+        bridge.resourcesChanged.connect(lambda payload: emitted.append(json.loads(payload)))
+
+        bridge.setCollectionMembership("scroll-book", cid, True)
+
+        detail = json.loads(bridge.getDetail(PAGE_LIBRARY, "scroll-book"))
+        self.assertEqual([collection["id"] for collection in detail["bookCollections"]], [cid])
+        self.assertEqual(emitted, [])
+
+    def test_apply_collection_quick_add_returns_targeted_state_without_refresh(self) -> None:
+        bridge = self._make_bridge()
+        bridge._repo.upsert_book(
+            {
+                "resource_id": "quick-book",
+                "path": r"C:\library\quick-book.pdf",
+                "title": "Quick Book",
+                "file_name": "quick-book.pdf",
+                "extension": ".pdf",
+                "resource_type": "book",
+                "tags_json": "[]",
+            }
+        )
+        bridge.reload_data()
+        emitted: list[dict[str, object]] = []
+        bridge.resourcesChanged.connect(lambda payload: emitted.append(json.loads(payload)))
+
+        result = json.loads(
+            bridge.applyCollectionQuickAdd(
+                PAGE_LIBRARY,
+                "quick-book",
+                json.dumps({"addIds": [], "removeIds": [], "createName": "Quick Shelf"}),
+            )
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["collectionPage"], PAGE_COLLECTIONS)
+        self.assertEqual(result["createdCollection"]["name"], "Quick Shelf")
+        self.assertEqual(result["memberIds"], [result["createdCollection"]["id"]])
+        self.assertEqual(result["collectionPageData"]["items"][0]["meta"], "1 books")
+        self.assertEqual(result["detail"]["bookCollections"], [result["createdCollection"]])
+        self.assertEqual(emitted, [])
+
+    def test_apply_collection_quick_add_supports_text_and_comic_kinds(self) -> None:
+        bridge = self._make_bridge()
+        bridge._repo.upsert_book(
+            {
+                "resource_id": "quick-novel",
+                "path": r"C:\library\quick-novel.txt",
+                "title": "Quick Novel",
+                "file_name": "quick-novel.txt",
+                "extension": ".txt",
+                "resource_type": "text_novel",
+                "tags_json": "[]",
+            }
+        )
+        bridge._repo.upsert_comic(
+            {
+                "resource_id": "quick-comic",
+                "path": r"C:\comics\quick-comic",
+                "title": "Quick Comic",
+                "image_count": 3,
+            }
+        )
+        bridge.reload_data()
+
+        novel_result = json.loads(
+            bridge.applyCollectionQuickAdd(
+                PAGE_TEXT,
+                "quick-novel",
+                json.dumps({"addIds": [], "removeIds": [], "createName": "Novel Shelf"}),
+            )
+        )
+        comic_result = json.loads(
+            bridge.applyCollectionQuickAdd(
+                PAGE_COMIC,
+                "quick-comic",
+                json.dumps({"addIds": [], "removeIds": [], "createName": "Comic Shelf"}),
+            )
+        )
+
+        self.assertTrue(novel_result["ok"])
+        self.assertEqual(novel_result["collectionPage"], PAGE_NOVEL_COLLECTIONS)
+        self.assertEqual(novel_result["detail"]["bookCollections"], [novel_result["createdCollection"]])
+        self.assertTrue(comic_result["ok"])
+        self.assertEqual(comic_result["collectionPage"], PAGE_COMIC_COLLECTIONS)
+        self.assertEqual(comic_result["detail"]["comicCollections"], [comic_result["createdCollection"]])
+
+    def test_apply_collection_quick_add_rejects_invalid_payload_without_writing(self) -> None:
+        bridge = self._make_bridge()
+        bridge._repo.upsert_book(
+            {
+                "resource_id": "quick-invalid",
+                "path": r"C:\library\quick-invalid.pdf",
+                "title": "Quick Invalid",
+                "file_name": "quick-invalid.pdf",
+                "extension": ".pdf",
+                "resource_type": "book",
+                "tags_json": "[]",
+            }
+        )
+        bridge.reload_data()
+
+        result = json.loads(
+            bridge.applyCollectionQuickAdd(
+                PAGE_LIBRARY,
+                "quick-invalid",
+                json.dumps({"addIds": [999999], "removeIds": [], "createName": "No Partial"}),
+            )
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"], "invalid_collection")
+        self.assertEqual(bridge._repo.get_all_collections(), [])
 
     def test_bootstrap_includes_menu_i18n_keys(self) -> None:
         bridge = self._make_bridge()
@@ -923,6 +1054,20 @@ class SettingsUiStructureTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("SHORTCUTS_BEHAVIOR_OK", completed.stdout)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is not available")
+    def test_quick_add_frontend_behavior(self) -> None:
+        script = PROJECT_ROOT / "src" / "tests" / "js" / "test_quick_add.js"
+        app_js = PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js"
+        completed = subprocess.run(
+            [shutil.which("node") or "node", str(script), str(app_js)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("QUICK_ADD_BEHAVIOR_OK", completed.stdout)
 
     def test_random_recommendations_keep_source_page_for_actions(self) -> None:
         app_js = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")

@@ -2197,26 +2197,58 @@ function openQuickAddModal(item, sourcePage) {
     const initialMembers = new Set();
     const pendingMembers = new Set();
     let allCollections = [];
+    let submitting = false;
+
+    const normalizedCollectionName = (value) => String(value || "").trim().toLocaleLowerCase();
+
+    const quickAddItemIsSelected = () => {
+      if (State.currentPage === RANDOM_RECOMMENDATIONS_PAGE) {
+        const selected = State.recommendationSelection;
+        return Boolean(selected && selected.sourcePage === actionPage && selected.id === item.id);
+      }
+      if (State.currentPage === TAG_MANAGER_PAGE) {
+        const selected = State.tagSelection;
+        return Boolean(selected && selected.sourcePage === actionPage && selected.id === item.id);
+      }
+      return State.selected[State.currentPage] === item.id;
+    };
 
     const renderCollectionRows = () => {
-      const q = searchInput.value.trim().toLowerCase();
+      const queryName = searchInput.value.trim();
+      const q = normalizedCollectionName(queryName);
       clear(list);
+      const hasExactMatch = q && allCollections.some(
+        (coll) => normalizedCollectionName(coll.name) === q
+      );
+      if (queryName && !hasExactMatch) {
+        const create = elem(
+          "button",
+          "list-item list-item-action quick-create-row",
+          fmt(t("quick_add.create_and_add", "Create and add “{name}”"), { name: queryName })
+        );
+        create.type = "button";
+        create.disabled = submitting;
+        create.addEventListener("click", () => submitCollectionChanges(queryName));
+        list.appendChild(create);
+      }
       allCollections
-        .filter((coll) => !q || String(coll.name || "").toLowerCase().includes(q))
+        .filter((coll) => !q || normalizedCollectionName(coll.name).includes(q))
         .forEach((coll) => {
+          const collectionId = Number(coll.id);
           const row = elem("div", "list-item list-item-action");
           row.appendChild(elem("span", null, coll.name));
-          const isMember = pendingMembers.has(coll.id);
+          const isMember = pendingMembers.has(collectionId);
           const btn = elem(
             "button",
             isMember ? "ghost-btn list-action-btn is-added" : "ghost-btn list-action-btn is-add",
             isMember ? t("quick_add.added", "Added") : t("quick_add.add", "Add")
           );
           btn.type = "button";
+          btn.disabled = submitting;
           btn.addEventListener("click", (e) => {
             e.stopPropagation();
-            if (pendingMembers.has(coll.id)) pendingMembers.delete(coll.id);
-            else pendingMembers.add(coll.id);
+            if (pendingMembers.has(collectionId)) pendingMembers.delete(collectionId);
+            else pendingMembers.add(collectionId);
             renderCollectionRows();
           });
           row.appendChild(btn);
@@ -2225,14 +2257,23 @@ function openQuickAddModal(item, sourcePage) {
     };
 
     searchInput.addEventListener("input", renderCollectionRows);
+    searchInput.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      const queryName = searchInput.value.trim();
+      if (!queryName || allCollections.some(
+        (coll) => normalizedCollectionName(coll.name) === normalizedCollectionName(queryName)
+      )) return;
+      event.preventDefault();
+      submitCollectionChanges(queryName);
+    });
 
     State.bridge.getCollections(actionPage, (cjson) => {
       allCollections = safeParse(cjson) || [];
       State.bridge.getDetail(actionPage, item.id, (djson) => {
         const detail = safeParse(djson) || {};
         (detail.bookCollections || detail.comicCollections || []).forEach((c) => {
-          initialMembers.add(c.id);
-          pendingMembers.add(c.id);
+          initialMembers.add(Number(c.id));
+          pendingMembers.add(Number(c.id));
         });
         renderCollectionRows();
       });
@@ -2242,16 +2283,79 @@ function openQuickAddModal(item, sourcePage) {
     const cancel = elem("button", "ghost-btn", t("common.cancel", "Cancel"));
     cancel.addEventListener("click", () => { close(); refreshDetailIfSelected(); });
     const confirm = elem("button", "primary-btn", t("quick_add.confirm", "Confirm add"));
-    confirm.addEventListener("click", () => {
-      const ids = new Set([...initialMembers, ...pendingMembers]);
-      ids.forEach((cid) => {
-        const want = pendingMembers.has(cid);
-        const was = initialMembers.has(cid);
-        if (want !== was) State.bridge.setCollectionMembership(item.id, cid, want);
-      });
-      close();
-      refreshDetailIfSelected();
-    });
+    const setSubmitting = (value) => {
+      submitting = value;
+      tagInput.disabled = value;
+      searchInput.disabled = value;
+      cancel.disabled = value;
+      confirm.disabled = value;
+      renderCollectionRows();
+    };
+
+    function submitCollectionChanges(createName) {
+      if (submitting) return;
+      const addIds = [...pendingMembers]
+        .filter((collectionId) => !initialMembers.has(collectionId))
+        .sort((a, b) => a - b);
+      const removeIds = [...initialMembers]
+        .filter((collectionId) => !pendingMembers.has(collectionId))
+        .sort((a, b) => a - b);
+      const cleanCreateName = String(createName || "").trim();
+      if (!addIds.length && !removeIds.length && !cleanCreateName) {
+        close();
+        refreshDetailIfSelected();
+        return;
+      }
+
+      setSubmitting(true);
+      State.bridge.applyCollectionQuickAdd(
+        actionPage,
+        item.id,
+        JSON.stringify({ addIds, removeIds, createName: cleanCreateName }),
+        (resultJson) => {
+          const result = safeParse(resultJson);
+          if (!result || !result.ok) {
+            setSubmitting(false);
+            showToast(
+              t("quick_add.save_failed_title", "Collection update failed"),
+              t("quick_add.save_failed", "Could not save collection changes. Please try again."),
+              "warning"
+            );
+            return;
+          }
+
+          const collectionPage = String(result.collectionPage || "");
+          const previousCollectionData = State.pages[collectionPage] || {};
+          const visibleCollectionId = State.currentPage === collectionPage
+            ? Number(previousCollectionData.collectionId || 0)
+            : 0;
+          const removesVisibleItem = visibleCollectionId > 0 && removeIds.includes(visibleCollectionId);
+          if (removesVisibleItem) savePageScroll(State.currentPage);
+          if (collectionPage && result.collectionPageData) {
+            State.pages[collectionPage] = result.collectionPageData;
+          }
+          if (result.detail) {
+            if (Array.isArray(result.detail.bookCollections)) {
+              item.bookCollections = result.detail.bookCollections.slice();
+            }
+            if (Array.isArray(result.detail.comicCollections)) {
+              item.comicCollections = result.detail.comicCollections.slice();
+            }
+          }
+
+          close();
+          if (removesVisibleItem) {
+            State.selected[State.currentPage] = null;
+            renderDetailEmpty();
+            scheduleRenderPage();
+          } else if (result.detail && quickAddItemIsSelected()) {
+            renderDetail(result.detail, actionPage);
+          }
+        }
+      );
+    }
+
+    confirm.addEventListener("click", () => submitCollectionChanges(""));
     actions.appendChild(cancel);
     actions.appendChild(confirm);
     modal.appendChild(actions);

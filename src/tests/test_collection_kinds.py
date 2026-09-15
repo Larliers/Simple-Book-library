@@ -91,6 +91,67 @@ class CollectionKindIsolationTests(unittest.TestCase):
         names = {c["name"] for c in repo.get_all_collections(COLLECTION_KIND_BOOK)}
         self.assertEqual(names, {"B"})
 
+    def test_apply_collection_membership_changes_creates_and_updates_atomically(self) -> None:
+        repo = self._repo()
+        book_id = self._book(repo, "a.pdf")
+        keep_id = repo.create_collection("Keep", kind=COLLECTION_KIND_BOOK)
+        remove_id = repo.create_collection("Remove", kind=COLLECTION_KIND_BOOK)
+        repo.add_book_to_collection(book_id, remove_id)
+
+        result = repo.apply_collection_membership_changes(
+            resource_db_id=book_id,
+            kind=COLLECTION_KIND_BOOK,
+            add_collection_ids=[keep_id],
+            remove_collection_ids=[remove_id],
+            create_name="  New Shelf  ",
+        )
+
+        self.assertEqual(result["created_collection"]["name"], "New Shelf")
+        self.assertEqual(
+            set(result["member_ids"]),
+            {keep_id, result["created_collection"]["id"]},
+        )
+        self.assertFalse(repo.is_book_in_collection(book_id, remove_id))
+        self.assertTrue(repo.is_book_in_collection(book_id, keep_id))
+
+    def test_apply_collection_membership_changes_reuses_casefolded_name(self) -> None:
+        repo = self._repo()
+        book_id = self._book(repo, "a.pdf")
+        existing_id = repo.create_collection("Reading List", kind=COLLECTION_KIND_BOOK)
+
+        result = repo.apply_collection_membership_changes(
+            resource_db_id=book_id,
+            kind=COLLECTION_KIND_BOOK,
+            create_name=" reading list ",
+        )
+
+        self.assertEqual(result["created_collection"]["id"], existing_id)
+        self.assertEqual(result["member_ids"], [existing_id])
+        self.assertEqual(len(repo.get_all_collections(COLLECTION_KIND_BOOK)), 1)
+
+    def test_apply_collection_membership_changes_rejects_invalid_ids_without_partial_write(self) -> None:
+        repo = self._repo()
+        book_id = self._book(repo, "a.pdf")
+        existing_id = repo.create_collection("Existing", kind=COLLECTION_KIND_BOOK)
+        repo.add_book_to_collection(book_id, existing_id)
+
+        with self.assertRaisesRegex(ValueError, "invalid_collection"):
+            repo.apply_collection_membership_changes(
+                resource_db_id=book_id,
+                kind=COLLECTION_KIND_BOOK,
+                add_collection_ids=[999999],
+                remove_collection_ids=[existing_id],
+                create_name="Must Not Exist",
+            )
+
+        self.assertTrue(repo.is_book_in_collection(book_id, existing_id))
+        self.assertFalse(
+            any(
+                collection["name"] == "Must Not Exist"
+                for collection in repo.get_all_collections(COLLECTION_KIND_BOOK)
+            )
+        )
+
     def test_strips_novels_from_book_collections(self) -> None:
         repo = self._repo()
         book_id = self._book(repo, "a.pdf")

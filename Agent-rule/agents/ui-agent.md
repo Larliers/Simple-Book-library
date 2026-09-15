@@ -15,6 +15,7 @@
 - 渲染随机推荐三列封面页，并按资源的 `sourcePage` 复用详情、外部打开与合集交互。
 - 渲染标签目录与标签详情混合封面网格，维护会话排序、请求失效和来源感知交互。
 - 维护可持久化快捷键设置页、统一资源动作分发器、原生鼠标侧键输入和会话内最近系列导航。
+- 维护三类资源共用的 Quick Add 合集交互；批量保存成员关系、快捷创建同 kind 合集，并定向回写而不重建当前资源列表。
 
 ## Out of Scope
 - 不直接扫描文件系统。
@@ -30,6 +31,7 @@
 - `random_recommendations_view`
 - `tag_management_view`
 - `shortcut_action_dispatcher`
+- `quick_add_collection_membership`
 
 ## Accepted Input Format
 ```json
@@ -103,3 +105,4 @@
 - 快捷键录入使用 `KeyboardEvent.code` 或 `MouseBack`/`MouseForward`，拒绝冲突与保留按键；非录入状态在输入控件、模态框及 Text Rules 内不得触发。
 - 合集导航拆成退出当前系列与进入最近系列两个动作，语义对应后退/前进；书籍/小说/漫画合集各自只保留本次启动中该页最后一次成功打开项；同一动作在标签管理页退出/重开最近标签；重启不恢复；失效目标必须清除并提示。
 - 标签目录不展示 `author:` / `publisher:` / `language:` / `series:` 字段前缀标签。
+- Quick Add 合集提交必须经 `applyCollectionQuickAdd` 一次完成；成功后只更新对应合集页缓存与当前详情。仅从当前打开合集移除可见资源时允许保存滚动位置后重绘该合集详情。

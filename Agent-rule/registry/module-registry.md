@@ -129,6 +129,21 @@
 }
 ```
 
+### quick_add_collection_membership
+```json
+{
+  "module_name": "quick_add_collection_membership",
+  "owner_agent": "ui-agent",
+  "status": "active",
+  "purpose": "为三类资源批量保存合集成员关系，并在 Quick Add 内快捷创建同 kind 合集",
+  "input": ["source_page", "resource_id", "add_ids", "remove_ids", "create_name"],
+  "output": ["member_ids", "created_collection", "collection_page_data", "resource_detail"],
+  "upstream": ["LibraryRepository", "UiBridge"],
+  "downstream": ["resource_list_view", "resource_detail_binding"],
+  "notes": "Repository 单事务写入；成功定向回写合集页缓存，不广播 resourcesChanged，不重建当前资源列表"
+}
+```
+
 ### comic_cover_selector
 ```json
 {

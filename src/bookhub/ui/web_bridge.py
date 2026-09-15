@@ -39,6 +39,7 @@ COLLECTION_PAGE_KINDS = {
     PAGE_NOVEL_COLLECTIONS: COLLECTION_KIND_TEXT_NOVEL,
     PAGE_COMIC_COLLECTIONS: COLLECTION_KIND_COMIC,
 }
+COLLECTION_KIND_PAGES = {kind: page for page, kind in COLLECTION_PAGE_KINDS.items()}
 
 NAV_ITEMS = [
     (PAGE_LIBRARY, "sidebar.library", "Library"),
@@ -189,6 +190,9 @@ def _web_strings() -> dict[str, str]:
         ("quick_add.add", "Add"),
         ("quick_add.added", "Added"),
         ("quick_add.confirm", "Confirm add"),
+        ("quick_add.create_and_add", "Create and add “{name}”"),
+        ("quick_add.save_failed_title", "Collection update failed"),
+        ("quick_add.save_failed", "Could not save collection changes. Please try again."),
         ("settings.title", "Settings"),
         ("settings.nav.general", "General"),
         ("settings.nav.paths", "Paths & Scan"),
@@ -1140,6 +1144,69 @@ class UiBridge(QObject):
         self.push_resources()
         return int(cid)
 
+    @Slot(str, str, str, result=str)
+    def applyCollectionQuickAdd(self, page: str, resource_id: str, payload_json: str) -> str:
+        allowed_pages = {PAGE_LIBRARY, PAGE_TEXT, PAGE_COMIC, *COLLECTION_PAGE_KINDS}
+        if page not in allowed_pages:
+            return json.dumps({"ok": False, "error": "invalid_page"}, ensure_ascii=False)
+        try:
+            payload = json.loads(payload_json or "{}")
+        except (TypeError, json.JSONDecodeError):
+            return json.dumps({"ok": False, "error": "invalid_payload"}, ensure_ascii=False)
+        if not isinstance(payload, dict):
+            return json.dumps({"ok": False, "error": "invalid_payload"}, ensure_ascii=False)
+
+        def collection_ids(key: str) -> list[int]:
+            values = payload.get(key, [])
+            if not isinstance(values, list) or any(
+                isinstance(value, bool) or not isinstance(value, int) or value <= 0
+                for value in values
+            ):
+                raise ValueError("invalid_payload")
+            return values
+
+        create_name = payload.get("createName", "")
+        if not isinstance(create_name, str):
+            return json.dumps({"ok": False, "error": "invalid_payload"}, ensure_ascii=False)
+        try:
+            add_ids = collection_ids("addIds")
+            remove_ids = collection_ids("removeIds")
+        except ValueError as exc:
+            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+        kind = _kind_for_page(page)
+        if kind == COLLECTION_KIND_COMIC:
+            resource_db_id = self._repo.get_comic_int_id(resource_id)
+        else:
+            resource_db_id = self._repo.get_book_int_id(resource_id)
+        if resource_db_id is None:
+            return json.dumps({"ok": False, "error": "resource_not_found"}, ensure_ascii=False)
+
+        try:
+            result = self._repo.apply_collection_membership_changes(
+                resource_db_id=resource_db_id,
+                kind=kind,
+                add_collection_ids=add_ids,
+                remove_collection_ids=remove_ids,
+                create_name=create_name,
+            )
+        except ValueError as exc:
+            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+        if kind == COLLECTION_KIND_COMIC:
+            self._refresh_comic_collection_vm()
+        collection_page = COLLECTION_KIND_PAGES[kind]
+        response = {
+            "ok": True,
+            "error": "",
+            "createdCollection": result.get("created_collection"),
+            "memberIds": result.get("member_ids", []),
+            "collectionPage": collection_page,
+            "collectionPageData": self._page_resources(collection_page),
+            "detail": self._detail_for(page, resource_id) or {},
+        }
+        return json.dumps(response, ensure_ascii=False)
+
     @Slot(int, str, result=bool)
     def renameCollection(self, collection_id: int, name: str) -> bool:
         if not name.strip():
@@ -1188,24 +1255,26 @@ class UiBridge(QObject):
     @Slot(str, int, bool)
     def setCollectionMembership(self, resource_id: str, collection_id: int, member: bool) -> None:
         kind = self._repo.get_collection_kind(int(collection_id))
+        if kind is None:
+            return
         if kind == COLLECTION_KIND_COMIC:
-            comic_id = self._repo.get_comic_int_id(resource_id)
-            if comic_id is None:
+            resource_db_id = self._repo.get_comic_int_id(resource_id)
+            if resource_db_id is None:
                 return
-            if member:
-                self._repo.add_comic_to_collection(comic_id, int(collection_id))
-            else:
-                self._repo.remove_comic_from_collection(comic_id, int(collection_id))
         else:
-            book_id = self._repo.get_book_int_id(resource_id)
-            if book_id is None:
+            resource_db_id = self._repo.get_book_int_id(resource_id)
+            if resource_db_id is None:
                 return
-            if member:
-                self._repo.add_book_to_collection(book_id, int(collection_id))
-            else:
-                self._repo.remove_book_from_collection(book_id, int(collection_id))
+        try:
+            self._repo.apply_collection_membership_changes(
+                resource_db_id=resource_db_id,
+                kind=kind,
+                add_collection_ids=[int(collection_id)] if member else [],
+                remove_collection_ids=[] if member else [int(collection_id)],
+            )
+        except ValueError:
+            return
         self._refresh_comic_collection_vm()
-        self.push_resources()
 
     @Slot(str, int)
     def removeFromCollection(self, resource_id: str, collection_id: int) -> None:

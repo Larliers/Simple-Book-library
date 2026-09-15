@@ -161,6 +161,39 @@ settings payload 必须提供完整的 `shortcutBindings`，八个固定动作�
 - 合集导航拆成 `exit_collection`（退出当前系列）与 `reopen_recent_collection`（进入最近系列），语义对应后退/前进；在合集页按三类合集独立记忆，在标签管理页改为退出/重开最近标签。
 - 最近系列与最近标签仅保存于当前前端会话；成功打开或退出详情时更新，重启不恢复；合集目标删除后只清空该页记忆并提示。
 
+## Quick Add Collection Membership Extension
+
+`applyCollectionQuickAdd(page, resourceId, payloadJson)` 为图书、文本小说与漫画共用的合集提交 interface。输入：
+
+```json
+{
+  "addIds": [1, 2],
+  "removeIds": [3],
+  "createName": "新合集"
+}
+```
+
+成功输出：
+
+```json
+{
+  "ok": true,
+  "error": "",
+  "createdCollection": {"id": 4, "name": "新合集"},
+  "memberIds": [1, 2, 4],
+  "collectionPage": "collections",
+  "collectionPageData": {},
+  "detail": {}
+}
+```
+
+- `page` 必须为真实 `sourcePage` 或对应合集页；Repository 在单事务内校验资源 kind、合集 kind 和全部 ID 后再写入。
+- `createName` 先 trim，再按 Unicode casefold 在同 kind 合集中复用同名项；非空且不存在时创建并加入当前资源。
+- 成功结果不触发全量 `resourcesChanged`；前端只替换 `collectionPageData` 并更新当前选中详情。
+- Library、Text Novel、Comic、随机推荐和标签详情不得因合集写入重绘。仅从当前打开合集移除该资源时，保存滚动位置并重绘该合集详情。
+- 失败返回 `{ok:false,error:string}`，不得部分写入；弹窗保持打开并恢复可操作状态。
+- 旧 `setCollectionMembership` 保留兼容，但不得广播全量页面刷新。
+
 ## Error Shape
 ```json
 {

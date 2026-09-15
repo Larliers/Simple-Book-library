@@ -2277,6 +2277,109 @@ class LibraryRepository:
             )
             return cur.lastrowid
 
+    def apply_collection_membership_changes(
+        self,
+        *,
+        resource_db_id: int,
+        kind: str,
+        add_collection_ids: list[int] | tuple[int, ...] = (),
+        remove_collection_ids: list[int] | tuple[int, ...] = (),
+        create_name: str = "",
+    ) -> dict[str, Any]:
+        """Atomically update one resource's typed collection memberships."""
+        kind_value = str(kind or "").strip().lower()
+        if kind_value not in COLLECTION_KINDS:
+            raise ValueError("invalid_kind")
+
+        def normalized_ids(values: list[int] | tuple[int, ...]) -> set[int]:
+            try:
+                result = {int(value) for value in values}
+            except (TypeError, ValueError) as exc:
+                raise ValueError("invalid_collection") from exc
+            if any(value <= 0 for value in result):
+                raise ValueError("invalid_collection")
+            return result
+
+        add_ids = normalized_ids(add_collection_ids)
+        remove_ids = normalized_ids(remove_collection_ids)
+        if add_ids & remove_ids:
+            raise ValueError("conflicting_changes")
+
+        clean_name = str(create_name or "").strip()
+        self._init_collections_tables()
+        with self._connection() as conn:
+            if kind_value == COLLECTION_KIND_COMIC:
+                resource_row = conn.execute(
+                    "SELECT id FROM comics WHERE id = ?",
+                    (int(resource_db_id),),
+                ).fetchone()
+                link_table = "collection_comics"
+                resource_column = "comic_id"
+            else:
+                resource_row = conn.execute(
+                    "SELECT id, resource_type FROM books WHERE id = ?",
+                    (int(resource_db_id),),
+                ).fetchone()
+                if resource_row and book_collection_kind(resource_row["resource_type"]) != kind_value:
+                    raise ValueError("resource_kind_mismatch")
+                link_table = "collection_books"
+                resource_column = "book_id"
+            if not resource_row:
+                raise ValueError("resource_not_found")
+
+            collection_rows = conn.execute(
+                "SELECT id, name FROM collections WHERE kind = ? ORDER BY id ASC",
+                (kind_value,),
+            ).fetchall()
+            collection_by_id = {int(row["id"]): row for row in collection_rows}
+            requested_ids = add_ids | remove_ids
+            if not requested_ids.issubset(collection_by_id):
+                raise ValueError("invalid_collection")
+
+            created_collection = None
+            if clean_name:
+                existing = next(
+                    (
+                        row
+                        for row in collection_rows
+                        if str(row["name"] or "").strip().casefold() == clean_name.casefold()
+                    ),
+                    None,
+                )
+                if existing is None:
+                    cur = conn.execute(
+                        "INSERT INTO collections (name, description, kind, created_at) VALUES (?, '', ?, ?)",
+                        (clean_name, kind_value, now_utc_iso()),
+                    )
+                    created_id = int(cur.lastrowid)
+                    created_collection = {"id": created_id, "name": clean_name}
+                else:
+                    created_id = int(existing["id"])
+                    created_collection = {"id": created_id, "name": str(existing["name"] or "")}
+                add_ids.add(created_id)
+
+            for collection_id in sorted(remove_ids):
+                conn.execute(
+                    f"DELETE FROM {link_table} WHERE collection_id = ? AND {resource_column} = ?",  # noqa: S608
+                    (collection_id, int(resource_db_id)),
+                )
+            for collection_id in sorted(add_ids):
+                conn.execute(
+                    f"INSERT OR IGNORE INTO {link_table} (collection_id, {resource_column}, added_at) VALUES (?, ?, ?)",  # noqa: S608
+                    (collection_id, int(resource_db_id), now_utc_iso()),
+                )
+
+            member_rows = conn.execute(
+                f"SELECT link.collection_id FROM {link_table} AS link "  # noqa: S608
+                "INNER JOIN collections AS collection ON collection.id = link.collection_id "
+                f"WHERE link.{resource_column} = ? AND collection.kind = ? ORDER BY link.collection_id ASC",  # noqa: S608
+                (int(resource_db_id), kind_value),
+            ).fetchall()
+            return {
+                "created_collection": created_collection,
+                "member_ids": [int(row["collection_id"]) for row in member_rows],
+            }
+
     def get_all_collections(self, kind: str | None = None) -> list[dict]:
         """Return collections ordered by creation time (newest first)."""
         self._init_collections_tables()
