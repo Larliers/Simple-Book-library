@@ -173,9 +173,9 @@ src/
 - `src/tests/js/test_random_recommendations.js`：以 Node 内置 `vm` 和最小 DOM 假件真实执行生产 `app.js`；覆盖图书/小说/漫画推荐交互、缓存与响应式密度，并覆盖 Text Novel Grid 标题、独立视图偏好及 Text/List 与 Library/List 的封面列差异。
 - `src/tests/js/test_tag_management.js`：以 Node 内置 `vm` 和最小 DOM 假件执行生产 `app.js`；覆盖目录请求去重与旧响应丢弃、目录 click 调用 `openTag`、直接 `loadTagResources` 不发事件、标签详情、三类来源卡片、键盘/双击/右键路由、搜索禁用、范围至少一项，以及标签页复用合集前进/后退。
 - `src/tests/js/test_shortcuts.js`：以 Node 内置 `vm` 执行生产 `app.js`；覆盖按键规范化/保留键、`BrowserBack`/`keyCode` 166/167/`button`/`which`/`buttons` 侧键录入、`auxclick` 去重、统一动作路由、Library/合集详情/随机推荐来源、无选择和不可用提示、输入/模态/长按屏蔽、冲突保持录入、Escape 取消、原生侧键分发，以及退出/进入最近系列分动作和三类合集独立记忆。
-- `src/tests/js/test_quick_add.js`：以 Node 内置 `vm` 和最小 DOM 假件执行生产 `app.js`；覆盖无同名时快捷创建、批量确认、失败留窗、定向缓存/详情回写、普通页不重绘与当前合集移除时保存滚动后重绘。
+- `src/tests/js/test_quick_add.js`：以 Node 内置 `vm` 和最小 DOM 假件执行生产 `app.js`；覆盖无同名时点击/Enter 快捷创建、Unicode casefold 同名、部分匹配、批量确认、提交锁、失败留窗、定向缓存/详情回写、普通页不重绘与当前合集移除时保存滚动后重绘。
 - `src/tests/test_comic_search.py`：漫画顶栏搜索回归（ViewModel title/path/info_text 过滤；UiBridge comic 与 comic_collections 总览 context 路由，PySide6 可用时跑 Bridge 集成）。
-- `src/tests/test_collection_kinds.py`：合集 kind 隔离（book/text_novel/comic 互不混装）、跨类加入拒绝、小说成员从书籍合集剥离、收藏星标迁入默认「收藏」合集、删漫画清 `collection_comics`，以及批量成员事务、同名复用和失败无部分写入。
+- `src/tests/test_collection_kinds.py`：合集 kind 隔离（book/text_novel/comic 互不混装）、跨类加入拒绝、小说成员从书籍合集剥离、收藏星标迁入默认「收藏」合集、删漫画清 `collection_comics`，以及批量成员事务、同名复用、非法资源/kind 和真实 SQLite 异常回滚。
 - `src/tests/test_library_viewmodel_search.py`：Library/Text 搜索与字段前缀建议回归。
 - `src/tests/test_update_checker.py`：GitHub 更新检查回归（版本 normalize/compare、mock API 成功/404/有更新/已最新/网络错误）。
 - `src/tests/test_app_paths.py`：运行时路径回归（dev 态 repo 根路径 vs Nuitka frozen 态 exe 同级 `img_preview`/`sql`/`Scan_error_logs`）。
@@ -225,9 +225,9 @@ src/
 ### 3.5 UI 主组件（bookhub/ui）
 - `src/bookhub/ui/__init__.py`：UI 包导出入口。
 - `src/bookhub/ui/web_window.py`：当前主窗口 `WebAppWindow`；负责 WebEngine、主题底色/缩放、扫描/缩略图/缓存迁移/更新、原生目录与封面选择、资源删除及设置写库；扫描、根目录变更和资源删除同时发出标签目录失效信号；手动编辑书籍/小说封面时标记 `cover_source=manual`；`ShortcutWebView` 统一转发鼠标 Back/Forward 并阻止网页历史导航。
-- `src/bookhub/ui/web/js/app.js`：单一 SPA 壳；Quick Add 对三类资源批量提交合集增删，搜索无 casefold 同名时显示“创建并添加”，成功只回写对应合集页缓存和当前详情，普通页不重绘；当前合集移除资源时保存滚动后重绘。其余含标签目录/详情、Text Novel 独立 Grid/List 与排序、统一快捷键/右键动作、随机推荐、主内容视图、搜索、主题和任务交互。
+- `src/bookhub/ui/web/js/app.js`：单一 SPA 壳；Quick Add 对三类资源批量提交合集增删，搜索经 Bridge 的 Unicode casefold key 确认无同名后显示“创建并添加”，提交期锁定关闭/标签/合集操作，成功只回写对应合集页缓存和当前详情，普通页不重绘；当前合集移除资源时保存滚动后重绘。其余含标签目录/详情、Text Novel 独立 Grid/List 与排序、统一快捷键/右键动作、随机推荐、主内容视图、搜索、主题和任务交互。
 - `src/bookhub/ui/web/js/text_rules.js`：Text Rules 宽屏遮罩三栏编辑器（字段/规则链/步骤/预览）；防抖单样本预览、多样本预览、内置模板、用户预设、常用正则与帮助抽屉；经 Bridge 读写 `rules_json`。`renderTextRulesPanel()` 仅在 `openTextRulesPanel` 打开时构建一次性外壳（`.tr-overlay`/`.tr-host`/header/footer，带入场动画）；此后所有编辑（字段切换、规则/步骤增删移动、source/类别/类型 change、模板/预设）改调用 `renderTrBody()` 仅重建 `.tr-body` 三栏内容并保存/恢复各栏 `scrollTop`，不再重播入场动画；`installTrWheelGuard` 在 host 上拦截落在 `<select>` 的滚轮事件（Windows 悬停滚轮会静默改变原生 select 值并触发 change），`preventDefault` 后手动转发 `deltaY` 给 `.tr-col`/`.tr-drawer-body`，修复滚动时误触发全量重建导致的「白屏/像整页重载」；预览 diag 展示 `detectedEncoding` 与置信度。
-- `src/bookhub/ui/web_bridge.py`：`UiBridge(QObject)` 前后端桥；`applyCollectionQuickAdd` 校验输入并返回目标合集页与详情的定向状态，不广播全量 `resourcesChanged`；兼容 `setCollectionMembership` 同样取消整页广播。其余包括标签管理、随机推荐、资源变化、主题/设置/扫描/更新、资源与合集 CRUD、搜索、详情与 Text Rules。
+- `src/bookhub/ui/web_bridge.py`：`UiBridge(QObject)` 前后端桥；`getCollectionNameKey` 与合集 `nameKey` 提供后端一致的 Unicode casefold；`applyCollectionQuickAdd` 校验输入、将 SQLite 异常转为稳定失败响应，并返回目标合集页与详情的定向状态，不广播全量 `resourcesChanged`；兼容 `setCollectionMembership` 同样取消整页广播。其余包括标签管理、随机推荐、资源变化、主题/设置/扫描/更新、资源与合集 CRUD、搜索、详情与 Text Rules。
 - `src/bookhub/library/repository.py`：`PRAGMA foreign_keys` + `busy_timeout`；删书/漫画与移根时清关联表（含 `collection_comics`）；启动 orphan 清理；`collections.kind`（book/text_novel/comic）+ `collection_comics`；跨类加入拒绝；既有合集默认 book 并剥离小说成员；`favorite_*` 一次性迁入名为「收藏」的对应 kind 合集（表保留不 DROP）；标签目录与 `get_all_tags` 截掉 `author:`/`publisher:`/`language:`/`series:` 字段前缀；`hash_strategy` 缺省与非法值回退均为 `quick`；`comic_view_mode` 缺省为 `pagination`；`viewport_buffer_screens` 缺省 3（允许 3–6）；`grid_columns` 缺省 6（允许 4/5/6/7/8/10/12，限制每行封面数）；随机推荐每类数量缺省 6（允许 3/6/9/12），内部最大列数缺省 2（允许 1/2/3）；`comic_title_conflict_policy` 缺省 `skip_incoming`；`text_encoding_preference` 缺省 `simplified`；`text_novel_sort_order_main`/`text_novel_sort_order_fav` 支持文件日期及标题/作者/标签/路径十档排序，缺省 `file_mtime_desc`。
 - `src/bookhub/ui/web_scheme.py`：`app://` 自定义 URL scheme；`register_app_scheme()`（须在 QApplication 前调用）、`to_local_path()`（`file://`/裸路径归一化）、`AppSchemeHandler`（`app://app/*` 服务 `web/` 静态资源含 woff2 字体；`app://img/x?p=` 仅服务白名单封面图，越权拒绝）。
 - `src/bookhub/ui/web/index.html`：玻璃拟态 UI 骨架（侧栏含 Import Books、顶栏/主区/详情栏/遮罩/toast/右键菜单挂载点）；`data-ui-skin` + `data-theme` 双轴；`data-skin-link` 样式链由 `app.js` 按皮肤动态注入；`#vwSceneMount` 供蒸汽波 vw-scene 背景层。

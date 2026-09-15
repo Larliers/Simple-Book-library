@@ -2022,9 +2022,14 @@ function openModal(build) {
   clear(overlay);
   overlay.classList.remove("hidden");
   const modal = elem("div", "modal");
-  build(modal, closeModal);
+  const close = () => {
+    if (modal.parentElement === overlay) closeModal();
+  };
+  build(modal, close);
   overlay.appendChild(modal);
-  overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
+  overlay.onclick = (e) => {
+    if (e.target === overlay && modal.dataset.submitting !== "true") close();
+  };
 }
 function closeModal() { const o = $("overlay"); o.classList.add("hidden"); clear(o); o.onclick = null; }
 
@@ -2035,6 +2040,7 @@ function modalHeader(modal, title, onClose) {
   x.addEventListener("click", onClose);
   head.appendChild(x);
   modal.appendChild(head);
+  return x;
 }
 
 function openNewCollectionModal() {
@@ -2116,7 +2122,9 @@ function openQuickAddModal(item, sourcePage) {
   const actionPage = sourcePage || State.currentPage;
   const resourceTagPage = tagSourcePage(actionPage);
   openModal((modal, close) => {
-    modalHeader(modal, t("detail.quick_add", "Quick Add"), close);
+    let submitting = false;
+    const requestClose = () => { if (!submitting) close(); };
+    const closeButton = modalHeader(modal, t("detail.quick_add", "Quick Add"), requestClose);
     modal.appendChild(elem("p", "small-note", item.title || ""));
     if (!Array.isArray(item.tags)) item.tags = [];
     const workingTags = item.tags.slice();
@@ -2138,6 +2146,7 @@ function openQuickAddModal(item, sourcePage) {
         chip.appendChild(document.createTextNode(tag));
         const x = elem("span", "chip-x", "×");
         x.addEventListener("click", () => {
+          if (submitting) return;
           if (State.bridge.removeResourceTag) State.bridge.removeResourceTag(resourceTagPage, item.id, tag);
           else State.bridge.removeTag(item.id, tag);
           const idx = workingTags.indexOf(tag);
@@ -2151,6 +2160,7 @@ function openQuickAddModal(item, sourcePage) {
     };
 
     const addTagValue = (value) => {
+      if (submitting) return;
       const tag = String(value || "").trim();
       if (!tag || workingTags.includes(tag)) return;
       if (State.bridge.addResourceTag) State.bridge.addResourceTag(resourceTagPage, item.id, tag);
@@ -2197,9 +2207,14 @@ function openQuickAddModal(item, sourcePage) {
     const initialMembers = new Set();
     const pendingMembers = new Set();
     let allCollections = [];
-    let submitting = false;
+    let exactNameKey = "";
+    let exactNameQuery = "";
+    let nameKeyRequest = 0;
 
     const normalizedCollectionName = (value) => String(value || "").trim().toLocaleLowerCase();
+    const collectionNameKey = (collection) => String(
+      collection.nameKey || normalizedCollectionName(collection.name)
+    );
 
     const quickAddItemIsSelected = () => {
       if (State.currentPage === RANDOM_RECOMMENDATIONS_PAGE) {
@@ -2217,10 +2232,11 @@ function openQuickAddModal(item, sourcePage) {
       const queryName = searchInput.value.trim();
       const q = normalizedCollectionName(queryName);
       clear(list);
-      const hasExactMatch = q && allCollections.some(
-        (coll) => normalizedCollectionName(coll.name) === q
+      const exactKeyResolved = exactNameQuery === queryName;
+      const hasExactMatch = exactKeyResolved && exactNameKey && allCollections.some(
+        (coll) => collectionNameKey(coll) === exactNameKey
       );
-      if (queryName && !hasExactMatch) {
+      if (queryName && exactKeyResolved && !hasExactMatch) {
         const create = elem(
           "button",
           "list-item list-item-action quick-create-row",
@@ -2256,12 +2272,31 @@ function openQuickAddModal(item, sourcePage) {
         });
     };
 
-    searchInput.addEventListener("input", renderCollectionRows);
+    const updateCollectionSearch = () => {
+      const queryName = searchInput.value.trim();
+      const requestId = ++nameKeyRequest;
+      exactNameQuery = "";
+      exactNameKey = "";
+      renderCollectionRows();
+      if (!queryName) {
+        exactNameQuery = "";
+        renderCollectionRows();
+        return;
+      }
+      State.bridge.getCollectionNameKey(queryName, (key) => {
+        if (requestId !== nameKeyRequest || searchInput.value.trim() !== queryName) return;
+        exactNameQuery = queryName;
+        exactNameKey = String(key || "");
+        renderCollectionRows();
+      });
+    };
+
+    searchInput.addEventListener("input", updateCollectionSearch);
     searchInput.addEventListener("keydown", (event) => {
       if (event.key !== "Enter") return;
       const queryName = searchInput.value.trim();
-      if (!queryName || allCollections.some(
-        (coll) => normalizedCollectionName(coll.name) === normalizedCollectionName(queryName)
+      if (!queryName || exactNameQuery !== queryName || allCollections.some(
+        (coll) => collectionNameKey(coll) === exactNameKey
       )) return;
       event.preventDefault();
       submitCollectionChanges(queryName);
@@ -2281,14 +2316,21 @@ function openQuickAddModal(item, sourcePage) {
 
     const actions = elem("div", "modal-actions");
     const cancel = elem("button", "ghost-btn", t("common.cancel", "Cancel"));
-    cancel.addEventListener("click", () => { close(); refreshDetailIfSelected(); });
+    cancel.addEventListener("click", () => {
+      if (submitting) return;
+      close();
+      refreshDetailIfSelected();
+    });
     const confirm = elem("button", "primary-btn", t("quick_add.confirm", "Confirm add"));
     const setSubmitting = (value) => {
       submitting = value;
+      modal.dataset.submitting = value ? "true" : "false";
       tagInput.disabled = value;
       searchInput.disabled = value;
+      closeButton.disabled = value;
       cancel.disabled = value;
       confirm.disabled = value;
+      modal.querySelectorAll("button").forEach((button) => { button.disabled = value; });
       renderCollectionRows();
     };
 

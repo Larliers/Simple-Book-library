@@ -188,10 +188,10 @@ settings payload 必须提供完整的 `shortcutBindings`，八个固定动作�
 ```
 
 - `page` 必须为真实 `sourcePage` 或对应合集页；Repository 在单事务内校验资源 kind、合集 kind 和全部 ID 后再写入。
-- `createName` 先 trim，再按 Unicode casefold 在同 kind 合集中复用同名项；非空且不存在时创建并加入当前资源。
+- `getCollections(page)` 的每项包含后端生成的 `nameKey`；`getCollectionNameKey(name)` 返回 trim 后的 Unicode casefold key，前端必须用二者判断精确同名。`createName` 使用同一规则在同 kind 合集中复用同名项；非空且不存在时创建并加入当前资源。
 - 成功结果不触发全量 `resourcesChanged`；前端只替换 `collectionPageData` 并更新当前选中详情。
 - Library、Text Novel、Comic、随机推荐和标签详情不得因合集写入重绘。仅从当前打开合集移除该资源时，保存滚动位置并重绘该合集详情。
-- 失败返回 `{ok:false,error:string}`，不得部分写入；弹窗保持打开并恢复可操作状态。
+- 校验与 SQLite 写入失败均返回 `{ok:false,error:string}`，不得部分写入；弹窗保持打开并恢复可操作状态。提交期间关闭、遮罩、标签与合集操作全部锁定。
 - 旧 `setCollectionMembership` 保留兼容，但不得广播全量页面刷新。
 
 ## Error Shape

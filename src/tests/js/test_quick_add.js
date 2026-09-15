@@ -115,6 +115,9 @@ document.getElementById("contentArea").scrollTop = 1234;
 const calls = [];
 State.bridge = {
   getTags(callback) { callback("[]"); },
+  getCollectionNameKey(value, callback) {
+    callback(String(value || "").trim().toLowerCase().replaceAll("ß", "ss"));
+  },
   getCollections(page, callback) {
     callback(JSON.stringify([{ id: 1, name: "Existing" }]));
   },
@@ -162,6 +165,7 @@ State.pages.collections = { mode: "collections", items: [] };
 State.bridge.getCollections = (page, callback) => callback(JSON.stringify([
   { id: 1, name: "Existing" },
   { id: 3, name: "Another" },
+  { id: 4, name: "Straße", nameKey: "strasse" },
 ]));
 State.bridge.getDetail = (page, id, callback) => callback(JSON.stringify({
   id, title: "Book One", bookCollections: [{ id: 1, name: "Existing" }],
@@ -184,8 +188,39 @@ assert.strictEqual(
   0,
   "case-insensitive exact names must not offer duplicate creation"
 );
-secondInputs[1].value = "";
+secondInputs[1].value = "STRASSE";
 secondInputs[1].dispatch("input");
+assert.strictEqual(
+  walk(document.getElementById("overlay"), (node) => node.className.includes("quick-create-row")).length,
+  0,
+  "Unicode casefold-equivalent names must not offer duplicate creation"
+);
+secondInputs[1].value = "noth";
+secondInputs[1].dispatch("input");
+assert.strictEqual(
+  walk(document.getElementById("overlay"), (node) => node.className.includes("quick-create-row")).length,
+  1,
+  "partial matches must still offer exact-name creation"
+);
+assert.strictEqual(
+  walk(
+    document.getElementById("overlay"),
+    (node) => node.className.includes("list-item") && node.children[0] && node.children[0].textContent === "Another"
+  ).length,
+  1,
+  "partial matching rows must remain visible beside the create action"
+);
+secondInputs[1].value = "Keyboard Shelf";
+secondInputs[1].dispatch("input");
+secondInputs[1].dispatch("keydown", { key: "Enter" });
+assert.deepStrictEqual(calls.at(-1), ["library", "book-1", {
+  addIds: [], removeIds: [], createName: "Keyboard Shelf",
+}]);
+
+openQuickAddModal({ id: "book-1", title: "Book One", tags: [] }, "library");
+const batchInputs = walk(document.getElementById("overlay"), (node) => node.tagName === "INPUT");
+batchInputs[1].value = "";
+batchInputs[1].dispatch("input");
 const anotherRow = walk(
   document.getElementById("overlay"),
   (node) => node.className.includes("list-item") && node.children[0] && node.children[0].textContent === "Another"
@@ -216,6 +251,35 @@ walk(document.getElementById("overlay"), (node) => node.className.includes("quic
 assert.strictEqual(document.getElementById("overlay").classList.contains("hidden"), false);
 assert.strictEqual(failedSearch.disabled, false);
 assert.strictEqual(document.getElementById("toastStack").children.length, 1);
+closeModal();
+
+let delayedCallback = null;
+let tagWritesDuringSubmit = 0;
+State.bridge.getTags = (callback) => callback(JSON.stringify(["Recent"]));
+State.bridge.addResourceTag = () => { tagWritesDuringSubmit += 1; };
+State.bridge.applyCollectionQuickAdd = (page, id, payloadJson, callback) => {
+  delayedCallback = callback;
+};
+openQuickAddModal({ id: "book-1", title: "Book One", tags: [] }, "library");
+const lockedSearch = walk(document.getElementById("overlay"), (node) => node.tagName === "INPUT")[1];
+lockedSearch.value = "Slow Shelf";
+lockedSearch.dispatch("input");
+walk(document.getElementById("overlay"), (node) => node.className.includes("quick-create-row"))[0].dispatch("click");
+const lockedClose = walk(
+  document.getElementById("overlay"),
+  (node) => node.tagName === "BUTTON" && node.className.includes("close-x")
+)[0];
+assert.strictEqual(lockedClose.disabled, true);
+document.getElementById("overlay").onclick({ target: document.getElementById("overlay") });
+assert.strictEqual(document.getElementById("overlay").classList.contains("hidden"), false);
+const recentTag = walk(
+  document.getElementById("overlay"),
+  (node) => node.tagName === "BUTTON" && node.textContent === "Recent"
+)[0];
+recentTag.dispatch("click");
+assert.strictEqual(tagWritesDuringSubmit, 0);
+delayedCallback(JSON.stringify({ ok: false, error: "storage_error" }));
+assert.strictEqual(lockedClose.disabled, false);
 closeModal();
 
 State.currentPage = "collections";

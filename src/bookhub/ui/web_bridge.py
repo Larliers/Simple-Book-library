@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -1116,7 +1117,21 @@ class UiBridge(QObject):
     def getCollections(self, page: str) -> str:
         kind = _kind_for_page(page)
         collections = self._repo.get_all_collections(kind)
-        return json.dumps([{"id": int(c.get("id")), "name": c.get("name")} for c in collections], ensure_ascii=False)
+        return json.dumps(
+            [
+                {
+                    "id": int(c.get("id")),
+                    "name": c.get("name"),
+                    "nameKey": str(c.get("name") or "").strip().casefold(),
+                }
+                for c in collections
+            ],
+            ensure_ascii=False,
+        )
+
+    @Slot(str, result=str)
+    def getCollectionNameKey(self, name: str) -> str:
+        return str(name or "").strip().casefold()
 
     @Slot(str, str)
     def addTag(self, resource_id: str, tag: str) -> None:
@@ -1192,6 +1207,8 @@ class UiBridge(QObject):
             )
         except ValueError as exc:
             return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+        except sqlite3.Error:
+            return json.dumps({"ok": False, "error": "storage_error"}, ensure_ascii=False)
 
         if kind == COLLECTION_KIND_COMIC:
             self._refresh_comic_collection_vm()

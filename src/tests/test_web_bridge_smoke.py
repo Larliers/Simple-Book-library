@@ -539,6 +539,47 @@ class WebBridgeSmokeTests(unittest.TestCase):
         self.assertEqual(result["error"], "invalid_collection")
         self.assertEqual(bridge._repo.get_all_collections(), [])
 
+    def test_collection_name_key_uses_backend_unicode_casefold(self) -> None:
+        bridge = self._make_bridge()
+        self.assertEqual(bridge.getCollectionNameKey("  Straße  "), "strasse")
+
+    def test_apply_collection_quick_add_returns_storage_error_and_rolls_back(self) -> None:
+        bridge = self._make_bridge()
+        bridge._repo.upsert_book(
+            {
+                "resource_id": "quick-storage-error",
+                "path": r"C:\library\quick-storage-error.pdf",
+                "title": "Quick Storage Error",
+                "file_name": "quick-storage-error.pdf",
+                "extension": ".pdf",
+                "resource_type": "book",
+                "tags_json": "[]",
+            }
+        )
+        bridge.reload_data()
+        with bridge._repo._connection() as conn:
+            conn.execute(
+                """
+                CREATE TRIGGER fail_bridge_quick_add_insert
+                BEFORE INSERT ON collection_books
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced bridge quick add failure');
+                END
+                """
+            )
+
+        result = json.loads(
+            bridge.applyCollectionQuickAdd(
+                PAGE_LIBRARY,
+                "quick-storage-error",
+                json.dumps({"addIds": [], "removeIds": [], "createName": "Rolled Back"}),
+            )
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"], "storage_error")
+        self.assertEqual(bridge._repo.get_all_collections(), [])
+
     def test_bootstrap_includes_menu_i18n_keys(self) -> None:
         bridge = self._make_bridge()
         strings = json.loads(bridge.getBootstrap())["strings"]

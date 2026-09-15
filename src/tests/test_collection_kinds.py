@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -148,6 +149,52 @@ class CollectionKindIsolationTests(unittest.TestCase):
         self.assertFalse(
             any(
                 collection["name"] == "Must Not Exist"
+                for collection in repo.get_all_collections(COLLECTION_KIND_BOOK)
+            )
+        )
+
+    def test_apply_collection_membership_changes_rejects_resource_kind_mismatch(self) -> None:
+        repo = self._repo()
+        novel_id = self._book(repo, "novel.txt", "text_novel")
+        book_collection_id = repo.create_collection("Books", kind=COLLECTION_KIND_BOOK)
+
+        with self.assertRaisesRegex(ValueError, "resource_kind_mismatch"):
+            repo.apply_collection_membership_changes(
+                resource_db_id=novel_id,
+                kind=COLLECTION_KIND_BOOK,
+                add_collection_ids=[book_collection_id],
+            )
+        with self.assertRaisesRegex(ValueError, "resource_not_found"):
+            repo.apply_collection_membership_changes(
+                resource_db_id=999999,
+                kind=COLLECTION_KIND_BOOK,
+                add_collection_ids=[book_collection_id],
+            )
+
+    def test_apply_collection_membership_changes_rolls_back_after_storage_error(self) -> None:
+        repo = self._repo()
+        book_id = self._book(repo, "rollback.pdf")
+        with repo._connection() as conn:
+            conn.execute(
+                """
+                CREATE TRIGGER fail_quick_add_insert
+                BEFORE INSERT ON collection_books
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced quick add failure');
+                END
+                """
+            )
+
+        with self.assertRaises(sqlite3.IntegrityError):
+            repo.apply_collection_membership_changes(
+                resource_db_id=book_id,
+                kind=COLLECTION_KIND_BOOK,
+                create_name="Rolled Back Shelf",
+            )
+
+        self.assertFalse(
+            any(
+                collection["name"] == "Rolled Back Shelf"
                 for collection in repo.get_all_collections(COLLECTION_KIND_BOOK)
             )
         )
