@@ -362,7 +362,7 @@ class WebAppWindow(QMainWindow):
         if key == "searchFontSize":
             repo.set_topbar_search_font_size(normalize_topbar_search_font_size(value))
         elif key == "scanDepth":
-            repo.set_scan_depth(int(value))
+            repo.set_scan_depth(value)
         elif key == "hashStrategy":
             repo.set_hash_strategy(value)
         elif key == "perRootScanStrategyEnabled":
@@ -385,7 +385,7 @@ class WebAppWindow(QMainWindow):
         elif key == "autoScanOnPathChange":
             repo.set_auto_scan_on_path_change(self._as_bool(value))
         elif key == "textPreviewChars":
-            repo.set_text_preview_chars(int(value))
+            repo.set_text_preview_chars(value)
         elif key == "comicViewMode":
             repo.set_comic_view_mode(value)
             reload_needed = True

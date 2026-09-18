@@ -2,7 +2,7 @@
 
 ## 最新记录
 ```json
-{"log_id":"worklog-20260913-001","timestamp":"2026-09-13T13:30:05+08:00","actor":"ui-agent","task":"文本小说主页与小说合集 List 表头排序","changes":["Repository 扩展为文件日期及四列表头十档排序","表头原生按钮与下拉共享 setPageSort 和持久化状态","Glass/Vaporwave 增加方向、焦点和窄屏样式"],"affected_files":["src/bookhub/library/repository.py","src/bookhub/ui/web/js/app.js","src/bookhub/ui/web_bridge.py","src/bookhub/ui/web/css/base.css","src/bookhub/ui/web/css/skins/glass/components.css","src/bookhub/ui/web/css/skins/vaporwave/components.css"],"outputs":["主页与合集四列表头升降序","双皮肤 1440/749/390 Qt WebEngine 验收"],"risks":["全量测试仍有两个既有非法整型设置失败","兼容性：旧四档设置继续有效，非法值仍回退 file_mtime_desc；无数据库或资源 payload 迁移","回滚方案：回退本功能提交即可；旧版本读到新增枚举时会回退 file_mtime_desc，无需数据库回滚"],"next_actions":[]}
+{"log_id":"worklog-20260918-001","timestamp":"2026-09-18T16:35:00+08:00","actor":"master-agent","task":"为本仓库启动 Cursor Agent CLI 的 My Machines worker（agent worker start）","changes":["安装 Cursor Agent CLI 2026.09.15-d2fe57e 并写入用户 PATH","agent login 登录 dr.kenliers@gmail.com","补齐 better-sqlite3 ABI 137 后启动常驻 worker simple-book-library"],"affected_files":["Agent-rule/logs/history/2026-09-18.md","Agent-rule/logs/worklog.md"],"outputs":["worker 已连接，Cursor 可见 1 台机器","workerId=924c5fb2-14f4-47a0-939a-396249fca493","repo=Larliers/Simple-Book-library","入口 https://cursor.com/agents#workerId=924c5fb2-14f4-47a0-939a-396249fca493"],"risks":["关闭 worker 终端即断开","agent update 可能覆盖 ABI 修复","脏工作区与领先 origin 的 4 个提交会被 Cloud Agent 看到","Windows 无 computer use"],"next_actions":["在 cursor.com/agents 选择 simple-book-library 后下发任务","保持 worker 进程不退出"]}
 ```
 
 ## 记录规则
@@ -23,6 +23,34 @@
   "risks": ["string"],
   "next_actions": ["string"]
 }
+```
+
+## 2026-09-18 - 启动 Cursor My Machines worker
+
+完整记录见 `logs/history/2026-09-18.md`。
+
+```json
+{"log_id":"worklog-20260918-001","timestamp":"2026-09-18T16:35:00+08:00","actor":"master-agent","task":"为本仓库启动 Cursor Agent CLI 的 My Machines worker（agent worker start）","changes":["安装 Cursor Agent CLI 2026.09.15-d2fe57e 并写入用户 PATH","agent login 登录 dr.kenliers@gmail.com","补齐 better-sqlite3 ABI 137 后启动常驻 worker simple-book-library"],"affected_files":["Agent-rule/logs/history/2026-09-18.md","Agent-rule/logs/worklog.md"],"outputs":["worker 已连接，Cursor 可见 1 台机器","workerId=924c5fb2-14f4-47a0-939a-396249fca493","repo=Larliers/Simple-Book-library","入口 https://cursor.com/agents#workerId=924c5fb2-14f4-47a0-939a-396249fca493"],"risks":["关闭 worker 终端即断开","agent update 可能覆盖 ABI 修复","脏工作区与领先 origin 的 4 个提交会被 Cloud Agent 看到","Windows 无 computer use"],"next_actions":["在 cursor.com/agents 选择 simple-book-library 后下发任务","保持 worker 进程不退出"]}
+```
+
+## 2026-09-16 - 本地遗留 Issue 全量核验
+
+完整记录见 `logs/history/2026-09-16.md`，动态与 GUI 证据见 `logs/evidence/2026-09-16-known-issues-audit.md`，唯一主清单见仓库根目录 `bugissue.md`。
+
+```json
+{"log_id":"worklog-20260916-001","timestamp":"2026-09-16T10:15:00+08:00","actor":"maintenance-agent","task":"全量核验本地遗留 Issue，并整合为唯一主清单","changes":["复核 bugissue、Agent 日志、Text Rules 交接、旧规格、测试输出和崩溃报告","完成临时运行时与双皮肤 GUI 复现","重构 bugissue.md 并新增审计证据和结构说明定位"],"affected_files":["bugissue.md","Agent-rule/logs/evidence/2026-09-16-known-issues-audit.md","Agent-rule/logs/history/2026-09-16.md","Agent-rule/logs/worklog.md","src_construction.md"],"outputs":["主待办 11 项：7 项确认存在、4 项部分存在","全量 270 passed, 43 subtests passed","四组 Node 行为测试和 JS 语法检查通过","git diff --check 通过，临时审计 fixture 已删除"],"risks":["本轮未修复主待办","高 DPI 与 Nuitka 打包保持无法验证","BUG-7 尚需真实重负载基准"],"next_actions":["按 bugissue.md 建议顺序实施","等待用户确认提交和 push 边界"]}
+```
+
+## 2026-09-15 - Quick Add 收尾
+
+完整记录见 `logs/history/2026-09-15.md`，GUI 证据见 `logs/evidence/2026-09-15-quick-add-gui.md`。
+
+```json
+{"log_id":"worklog-20260915-002","timestamp":"2026-09-15T11:58:00+08:00","actor":"ui-agent","task":"接力 Quick Add 收尾：复核审查项、修 settings 非法字符串、补三类 GUI 与日志","changes":["set_scan_depth 与 set_text_preview_chars 与 getter 共用容错归一化","apply_setting 不再对这两项预先 int()","真实 WebEngine 补齐图书/小说/漫画创建与加入已有合集验收"],"affected_files":["src/bookhub/library/repository.py","src/bookhub/ui/web_window.py","src_construction.md","Agent-rule/logs/worklog.md","Agent-rule/logs/decision-log.md","Agent-rule/logs/history/2026-09-15.md","Agent-rule/logs/evidence/2026-09-15-quick-add-gui.md"],"outputs":["全量 270 passed, 43 subtests passed","双皮肤三类资源 GUI 证据"],"risks":["Vaporwave 600 Text Novel 的 contentArea 未形成内部滚动，scrollTop 保持 0 但写入仍不重绘","Quick Add 改标签仍可能整页重绘","本地 main 领先 origin 4 个提交，未 push"],"next_actions":["等待确认是否提交收尾改动","等待确认是否 push 以及是否包含 09-12/09-13 提交"]}
+```
+
+```json
+{"log_id":"worklog-20260915-001","timestamp":"2026-09-15T11:17:18+08:00","actor":"ui-agent","task":"Quick Add 合集无刷新与快捷创建","changes":["Repository 新增 apply_collection_membership_changes 单事务校验 kind/ID、同名复用、创建与增删","Bridge 新增 applyCollectionQuickAdd，成功不广播 resourcesChanged","搜索无 Unicode casefold 同名时显示创建并添加；提交期锁定关闭/遮罩/标签/合集","SQLite 异常转为 storage_error；失败留窗，成功只回写合集页缓存与当前详情"],"affected_files":["src/bookhub/library/repository.py","src/bookhub/ui/web_bridge.py","src/bookhub/ui/web/js/app.js","src/bookhub/ui/web/css/base.css","src/bookhub/i18n/locales/zh-cn.json","src/tests/js/test_quick_add.js","src/tests/test_collection_kinds.py","src/tests/test_web_bridge_smoke.py","Agent-rule/contracts/ui-contract.md","Agent-rule/agents/ui-agent.md","src_construction.md"],"outputs":["三类资源 Quick Add 合集无整页重绘","快捷创建与批量确认","提交锁与 storage_error 回归"],"risks":["Quick Add 改标签仍走 addResourceTag 并可能整页重绘","createCollection/renameCollection/deleteCollection 仍全量广播","兼容性：无数据库迁移；旧 setCollectionMembership 改走同一事务且不再广播","回滚方案：回退 3ef3ee1 与 b17a34b"],"next_actions":[]}
 ```
 
 ## 2026-09-13 - 文本小说列表表头排序

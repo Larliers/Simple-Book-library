@@ -2,7 +2,7 @@
 
 ## 最新决策
 ```json
-{"decision_id":"decision-20260913-001","timestamp":"2026-09-13T13:30:05+08:00","owner":"ui-agent","title":"Text Novel 表头与下拉复用后端排序 seam","context":"List 四列需要资源管理器式点击排序，同时保持 Grid、主页与合集的现有持久化语义","options":["仅前端临时排序","为表头新增独立状态","扩展现有 setPageSort 与排序枚举"],"decision":"扩展现有 setPageSort 为十档；表头和下拉共享 payload sort，主页与合集继续分键持久化","rationale":["避免前后端顺序漂移","Grid/List 切换继续复用同一排序","不增加 Bridge 方法或数据库迁移"],"impact":["Text Novel 主页与合集 List 支持四列表头升降序","Library 与漫画行为不变","兼容性：旧四档设置继续有效，非法值仍回退 file_mtime_desc；无数据库或资源 payload 迁移","回滚方案：回退本功能提交即可；旧版本读到新增枚举时会回退 file_mtime_desc，无需数据库回滚"],"followups":[]}
+{"decision_id":"decision-20260915-001","timestamp":"2026-09-15T11:17:18+08:00","owner":"ui-agent","title":"Quick Add 合集写入定向回写且 Unicode casefold 由 Bridge 下发","context":"加入合集会触发 resourcesChanged 重建 contentArea，滚动丢失；搜索框需要快捷创建且前后端同名判断必须一致","options":["前端忽略 resourcesChanged 仍走旧逐条 setCollectionMembership","成功后全页重绘但恢复 scrollTop","单事务批量写入、停广播、只补合集页缓存与当前详情"],"decision":"新增 applyCollectionQuickAdd；Repository 单事务完成校验/复用/创建/增删；精确同名用 Bridge Unicode casefold；仅当前合集移除可见资源时保存滚动后重绘","rationale":["全量广播是刷新感的根因，恢复 scrollTop 仍会闪白/重建 DOM","一次提交避免部分写入","toLocaleLowerCase 无法覆盖 Straße/STRASSE"],"impact":["普通 Library/Text Novel/Comic 与来源感知页加入合集不重绘","无数据库或资源 payload 迁移","兼容性：旧 setCollectionMembership 仍可用但不广播；回滚即回退本功能提交"],"followups":["Quick Add 标签路径仍广播，本轮不改"]}
 ```
 
 ## 决策记录规则
@@ -24,6 +24,14 @@
   "impact": ["string"],
   "followups": ["string"]
 }
+```
+
+## 2026-09-15 - Quick Add 定向回写
+
+完整决策记录见 `logs/history/2026-09-15.md`。
+
+```json
+{"decision_id":"decision-20260915-001","timestamp":"2026-09-15T11:17:18+08:00","owner":"ui-agent","title":"Quick Add 合集写入定向回写且 Unicode casefold 由 Bridge 下发","context":"加入合集会触发 resourcesChanged 重建 contentArea，滚动丢失；搜索框需要快捷创建且前后端同名判断必须一致","options":["前端忽略 resourcesChanged 仍走旧逐条 setCollectionMembership","成功后全页重绘但恢复 scrollTop","单事务批量写入、停广播、只补合集页缓存与当前详情"],"decision":"新增 applyCollectionQuickAdd；Repository 单事务完成校验/复用/创建/增删；精确同名用 Bridge Unicode casefold；仅当前合集移除可见资源时保存滚动后重绘","rationale":["全量广播是刷新感的根因，恢复 scrollTop 仍会闪白/重建 DOM","一次提交避免部分写入","toLocaleLowerCase 无法覆盖 Straße/STRASSE"],"impact":["普通 Library/Text Novel/Comic 与来源感知页加入合集不重绘","无数据库或资源 payload 迁移","兼容性：旧 setCollectionMembership 仍可用但不广播；回滚即回退本功能提交"],"followups":["Quick Add 标签路径仍广播，本轮不改"]}
 ```
 
 ## 2026-09-13 - Text Novel 表头与下拉共享排序 seam

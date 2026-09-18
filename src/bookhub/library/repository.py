@@ -31,6 +31,9 @@ from bookhub.library.models import (
 )
 from bookhub.library.preview_paths import ensure_preview_structure
 
+DEFAULT_SCAN_DEPTH = 2
+SCAN_DEPTH_MIN = 1
+SCAN_DEPTH_MAX = 3
 DEFAULT_CARD_SPACING = 14
 CARD_SPACING_MIN = 6
 CARD_SPACING_MAX = 40
@@ -119,6 +122,22 @@ def is_valid_shortcut_input_token(input_token: str) -> bool:
     modifiers = parts[:-1]
     expected_modifiers = [name for name in SHORTCUT_MODIFIERS if name in modifiers]
     return modifiers == expected_modifiers and key_code in SHORTCUT_KEY_CODES
+
+
+def _normalize_scan_depth(value: int | str | None) -> int:
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        parsed = DEFAULT_SCAN_DEPTH
+    return min(SCAN_DEPTH_MAX, max(SCAN_DEPTH_MIN, parsed))
+
+
+def _normalize_text_preview_chars(value: int | str | None) -> int:
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return DEFAULT_TEXT_PREVIEW_CHARS
+    return parsed if parsed in TEXT_PREVIEW_CHAR_OPTIONS else DEFAULT_TEXT_PREVIEW_CHARS
 
 
 def _normalize_card_spacing(value: int | str | None) -> int:
@@ -571,15 +590,10 @@ class LibraryRepository:
             return default
 
     def get_scan_depth(self) -> int:
-        raw = self.get_setting("scan_depth", 2)
-        try:
-            value = int(raw)
-        except (TypeError, ValueError):
-            value = 2
-        return min(3, max(1, value))
+        return _normalize_scan_depth(self.get_setting("scan_depth", DEFAULT_SCAN_DEPTH))
 
     def set_scan_depth(self, depth: int) -> None:
-        self.set_setting("scan_depth", min(3, max(1, int(depth))))
+        self.set_setting("scan_depth", _normalize_scan_depth(depth))
 
     def get_hash_strategy(self) -> HashStrategy:
         strategy = str(self.get_setting("hash_strategy", HASH_STRATEGY_QUICK))
@@ -656,20 +670,10 @@ class LibraryRepository:
         self.set_setting("cover_selected_border_color_hex", _normalize_cover_selected_border_color(color))
 
     def get_text_preview_chars(self) -> int:
-        raw = self.get_setting("text_preview_chars", DEFAULT_TEXT_PREVIEW_CHARS)
-        try:
-            value = int(raw)
-        except (TypeError, ValueError):
-            value = DEFAULT_TEXT_PREVIEW_CHARS
-        if value not in TEXT_PREVIEW_CHAR_OPTIONS:
-            value = DEFAULT_TEXT_PREVIEW_CHARS
-        return value
+        return _normalize_text_preview_chars(self.get_setting("text_preview_chars", DEFAULT_TEXT_PREVIEW_CHARS))
 
     def set_text_preview_chars(self, size: int) -> None:
-        value = int(size)
-        if value not in TEXT_PREVIEW_CHAR_OPTIONS:
-            value = DEFAULT_TEXT_PREVIEW_CHARS
-        self.set_setting("text_preview_chars", value)
+        self.set_setting("text_preview_chars", _normalize_text_preview_chars(size))
 
     def get_text_rule_preview_result_height(self) -> int:
         raw = self.get_setting("text_rule_preview_result_height", 180)
