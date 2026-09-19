@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -398,6 +399,18 @@ class WebBridgeSmokeTests(unittest.TestCase):
             "fonts/SpaceMono-Regular.woff2",
         ):
             self.assertTrue((WEB_ROOT / rel).is_file(), f"missing web asset: {rel}")
+
+    def test_vaporwave_font_urls_resolve_to_existing_assets(self) -> None:
+        stylesheet = WEB_ROOT / "css" / "skins" / "vaporwave" / "fonts.css"
+        font_urls = re.findall(r"url\([\"']?([^\"')]+)", stylesheet.read_text(encoding="utf-8"))
+
+        self.assertEqual(len(font_urls), 5)
+        for font_url in font_urls:
+            with self.subTest(font_url=font_url):
+                self.assertTrue(
+                    (stylesheet.parent / font_url).resolve().is_file(),
+                    f"font URL does not resolve to an asset: {font_url}",
+                )
 
     def test_collection_rename_delete_roundtrip(self) -> None:
         bridge = self._make_bridge()
