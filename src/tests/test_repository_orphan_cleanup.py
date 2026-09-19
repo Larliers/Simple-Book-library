@@ -3,8 +3,10 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from bookhub.library import LibraryRepository
+from bookhub.ui.web_window import WebAppWindow
 
 
 class RepositoryOrphanCleanupTests(unittest.TestCase):
@@ -145,12 +147,20 @@ class RepositoryRootRemovalSafetyTests(unittest.TestCase):
 
 class RepositorySettingNormalizeTests(unittest.TestCase):
     """BUG-6 regression: int settings must tolerate malformed values from the
-    web layer (apply_setting no longer calls int() upfront), falling back to
-    defaults and clamping to allowed ranges."""
+    web layer, falling back to defaults and clamping to allowed ranges."""
 
     def _repo(self) -> LibraryRepository:
         tmp = tempfile.mkdtemp(prefix="bookhub_setting_")
         return LibraryRepository(db_path=str(Path(tmp) / "library.db"))
+
+    def _window(self, repo: LibraryRepository) -> tuple[SimpleNamespace, SimpleNamespace]:
+        bridge = SimpleNamespace(push_resources_calls=0)
+        bridge.push_resources = lambda: setattr(
+            bridge,
+            "push_resources_calls",
+            bridge.push_resources_calls + 1,
+        )
+        return SimpleNamespace(_repository=repo, _bridge=bridge), bridge
 
     def test_scan_depth_invalid_falls_back_to_default(self) -> None:
         repo = self._repo()
@@ -194,6 +204,54 @@ class RepositorySettingNormalizeTests(unittest.TestCase):
         self.assertEqual(repo.get_grid_columns(), 6)
         repo.set_grid_columns("9")
         self.assertEqual(repo.get_grid_columns(), 6)
+
+    def test_apply_setting_routes_invalid_integer_values_through_repository_normalizers(self) -> None:
+        repo = self._repo()
+        window, bridge = self._window(repo)
+
+        for key in ("comicPageSize", "viewportBufferScreens", "gridColumns"):
+            with self.subTest(key=key):
+                WebAppWindow.apply_setting(window, key, "abc")
+
+        self.assertEqual(repo.get_comic_page_size(), 48)
+        self.assertEqual(repo.get_viewport_buffer_screens(), 3)
+        self.assertEqual(repo.get_grid_columns(), 6)
+        self.assertEqual(bridge.push_resources_calls, 1)
+
+    def test_apply_setting_normalizes_none_allowed_and_outside_values(self) -> None:
+        repo = self._repo()
+        window, bridge = self._window(repo)
+
+        for key in ("comicPageSize", "viewportBufferScreens", "gridColumns"):
+            with self.subTest(key=key, value=None):
+                WebAppWindow.apply_setting(window, key, None)
+        self.assertEqual(
+            (repo.get_comic_page_size(), repo.get_viewport_buffer_screens(), repo.get_grid_columns()),
+            (48, 3, 6),
+        )
+
+        for key, value in (
+            ("comicPageSize", "96"),
+            ("viewportBufferScreens", "6"),
+            ("gridColumns", "12"),
+        ):
+            WebAppWindow.apply_setting(window, key, value)
+        self.assertEqual(
+            (repo.get_comic_page_size(), repo.get_viewport_buffer_screens(), repo.get_grid_columns()),
+            (96, 6, 12),
+        )
+
+        for key, value in (
+            ("comicPageSize", "95"),
+            ("viewportBufferScreens", "7"),
+            ("gridColumns", "9"),
+        ):
+            WebAppWindow.apply_setting(window, key, value)
+        self.assertEqual(
+            (repo.get_comic_page_size(), repo.get_viewport_buffer_screens(), repo.get_grid_columns()),
+            (48, 3, 6),
+        )
+        self.assertEqual(bridge.push_resources_calls, 3)
 
 
 if __name__ == "__main__":

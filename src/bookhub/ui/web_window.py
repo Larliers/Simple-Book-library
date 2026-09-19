@@ -390,12 +390,12 @@ class WebAppWindow(QMainWindow):
             repo.set_comic_view_mode(value)
             reload_needed = True
         elif key == "comicPageSize":
-            repo.set_comic_page_size(int(value))
+            repo.set_comic_page_size(value)
             reload_needed = True
         elif key == "viewportBufferScreens":
-            repo.set_viewport_buffer_screens(int(value))
+            repo.set_viewport_buffer_screens(value)
         elif key == "gridColumns":
-            repo.set_grid_columns(int(value))
+            repo.set_grid_columns(value)
         elif key == "textNovelViewMode":
             repo.set_text_novel_view_mode(value)
         elif key == "recommendationItemsPerCategory":
