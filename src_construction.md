@@ -181,7 +181,7 @@ src/
 - `src/tests/test_update_checker.py`：GitHub 更新检查回归（版本 normalize/compare、mock API 成功/404/有更新/已最新/网络错误）。
 - `src/tests/test_app_paths.py`：运行时路径回归（dev 态 repo 根路径 vs Nuitka frozen 态 exe 同级 `img_preview`/`sql`/`Scan_error_logs`）。
 - `src/tests/test_preview_cache_dir.py`：缩略图缓存目录解析、设置覆盖、migrate/rewire/switch、URI 改写边界与 cleanup 路径守卫。
-- `src/tests/test_new_formats_import.py`：Library HTML/MD/FB2/DOCX 元数据与缩略图、zip 安全上限、CBZ 漫画扫描与失踪清理。
+- `src/tests/test_new_formats_import.py`：Library HTML/MD/FB2/DOCX 元数据与缩略图、zip 安全上限、CBZ 漫画扫描/失踪清理，以及读取缓存同源淘汰、30 天 TTL、旧 marker 升级和异常降级。
 - `src/sql/.gitkeep`：运行数据目录占位，实际运行时生成 `library.db`、`scan_report.json`。
 
 ### 3.2 bookhub 包根
@@ -201,7 +201,7 @@ src/
 - `src/bookhub/library/text_cover.py`：Text Novel 同名封面的共享服务；按 `.webp/.png/.jpg/.jpeg` 选择同 stem 图片，计算路径+size+mtime_ns 指纹，并生成 360×540 以内 WebP 缓存，供扫描与设置页重建任务复用。
 - `src/bookhub/library/text_encoding.py`：TXT 统一读入；`DecodeResult` / `detect_and_decode`；UTF-8 优先，64KB 样本经 charset-normalizer 按 `text_encoding_preference`（简/繁/自动）排名；简体永不选 Big5，繁体优先 Big5；低置信时 GB18030↔UTF-8 双候选回退。
 - `src/bookhub/library/data_paths.py`：缩略图缓存目录解析；默认经 `app_paths.default_preview_dir()`（dev：`img_preview/`，打包：exe 同级）；空/相对/不可写路径回退默认；`preview_cache` 模式枚举。
-- `src/bookhub/library/formats/`：新格式解析与封面提取；`registry.py` 是 Library 格式支持、元数据提取与缩略图生成的单一注册入口（延迟导入）；其余 `html_md`/`fb2`/`docx_fmt`/`cbz`/`zip_safety`/`common` 提供具体实现。Library 用内嵌图或标题占位卡；Comic CBZ 取包内首图，`prepare_cbz_for_external_viewer` 将全部页解压到 `preview/comic/read/` 供外部看图；docx/fb2.zip/cbz 经成员数与未压缩体积上限防 zip bomb。
+- `src/bookhub/library/formats/`：新格式解析与封面提取；`registry.py` 是 Library 格式支持、元数据提取与缩略图生成的单一注册入口（延迟导入）；其余 `html_md`/`fb2`/`docx_fmt`/`cbz`/`zip_safety`/`common` 提供具体实现。Library 用内嵌图或标题占位卡；Comic CBZ 取包内首图，`prepare_cbz_for_external_viewer` 将全部页解压到 `preview/comic/read/` 供外部看图，并以不含明文源路径的 v2 marker 记录来源/mtime/最近访问：当前缓存成功后立即淘汰同源旧 token，其他直接子目录按 30 天 TTL 清理，兼容旧纯 mtime marker；docx/fb2.zip/cbz 经成员数与未压缩体积上限防 zip bomb。
 - `src/bookhub/library/preview_paths.py`：预览图目录结构与路径构建服务（`resource_type + variant`）。
 - `src/bookhub/library/preview_cache_migrate.py`：缓存目录 migrate（先 staging 复制、碰撞校验、再 URI 改写）/ rewire_only / switch_only；拒绝迁移到旧缓存的子目录；`safe_unlink_under_preview` 供所有 cleanup 守卫。
 - `src/bookhub/library/preview_cache_worker.py`：后台线程执行缓存目录变更，避免大目录复制卡 UI。
@@ -225,19 +225,19 @@ src/
 
 ### 3.5 UI 主组件（bookhub/ui）
 - `src/bookhub/ui/__init__.py`：UI 包导出入口。
-- `src/bookhub/ui/web_window.py`：当前主窗口 `WebAppWindow`；负责 WebEngine、主题底色/缩放、扫描/缩略图/缓存迁移/更新、原生目录与封面选择、资源删除及设置写库；`scanDepth`/`textPreviewChars` 交给 Repository 归一化而不预先 `int()`；扫描、根目录变更和资源删除同时发出标签目录失效信号；手动编辑书籍/小说封面时标记 `cover_source=manual`；`ShortcutWebView` 统一转发鼠标 Back/Forward 并阻止网页历史导航。
+- `src/bookhub/ui/web_window.py`：当前主窗口 `WebAppWindow`；负责 WebEngine、主题底色/缩放、扫描/缩略图/缓存迁移/更新、原生目录与封面选择、资源删除及设置写库；`scanDepth`、`textPreviewChars`、`comicPageSize`、`viewportBufferScreens`、`gridColumns` 均把原值交给 Repository 单一归一化，不在 Qt slot 预先 `int()`；扫描、根目录变更和资源删除同时发出标签目录失效信号；手动编辑书籍/小说封面时标记 `cover_source=manual`；`ShortcutWebView` 统一转发鼠标 Back/Forward 并阻止网页历史导航。
 - `src/bookhub/ui/web/js/app.js`：单一 SPA 壳；Quick Add 对三类资源批量提交合集增删，搜索经 Bridge 的 Unicode casefold key 确认无同名后显示“创建并添加”，提交期锁定关闭/标签/合集操作，成功只回写对应合集页缓存和当前详情，普通页不重绘；当前合集移除资源时保存滚动后重绘。其余含标签目录/详情、Text Novel 独立 Grid/List 与排序、统一快捷键/右键动作、随机推荐、主内容视图、搜索、主题和任务交互。
 - `src/bookhub/ui/web/js/text_rules.js`：Text Rules 宽屏遮罩三栏编辑器（字段/规则链/步骤/预览）；防抖单样本预览、多样本预览、内置模板、用户预设、常用正则与帮助抽屉；经 Bridge 读写 `rules_json`。`renderTextRulesPanel()` 仅在 `openTextRulesPanel` 打开时构建一次性外壳（`.tr-overlay`/`.tr-host`/header/footer，带入场动画）；此后所有编辑（字段切换、规则/步骤增删移动、source/类别/类型 change、模板/预设）改调用 `renderTrBody()` 仅重建 `.tr-body` 三栏内容并保存/恢复各栏 `scrollTop`，不再重播入场动画；`installTrWheelGuard` 在 host 上拦截落在 `<select>` 的滚轮事件（Windows 悬停滚轮会静默改变原生 select 值并触发 change），`preventDefault` 后手动转发 `deltaY` 给 `.tr-col`/`.tr-drawer-body`，修复滚动时误触发全量重建导致的「白屏/像整页重载」；预览 diag 展示 `detectedEncoding` 与置信度。
 - `src/bookhub/ui/web_bridge.py`：`UiBridge(QObject)` 前后端桥；`getCollectionNameKey` 与合集 `nameKey` 提供后端一致的 Unicode casefold；`applyCollectionQuickAdd` 校验输入、将 SQLite 异常转为稳定失败响应，并返回目标合集页与详情的定向状态，不广播全量 `resourcesChanged`；兼容 `setCollectionMembership` 同样取消整页广播。其余包括标签管理、随机推荐、资源变化、主题/设置/扫描/更新、资源与合集 CRUD、搜索、详情与 Text Rules。
 - `src/bookhub/library/repository.py`：`PRAGMA foreign_keys` + `busy_timeout`；删书/漫画与移根时清关联表（含 `collection_comics`）；启动 orphan 清理；`collections.kind`（book/text_novel/comic）+ `collection_comics`；跨类加入拒绝；既有合集默认 book 并剥离小说成员；`favorite_*` 一次性迁入名为「收藏」的对应 kind 合集（表保留不 DROP）；标签目录与 `get_all_tags` 截掉 `author:`/`publisher:`/`language:`/`series:` 字段前缀；`hash_strategy` 缺省与非法值回退均为 `quick`；`scan_depth`/`text_preview_chars` setter 与 getter 共用非法字符串回退（深度钳 1–3，预览长度仅白名单）；`comic_view_mode` 缺省为 `pagination`；`viewport_buffer_screens` 缺省 3（允许 3–6）；`grid_columns` 缺省 6（允许 4/5/6/7/8/10/12，限制每行封面数）；随机推荐每类数量缺省 6（允许 3/6/9/12），内部最大列数缺省 2（允许 1/2/3）；`comic_title_conflict_policy` 缺省 `skip_incoming`；`text_encoding_preference` 缺省 `simplified`；`text_novel_sort_order_main`/`text_novel_sort_order_fav` 支持文件日期及标题/作者/标签/路径十档排序，缺省 `file_mtime_desc`。
 - `src/bookhub/ui/web_scheme.py`：`app://` 自定义 URL scheme；`register_app_scheme()`（须在 QApplication 前调用）、`to_local_path()`（`file://`/裸路径归一化）、`AppSchemeHandler`（`app://app/*` 服务 `web/` 静态资源含 woff2 字体；`app://img/x?p=` 仅服务白名单封面图，越权拒绝）。
 - `src/bookhub/ui/web/index.html`：玻璃拟态 UI 骨架（侧栏含 Import Books、顶栏/主区/详情栏/遮罩/toast/右键菜单挂载点）；`data-ui-skin` + `data-theme` 双轴；`data-skin-link` 样式链由 `app.js` 按皮肤动态注入；`#vwSceneMount` 供蒸汽波 vw-scene 背景层。
-- `src/bookhub/ui/web/fonts/`：蒸汽波 Web 字体（Sora/Space Mono woff2 + OFL.txt）；经 `app://app/fonts/*` 与 `skins/vaporwave/fonts.css` @font-face 加载，不依赖 CDN。
+- `src/bookhub/ui/web/fonts/`：蒸汽波 Web 字体（Sora/Space Mono woff2 + OFL.txt）；`skins/vaporwave/fonts.css` 以从皮肤目录返回三级的相对 URL 解析为 `app://app/fonts/*`，不依赖 CDN。
 - `src/bookhub/ui/web/css/base.css`：布局/结构/动画（无 skin 色板）；Glass 与 Vaporwave 共用；含标签分组多列目录、混合资源卡片/来源标识和 1120px/600px 无横向溢出响应式，Text Novel 与小说合集在 600px 以下统一单列，提供统一键盘焦点描边。
 - `src/bookhub/ui/web/css/app.css`：legacy 入口，`@import` glass bundle（兼容旧引用）。
 - `src/bookhub/ui/web/css/skins/glass/tokens.css`：玻璃拟态 day/night CSS 变量。
 - `src/bookhub/ui/web/css/skins/glass/components.css`：玻璃拟态组件样式；含标签按钮/来源标识/焦点态、随机推荐响应式网格和快捷键窄屏无溢出重排。
-- `src/bookhub/ui/web/css/skins/vaporwave/fonts.css`：蒸汽波 @font-face，引用 `web/fonts/` 本地 woff2。
+- `src/bookhub/ui/web/css/skins/vaporwave/fonts.css`：蒸汽波 @font-face，五个 `../../../fonts/` URL 从 `css/skins/vaporwave/` 正确解析到 `web/fonts/` 本地 woff2。
 - `src/bookhub/ui/web/css/skins/vaporwave/tokens.css`：蒸汽波 day/night token（Sora/Space Mono 语义变量）。
 - `src/bookhub/ui/web/css/skins/vaporwave/background.css`：vw-scene 大气渐变 + CRT 扫描线（已移除太阳/动态透视网格）；night 子选择器微调。
 - `src/bookhub/ui/web/css/skins/vaporwave/layout.css`：蒸汽波 z-index 层叠（不改生产 grid）。

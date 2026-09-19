@@ -2,7 +2,7 @@
 
 ## 最新决策
 ```json
-{"decision_id":"decision-20260915-001","timestamp":"2026-09-15T11:17:18+08:00","owner":"ui-agent","title":"Quick Add 合集写入定向回写且 Unicode casefold 由 Bridge 下发","context":"加入合集会触发 resourcesChanged 重建 contentArea，滚动丢失；搜索框需要快捷创建且前后端同名判断必须一致","options":["前端忽略 resourcesChanged 仍走旧逐条 setCollectionMembership","成功后全页重绘但恢复 scrollTop","单事务批量写入、停广播、只补合集页缓存与当前详情"],"decision":"新增 applyCollectionQuickAdd；Repository 单事务完成校验/复用/创建/增删；精确同名用 Bridge Unicode casefold；仅当前合集移除可见资源时保存滚动后重绘","rationale":["全量广播是刷新感的根因，恢复 scrollTop 仍会闪白/重建 DOM","一次提交避免部分写入","toLocaleLowerCase 无法覆盖 Straße/STRASSE"],"impact":["普通 Library/Text Novel/Comic 与来源感知页加入合集不重绘","无数据库或资源 payload 迁移","兼容性：旧 setCollectionMembership 仍可用但不广播；回滚即回退本功能提交"],"followups":["Quick Add 标签路径仍广播，本轮不改"]}
+{"decision_id":"decision-20260919-001","timestamp":"2026-09-19T18:30:00+08:00","owner":"maintenance-agent","title":"CBZ 读取缓存使用匿名 v2 marker 和同源即时加 30 天 TTL","context":"路径加 mtime token 会在同一 CBZ 修改后遗留完整解压目录，旧 marker 无法识别同源，也没有全局生命周期","options":["只删除同源旧 token","只按全局 TTL 清理","匿名来源哈希识别同源并叠加 30 天 TTL"],"decision":"保留既有 token；marker 写入版本、规范化源路径哈希和 mtime_ns，成功访问刷新 marker mtime；当前缓存成功后立即删除同源旧 token，其他直接子目录超过 30 天再删除","rationale":["保留 token 避免扩大调用方改动","来源哈希支持同源识别且不把私人绝对路径落盘","先确认当前缓存成功再清理，避免提取失败放大影响","直接子目录和逐项容错限制删除边界"],"impact":["兼容旧纯 mtime marker，命中后自动升级","无数据库 schema 或 Bridge API 变化","清理失败不阻断漫画打开"],"followups":["若缓存规模仍不可控，再以运行数据评估容量上限；本轮不引入 LRU 数据库"]}
 ```
 
 ## 决策记录规则
@@ -24,6 +24,14 @@
   "impact": ["string"],
   "followups": ["string"]
 }
+```
+
+## 2026-09-19 - CBZ 读取缓存匿名 marker 与两层淘汰
+
+完整决策记录见 `logs/history/2026-09-19.md`。
+
+```json
+{"decision_id":"decision-20260919-001","timestamp":"2026-09-19T18:30:00+08:00","owner":"maintenance-agent","title":"CBZ 读取缓存使用匿名 v2 marker 和同源即时加 30 天 TTL","context":"路径加 mtime token 会在同一 CBZ 修改后遗留完整解压目录，旧 marker 无法识别同源，也没有全局生命周期","options":["只删除同源旧 token","只按全局 TTL 清理","匿名来源哈希识别同源并叠加 30 天 TTL"],"decision":"保留既有 token；marker 写入版本、规范化源路径哈希和 mtime_ns，成功访问刷新 marker mtime；当前缓存成功后立即删除同源旧 token，其他直接子目录超过 30 天再删除","rationale":["保留 token 避免扩大调用方改动","来源哈希支持同源识别且不把私人绝对路径落盘","先确认当前缓存成功再清理，避免提取失败放大影响","直接子目录和逐项容错限制删除边界"],"impact":["兼容旧纯 mtime marker，命中后自动升级","无数据库 schema 或 Bridge API 变化","清理失败不阻断漫画打开"],"followups":["若缓存规模仍不可控，再以运行数据评估容量上限；本轮不引入 LRU 数据库"]}
 ```
 
 ## 2026-09-15 - Quick Add 定向回写

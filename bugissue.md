@@ -1,11 +1,11 @@
 # 本地遗留 Issue 主清单
 
-更新时间：2026-09-16
+更新时间：2026-09-19
 
-核验基线：`main` / `b17a34b8a5e0d6ad0a2ac0480636af36c69d25af`，包含核验开始前已有的未提交改动。
+修复基线：`main` / `78e7885`（代码提交），从干净的 `e7aabeb` 开始实施。
 
-范围：诊断、复现、归档；本轮未修复运行时代码，未提交，未 push。
-详细证据：`Agent-rule/logs/evidence/2026-09-16-known-issues-audit.md`
+范围：本轮仅修复并归档 `BUG-6`、`BUG-8`、`BUG-9`；其余 8 项保持待办，未 push。
+详细证据：`Agent-rule/logs/evidence/2026-09-19-p1-bug-fixes.md`
 
 > 本文件是唯一主清单。主待办只包含“确认存在”或“部分存在”；已修复/当前未复现项、产品设想和发布事项分别归档。
 
@@ -21,50 +21,6 @@
 证据层级：`运行时复现` > `GUI 隔离复现` > `自动测试` > `静态证据` > `历史日志`。运行日志只用于提出候选，不单独证明缺陷。所有复现均使用临时数据库、缓存和虚构资源，未读写真实书库。
 
 ## 2. 主待办
-
-### P1
-
-#### [ ] BUG-6：三个整型设置仍可在真实 Qt slot 抛 `ValueError`
-
-- 状态：`部分存在`
-- 来源：旧 `bugissue.md`；2026-09-15 Quick Add 收尾日志。
-- 影响：异常字符串会中断 `WebAppWindow.apply_setting` 本次设置操作；Repository 自身虽可容错，但调用尚未到达 Repository。
-- 当前代码路径：`src/bookhub/ui/web_window.py:392-398`。
-- 复现条件：绕过前端约束，分别调用未绑定窗口方法 `apply_setting(..., "comicPageSize"|"viewportBufferScreens"|"gridColumns", "abc")`。
-- 期望/实际：期望由 Repository 归一化或回退默认值；实际三项在 slot 内先执行 `int("abc")` 并抛异常。`scanDepth`、`textPreviewChars` 当前已通过。
-- 验证命令：使用临时 Repository 构造最小宿主，逐项调用 `WebAppWindow.apply_setting`；回归参考 `python -m pytest -q src/tests/test_repository_orphan_cleanup.py`。
-- 证据：5 项中 2 项返回 accepted，3 项稳定得到 `ValueError: invalid literal for int()`。
-- 根因：slot 中残留三处预转换，绕过了 Repository 的 `_normalize_*`。
-- 修复方向：三项均原值直传 Repository，归一化逻辑只保留一处。
-- 验收条件：5 项对非法字符串、`None`、越界数值都不抛异常；持久化值满足既有默认值/边界契约；全量测试通过。
-
-#### [ ] BUG-8：同一 CBZ 每次修改都会遗留旧读取缓存
-
-- 状态：`确认存在`
-- 来源：旧 `bugissue.md`。
-- 影响：频繁更新的漫画会在 `img_preview/comic/read/` 长期累积完整解压副本。
-- 当前代码路径：`src/bookhub/library/formats/cbz.py:51-57,112-118`。
-- 复现条件：以同一路径创建 CBZ、读取一次；修改归档并改变 `mtime_ns` 后再读取。
-- 期望/实际：期望旧 token 被淘汰或受统一容量/时效策略约束；实际同一源生成两个 token 目录，旧目录仍存在。
-- 验证命令：在临时目录两次改写同一 CBZ，并调用 `prepare_cbz_for_external_viewer`，统计 `comic/read/` 子目录。
-- 证据：第二次读取后缓存目录数为 2，两个目录均存在。
-- 根因：token 包含 `st_mtime_ns`，当前逻辑只校验/重建“当前 token”，从未关联或清理同源旧 token。
-- 修复方向：在 marker 中记录规范化源路径，并按源清理旧 token；同时增加全局 TTL/容量上限，避免无界增长。
-- 验收条件：同源连续修改后只保留策略允许的版本；其他 CBZ 的有效缓存不被误删；失败清理可容错。
-
-#### [ ] BUG-9：Vaporwave 本地字体 URL 层级错误，Sora/Space Mono 未加载
-
-- 状态：`确认存在`
-- 来源：运行日志中的字体 404 候选；本轮 GUI 复核。
-- 影响：Vaporwave 实际回退到系统字体，视觉宽度、密度和换行与设计不一致。
-- 当前代码路径：`src/bookhub/ui/web/css/skins/vaporwave/fonts.css`；字体实际位于 `src/bookhub/ui/web/fonts/`。
-- 复现条件：启动隔离 WebEngine，切换 Vaporwave，等待 `document.fonts.ready` 后检查 `document.fonts.check()`。
-- 期望/实际：期望 Sora 和 Space Mono 均为 true；实际两者均为 false。
-- 验证命令：在临时 DB 启动当前 `index.html`，执行 `document.fonts.check('16px Sora')` 与 `document.fonts.check('16px "Space Mono"')`。
-- 证据：600×749 与 390×844 两次均返回 false；CSS 的 `../../fonts/` 从 `css/skins/vaporwave/` 解析到不存在的 `css/fonts/`。
-- 根因：相对 URL 少返回一级，正确资源目录在 `web/fonts/`。
-- 修复方向：改为可解析到 `web/fonts/` 的路径，并在双皮肤 WebEngine 测试中断言字体加载状态。
-- 验收条件：两种字体在 WebEngine 中返回 true；控制台无字体 404；Glass/Vaporwave 关键视口无排版回归。
 
 ### P2
 
@@ -191,6 +147,9 @@
 | BUG-3 Bauhaus 硬编码建议 | `当前不存在` | 搜索 ViewModel 当前测试通过，未发现演示项。 |
 | BUG-4 损坏封面复制原图 | `当前不存在` | 损坏输入生成 96×144 PNG 安全占位；回归测试通过。 |
 | BUG-5 扫描进度恒 100% | `当前不存在` | Library 事件保留 `total=0` 的 busy 语义；Comic/Text 仍有真实 total。 |
+| BUG-6 Qt slot 整型设置异常 | `当前不存在` | `comicPageSize`、`viewportBufferScreens`、`gridColumns` 已原值交给 Repository normalizer；非法字符串、`None`、合法值和越界值回归通过，漫画页大小仅刷新一次。 |
+| BUG-8 CBZ 旧读取缓存累积 | `当前不存在` | `.cbz_source` 已升级为匿名 v2 JSON marker；同源旧 token 在当前缓存成功后立即淘汰，其他缓存按最近成功访问 30 天清理；旧 marker、损坏 marker 与清理异常回归通过。 |
+| BUG-9 Vaporwave 字体 URL 错误 | `当前不存在` | 五个 URL 均解析到现有字体；隔离 WebEngine 的 Sora/Space Mono 在 1440×860、600×749、390×844 均加载成功，控制台无字体 404。 |
 | 低-2 漫画右键收藏后详情不刷新 | `历史过时` | 当前漫画右键菜单已无该收藏入口，旧空回调路径不存在；不是当前缺陷。 |
 | ISSUE-007 外部打开静默失败 | `历史过时` | 旧 Widgets 路径已移除；当前 Bridge 失败会发 Toast，Smoke 测试通过。 |
 | Text Rules 快速滚动白屏/重载感 | `当前不存在` | Glass/Vaporwave 中第一栏 `scrollTop=260`，连续 20 次 `renderTrBody()` 后仍为 260，overlay 存在、无白屏。 |
@@ -244,20 +203,18 @@
 - 来源：根目录旧 `nuitka-crash-report.xml`。
 - 说明：当前源码测试与离屏 GUI 不能替代打包验收；只有下一次正式打包仍失败时才转为可执行 Issue。
 
-## 6. 本轮验证基线
+## 6. 当前验证基线
 
-- 全量 Python：`270 passed, 43 subtests passed`。
-- 定向 Python：`95 passed, 6 subtests passed`（CBZ、根删除、搜索、漫画预览、PDF/扫描进度、Bridge smoke）。
+- 全量 Python：`279 passed, 54 subtests passed`。
+- 定向 Python：`87 passed, 17 subtests passed`（设置 slot、CBZ、Bridge/Web 资源）。
 - Node 行为：Quick Add、随机推荐、快捷键、标签管理四组通过。
-- GUI：Glass/Vaporwave；1440×860、749×860、600×749、390×844；临时 DB/缓存/资源夹具。
-- 关键 GUI 证据：Text Rules `scrollTop` 保持；Vaporwave 600/390 内部滚动成立且 `scrollWidth == clientWidth`；字体检查失败。
-- 最终门禁：见审计证据日志；所有命令均不使用真实书库路径和私人数据。
+- GUI：Glass/Vaporwave；1440×860、600×749、390×844；临时 DB/缓存，未读取真实书库。
+- 关键 GUI 证据：Vaporwave Sora/Space Mono 均为 true；双皮肤各视口 `scrollWidth == clientWidth`，控制台无错误。
+- JS 语法与 `git diff --check`：通过；临时 GUI 脚本不进入仓库。
 
 ## 7. 建议实施顺序
 
-1. BUG-9（路径修复小、可立即恢复设计字体）。
-2. BUG-6、低-3（设置/任务接受状态的明确契约）。
-3. BUG-8（先定缓存淘汰策略，再实现）。
-4. OPT-1、OPT-2、OPT-3（统一定向失效和请求所有权）。
-5. 低-5、低-1、低-4（性能与清理）。
-6. BUG-7（先补真实负载基准，再决定 WAL）。
+1. 低-3（先明确任务接受状态契约）。
+2. OPT-1、OPT-2、OPT-3（统一定向失效和请求所有权）。
+3. 低-5、低-1、低-4（性能与清理）。
+4. BUG-7（真实负载基准达标后才决定是否启用 WAL）。

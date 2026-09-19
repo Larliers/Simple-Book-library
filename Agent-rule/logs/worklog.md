@@ -2,7 +2,7 @@
 
 ## 最新记录
 ```json
-{"log_id":"worklog-20260918-001","timestamp":"2026-09-18T16:35:00+08:00","actor":"master-agent","task":"为本仓库启动 Cursor Agent CLI 的 My Machines worker（agent worker start）","changes":["安装 Cursor Agent CLI 2026.09.15-d2fe57e 并写入用户 PATH","agent login 登录 dr.kenliers@gmail.com","补齐 better-sqlite3 ABI 137 后启动常驻 worker simple-book-library"],"affected_files":["Agent-rule/logs/history/2026-09-18.md","Agent-rule/logs/worklog.md"],"outputs":["worker 已连接，Cursor 可见 1 台机器","workerId=924c5fb2-14f4-47a0-939a-396249fca493","repo=Larliers/Simple-Book-library","入口 https://cursor.com/agents#workerId=924c5fb2-14f4-47a0-939a-396249fca493"],"risks":["关闭 worker 终端即断开","agent update 可能覆盖 ABI 修复","脏工作区与领先 origin 的 4 个提交会被 Cloud Agent 看到","Windows 无 computer use"],"next_actions":["在 cursor.com/agents 选择 simple-book-library 后下发任务","保持 worker 进程不退出"]}
+{"log_id":"worklog-20260919-001","timestamp":"2026-09-19T18:30:00+08:00","actor":"maintenance-agent","task":"修复并归档 BUG-6、BUG-8、BUG-9","changes":["Qt slot 整型设置统一交给 Repository normalizer","修复 Vaporwave 五个字体资源路径","CBZ v2 匿名 marker 与同源即时/30 天 TTL 两层淘汰","同步主清单、结构说明和日志"],"affected_files":["src/bookhub/ui/web_window.py","src/bookhub/ui/web/css/skins/vaporwave/fonts.css","src/bookhub/library/formats/cbz.py","src/tests/test_repository_orphan_cleanup.py","src/tests/test_web_bridge_smoke.py","src/tests/test_new_formats_import.py","bugissue.md","src_construction.md","Agent-rule/logs/history/2026-09-19.md","Agent-rule/logs/evidence/2026-09-19-p1-bug-fixes.md","Agent-rule/logs/decision-log.md","Agent-rule/logs/worklog.md"],"outputs":["BUG-6/8/9 已归档，主待办剩 8 项","全量 279 passed, 54 subtests passed","四组 Node 与 JS 语法检查通过","双皮肤三视口 GUI 通过"],"risks":["390px Library 保持既有固定双栏压缩布局","BUG-7 未改，仍需真实负载基准"],"next_actions":["按 bugissue.md 处理低-3 与失效范围优化"]}
 ```
 
 ## 记录规则
@@ -23,6 +23,14 @@
   "risks": ["string"],
   "next_actions": ["string"]
 }
+```
+
+## 2026-09-19 - P1 三项缺陷修复
+
+完整记录见 `logs/history/2026-09-19.md`，GUI 与红绿灯证据见 `logs/evidence/2026-09-19-p1-bug-fixes.md`。
+
+```json
+{"log_id":"worklog-20260919-001","timestamp":"2026-09-19T18:30:00+08:00","actor":"maintenance-agent","task":"修复并归档 BUG-6、BUG-8、BUG-9","changes":["Qt slot 整型设置统一交给 Repository normalizer","修复 Vaporwave 五个字体资源路径","CBZ v2 匿名 marker 与同源即时/30 天 TTL 两层淘汰","同步主清单、结构说明和日志"],"affected_files":["src/bookhub/ui/web_window.py","src/bookhub/ui/web/css/skins/vaporwave/fonts.css","src/bookhub/library/formats/cbz.py","src/tests/test_repository_orphan_cleanup.py","src/tests/test_web_bridge_smoke.py","src/tests/test_new_formats_import.py","bugissue.md","src_construction.md","Agent-rule/logs/history/2026-09-19.md","Agent-rule/logs/evidence/2026-09-19-p1-bug-fixes.md","Agent-rule/logs/decision-log.md","Agent-rule/logs/worklog.md"],"outputs":["BUG-6/8/9 已归档，主待办剩 8 项","全量 279 passed, 54 subtests passed","四组 Node 与 JS 语法检查通过","双皮肤三视口 GUI 通过"],"risks":["390px Library 保持既有固定双栏压缩布局","BUG-7 未改，仍需真实负载基准"],"next_actions":["按 bugissue.md 处理低-3 与失效范围优化"]}
 ```
 
 ## 2026-09-18 - 启动 Cursor My Machines worker
