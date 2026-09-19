@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import shutil
+import time
 import zipfile
 from pathlib import Path
 
@@ -9,6 +12,11 @@ from natsort import natsorted
 
 from bookhub.library.formats.zip_safety import ZipBombError, open_zip_safely, read_zip_member_safely
 from bookhub.library.models import COMIC_IMAGE_EXTENSIONS
+
+
+_CBZ_CACHE_MARKER_VERSION = 2
+_CBZ_READ_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60
+
 
 def list_cbz_image_members(file_path: Path) -> list[str]:
     with open_zip_safely(file_path) as zip_file:
@@ -57,12 +65,55 @@ def _cbz_read_cache_dir(preview_dir: Path, cbz_path: Path) -> Path | None:
     return preview_dir / "comic" / "read" / token
 
 
+def _cbz_source_hash(cbz_path: Path) -> str:
+    normalized_path = os.path.normcase(str(cbz_path.resolve()))
+    return hashlib.sha1(normalized_path.encode("utf-8")).hexdigest()  # noqa: S324
+
+
+def _read_cbz_cache_marker(marker: Path) -> dict[str, int | str] | None:
+    try:
+        raw = marker.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        try:
+            return {"version": 1, "mtime_ns": int(raw)}
+        except ValueError:
+            return None
+    if not isinstance(payload, dict):
+        return None
+    try:
+        version = int(payload.get("version", 0))
+        mtime_ns = int(payload["mtime_ns"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    source_hash = str(payload.get("source_hash") or "")
+    if version != _CBZ_CACHE_MARKER_VERSION or not source_hash:
+        return None
+    return {"version": version, "source_hash": source_hash, "mtime_ns": mtime_ns}
+
+
+def _write_cbz_cache_marker(cache_dir: Path, cbz_path: Path) -> None:
+    payload = {
+        "version": _CBZ_CACHE_MARKER_VERSION,
+        "source_hash": _cbz_source_hash(cbz_path),
+        "mtime_ns": cbz_path.stat().st_mtime_ns,
+    }
+    (cache_dir / ".cbz_source").write_text(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
+
+
 def _cbz_read_cache_is_valid(cache_dir: Path, cbz_path: Path, members: list[str]) -> bool:
     marker = cache_dir / ".cbz_source"
     if not marker.is_file():
         return False
     try:
-        if marker.read_text(encoding="utf-8").strip() != str(cbz_path.stat().st_mtime_ns):
+        marker_payload = _read_cbz_cache_marker(marker)
+        if marker_payload is None or int(marker_payload["mtime_ns"]) != cbz_path.stat().st_mtime_ns:
             return False
     except OSError:
         return False
@@ -92,11 +143,37 @@ def _extract_cbz_members_to_cache(cbz_path: Path, cache_dir: Path, members: list
         shutil.rmtree(cache_dir, ignore_errors=True)
         return False
     try:
-        (cache_dir / ".cbz_source").write_text(str(cbz_path.stat().st_mtime_ns), encoding="utf-8")
+        _write_cbz_cache_marker(cache_dir, cbz_path)
     except OSError:
         shutil.rmtree(cache_dir, ignore_errors=True)
         return False
     return True
+
+
+def _cleanup_cbz_read_cache(cache_dir: Path, cbz_path: Path) -> None:
+    read_cache_root = cache_dir.parent
+    source_hash = _cbz_source_hash(cbz_path)
+    expired_before = time.time() - _CBZ_READ_CACHE_TTL_SECONDS
+    try:
+        candidates = list(read_cache_root.iterdir())
+    except OSError:
+        return
+    for candidate in candidates:
+        try:
+            if candidate == cache_dir or candidate.is_symlink() or not candidate.is_dir():
+                continue
+            marker = candidate / ".cbz_source"
+            marker_payload = _read_cbz_cache_marker(marker)
+            is_previous_revision = marker_payload is not None and marker_payload.get("source_hash") == source_hash
+            last_access = (marker if marker.is_file() else candidate).stat().st_mtime
+        except OSError:
+            continue
+        if not is_previous_revision and last_access >= expired_before:
+            continue
+        try:
+            shutil.rmtree(candidate, ignore_errors=True)
+        except OSError:
+            continue
 
 
 def prepare_cbz_for_external_viewer(cbz_path: Path, preview_dir: Path) -> Path | None:
@@ -119,4 +196,11 @@ def prepare_cbz_for_external_viewer(cbz_path: Path, preview_dir: Path) -> Path |
     if first_member_path is None:
         return None
     first_page = cache_dir / first_member_path
-    return first_page if first_page.is_file() else None
+    if not first_page.is_file():
+        return None
+    try:
+        _write_cbz_cache_marker(cache_dir, cbz_path)
+        _cleanup_cbz_read_cache(cache_dir, cbz_path)
+    except OSError:
+        pass
+    return first_page

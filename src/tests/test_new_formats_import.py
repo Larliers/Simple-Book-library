@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
+import os
 import sys
 import tempfile
+import time
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 from PIL import Image
 
@@ -219,6 +223,144 @@ class ComicCbzTests(unittest.TestCase):
             cache_dir = first_page.parent
             self.assertTrue((cache_dir / "002.png").is_file())
             self.assertTrue((cache_dir / ".cbz_source").is_file())
+
+    def test_prepare_cbz_for_external_viewer_removes_previous_revision_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            cbz = base / "Changing.cbz"
+            preview = base / "preview"
+            with zipfile.ZipFile(cbz, "w") as zf:
+                zf.writestr("001.png", b"first-version")
+
+            first_page = prepare_cbz_for_external_viewer(cbz, preview)
+            self.assertIsNotNone(first_page)
+            assert first_page is not None
+            first_cache_dir = first_page.parent
+            first_mtime_ns = cbz.stat().st_mtime_ns
+            previous_cache_dir = first_cache_dir
+            current_page = first_page
+            for revision in (2, 3):
+                with zipfile.ZipFile(cbz, "w") as zf:
+                    zf.writestr("001.png", f"version-{revision}".encode("utf-8"))
+                revision_mtime_ns = first_mtime_ns + (revision * 1_000_000_000)
+                os.utime(cbz, ns=(revision_mtime_ns, revision_mtime_ns))
+
+                current_page = prepare_cbz_for_external_viewer(cbz, preview)
+
+                self.assertIsNotNone(current_page)
+                assert current_page is not None
+                self.assertNotEqual(current_page.parent, previous_cache_dir)
+                self.assertFalse(previous_cache_dir.exists())
+                previous_cache_dir = current_page.parent
+            self.assertEqual(
+                [path for path in (preview / "comic" / "read").iterdir() if path.is_dir()],
+                [current_page.parent],
+            )
+
+    def test_prepare_cbz_for_external_viewer_removes_expired_but_keeps_recent_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            preview = base / "preview"
+
+            def prepare(name: str) -> Path:
+                cbz = base / f"{name}.cbz"
+                with zipfile.ZipFile(cbz, "w") as zf:
+                    zf.writestr("001.png", name.encode("utf-8"))
+                page = prepare_cbz_for_external_viewer(cbz, preview)
+                self.assertIsNotNone(page)
+                assert page is not None
+                return page.parent
+
+            stale_cache = prepare("stale")
+            recent_cache = prepare("recent")
+            current_cache = prepare("current")
+            expired_at = time.time() - (31 * 24 * 60 * 60)
+            os.utime(stale_cache / ".cbz_source", (expired_at, expired_at))
+
+            current_page = prepare_cbz_for_external_viewer(base / "current.cbz", preview)
+
+            self.assertIsNotNone(current_page)
+            self.assertFalse(stale_cache.exists())
+            self.assertTrue(recent_cache.exists())
+            self.assertTrue(current_cache.exists())
+
+    def test_prepare_cbz_for_external_viewer_upgrades_legacy_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            cbz = base / "Legacy.cbz"
+            with zipfile.ZipFile(cbz, "w") as zf:
+                zf.writestr("001.png", b"legacy")
+            preview = base / "preview"
+            first_page = prepare_cbz_for_external_viewer(cbz, preview)
+            self.assertIsNotNone(first_page)
+            assert first_page is not None
+            marker = first_page.parent / ".cbz_source"
+            marker.write_text(str(cbz.stat().st_mtime_ns), encoding="utf-8")
+
+            reopened_page = prepare_cbz_for_external_viewer(cbz, preview)
+
+            self.assertEqual(reopened_page, first_page)
+            payload = json.loads(marker.read_text(encoding="utf-8"))
+            self.assertEqual(payload["version"], 2)
+            self.assertEqual(payload["mtime_ns"], cbz.stat().st_mtime_ns)
+            self.assertNotIn(str(cbz.resolve()), marker.read_text(encoding="utf-8"))
+            self.assertEqual(len(payload["source_hash"]), 40)
+
+    def test_prepare_cbz_for_external_viewer_recovers_from_damaged_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            cbz = base / "DamagedMarker.cbz"
+            with zipfile.ZipFile(cbz, "w") as zf:
+                zf.writestr("001.png", b"page")
+            preview = base / "preview"
+            first_page = prepare_cbz_for_external_viewer(cbz, preview)
+            self.assertIsNotNone(first_page)
+            assert first_page is not None
+            marker = first_page.parent / ".cbz_source"
+            marker.write_text("not-json-or-mtime", encoding="utf-8")
+
+            reopened_page = prepare_cbz_for_external_viewer(cbz, preview)
+
+            self.assertEqual(reopened_page, first_page)
+            self.assertEqual(json.loads(marker.read_text(encoding="utf-8"))["version"], 2)
+
+    def test_prepare_cbz_for_external_viewer_ignores_cleanup_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            preview = base / "preview"
+            old_cbz = base / "old.cbz"
+            current_cbz = base / "current.cbz"
+            for cbz in (old_cbz, current_cbz):
+                with zipfile.ZipFile(cbz, "w") as zf:
+                    zf.writestr("001.png", cbz.stem.encode("utf-8"))
+            old_page = prepare_cbz_for_external_viewer(old_cbz, preview)
+            current_page = prepare_cbz_for_external_viewer(current_cbz, preview)
+            self.assertIsNotNone(old_page)
+            self.assertIsNotNone(current_page)
+            assert old_page is not None
+            expired_at = time.time() - (31 * 24 * 60 * 60)
+            os.utime(old_page.parent / ".cbz_source", (expired_at, expired_at))
+
+            with mock.patch("bookhub.library.formats.cbz.shutil.rmtree", side_effect=OSError("denied")):
+                reopened_page = prepare_cbz_for_external_viewer(current_cbz, preview)
+
+            self.assertEqual(reopened_page, current_page)
+            self.assertTrue(old_page.parent.exists())
+
+    def test_prepare_cbz_for_external_viewer_ignores_marker_refresh_permission_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            cbz = base / "PermissionFailure.cbz"
+            with zipfile.ZipFile(cbz, "w") as zf:
+                zf.writestr("001.png", b"page")
+            preview = base / "preview"
+            first_page = prepare_cbz_for_external_viewer(cbz, preview)
+            self.assertIsNotNone(first_page)
+
+            with mock.patch.object(Path, "write_text", side_effect=PermissionError("denied")):
+                reopened_page = prepare_cbz_for_external_viewer(cbz, preview)
+
+            self.assertEqual(reopened_page, first_page)
 
     def test_safe_archive_member_path_rejects_escape_vectors(self) -> None:
         for evil in (
