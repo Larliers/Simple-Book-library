@@ -277,10 +277,36 @@ assert.deepStrictEqual(pageSortCalls.at(-1), ["novel_collections", "author_asc"]
 teardownVirtualWindow(area);
 clear(area);
 State.renderGen += 1;
-renderTable(area, [{ id: "b-list", title: "Book", author: "A", tags: [], path: "B.pdf" }], "library");
+renderTable(area, [{ id: "b-list", title: "Book", author: "A", tags: [], path: "B.pdf" }], "library", "title_asc");
 const libraryTable = area.children[1];
 assert.strictEqual(libraryTable.children[0].children[0].children.length, 5, "Library list keeps cover column");
-assert.strictEqual(libraryTable.children[0].children[0].children[1].children.length, 0, "Library headers stay non-sortable");
+const libraryHeaders = libraryTable.children[0].children[0].children;
+assert.strictEqual(libraryHeaders[1].children[0].tagName, "BUTTON", "Library field headers use native buttons");
+assert.strictEqual(libraryHeaders[1].attributes["aria-sort"], "ascending");
+libraryHeaders[2].children[0].dispatch("click");
+assert.deepStrictEqual(pageSortCalls.at(-1), ["library", "author_asc"]);
+
+clear(document.getElementById("pageHeadTools"));
+renderPageTools("library", { mode: "grid_or_list", sort: "author_desc", items: [novelListItem] });
+const librarySortSelect = document.getElementById("pageHeadTools").children[0].children.at(-1);
+assert.strictEqual(librarySortSelect.children.length, 10, "Library dropdown exposes every field order");
+assert.strictEqual(librarySortSelect.children.find((option) => option.selected).value, "author_desc");
+librarySortSelect.value = "path_asc";
+librarySortSelect.dispatch("change");
+assert.deepStrictEqual(pageSortCalls.at(-1), ["library", "path_asc"]);
+
+clear(document.getElementById("pageHeadTools"));
+renderPageTools("collections", {
+  mode: "collection_detail", collectionId: 1, collectionName: "Books", sort: "added_desc", items: [novelListItem],
+});
+const collectionTools = document.getElementById("pageHeadTools").children;
+assert.strictEqual(collectionTools[0].tagName, "BUTTON", "Book collection keeps the back button");
+const libraryCollectionSortSelect = collectionTools[1].children.at(-1);
+assert.strictEqual(libraryCollectionSortSelect.children.length, 12, "Book collection adds both added-time orders");
+assert.strictEqual(libraryCollectionSortSelect.children.find((option) => option.selected).value, "added_desc");
+libraryCollectionSortSelect.value = "title_desc";
+libraryCollectionSortSelect.dispatch("change");
+assert.deepStrictEqual(pageSortCalls.at(-1), ["collections", "title_desc"]);
 
 State.searchQueries.library = "preserved query";
 syncSearchInputFromPage(RANDOM_RECOMMENDATIONS_PAGE);

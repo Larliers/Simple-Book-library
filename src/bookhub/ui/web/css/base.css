@@ -88,9 +88,13 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 }
 
 @media (max-width: 600px) {
+  body[data-page="library"],
   body:is([data-page="text_novel"], [data-page="settings"]),
+  body[data-page="collections"][data-page-mode="collection_detail"],
   body:is([data-page="novel_collections"][data-page-mode="collection_detail"], [data-page="tag_manager"]) { overflow: auto; }
+  body[data-page="library"] .app-shell,
   body:is([data-page="text_novel"], [data-page="settings"]) .app-shell,
+  body[data-page="collections"][data-page-mode="collection_detail"] .app-shell,
   body:is([data-page="novel_collections"][data-page-mode="collection_detail"], [data-page="tag_manager"]) .app-shell {
     height: auto;
     min-height: 100vh;
@@ -99,27 +103,41 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     padding: 8px;
     gap: 8px;
   }
+  body[data-page="library"] .app-shell > .sidebar,
   body:is([data-page="text_novel"], [data-page="settings"]) .app-shell > .sidebar,
+  body[data-page="collections"][data-page-mode="collection_detail"] .app-shell > .sidebar,
   body:is([data-page="novel_collections"][data-page-mode="collection_detail"], [data-page="tag_manager"]) .app-shell > .sidebar { grid-column: 1; grid-row: 1; }
+  body[data-page="library"] .app-shell > .topbar,
   body:is([data-page="text_novel"], [data-page="settings"]) .app-shell > .topbar,
+  body[data-page="collections"][data-page-mode="collection_detail"] .app-shell > .topbar,
   body:is([data-page="novel_collections"][data-page-mode="collection_detail"], [data-page="tag_manager"]) .app-shell > .topbar {
     grid-column: 1;
     grid-row: 2;
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto auto;
   }
+  body[data-page="library"] .app-shell > .main-stage,
   body:is([data-page="text_novel"], [data-page="settings"]) .app-shell > .main-stage,
+  body[data-page="collections"][data-page-mode="collection_detail"] .app-shell > .main-stage,
   body:is([data-page="novel_collections"][data-page-mode="collection_detail"], [data-page="tag_manager"]) .app-shell > .main-stage { grid-column: 1; grid-row: 3; }
+  body[data-page="library"] .app-shell > .detail-panel,
   body:is([data-page="text_novel"], [data-page="settings"]) .app-shell > .detail-panel,
+  body[data-page="collections"][data-page-mode="collection_detail"] .app-shell > .detail-panel,
   body:is([data-page="novel_collections"][data-page-mode="collection_detail"], [data-page="tag_manager"]) .app-shell > .detail-panel { grid-column: 1; grid-row: 4; }
+  body[data-page="library"] .app-shell .side-list,
   body:is([data-page="text_novel"], [data-page="settings"]) .app-shell .side-list,
+  body[data-page="collections"][data-page-mode="collection_detail"] .app-shell .side-list,
   body:is([data-page="novel_collections"][data-page-mode="collection_detail"], [data-page="tag_manager"]) .app-shell .side-list {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  body[data-page="library"] .app-shell .side-actions,
   body:is([data-page="text_novel"], [data-page="settings"]) .app-shell .side-actions,
+  body[data-page="collections"][data-page-mode="collection_detail"] .app-shell .side-actions,
   body:is([data-page="novel_collections"][data-page-mode="collection_detail"], [data-page="tag_manager"]) .app-shell .side-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body[data-page="library"] .app-shell .top-tools,
   body:is([data-page="text_novel"], [data-page="settings"]) .app-shell .top-tools,
+  body[data-page="collections"][data-page-mode="collection_detail"] .app-shell .top-tools,
   body:is([data-page="novel_collections"][data-page-mode="collection_detail"], [data-page="tag_manager"]) .app-shell .top-tools { justify-content: space-between; }
   .tag-list { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
   body[data-page="settings"] [data-library-task-btn="thumb"] {

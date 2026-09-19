@@ -20,6 +20,153 @@ class TextNovelSortTests(unittest.TestCase):
     def _titles(self, rows: list[dict]) -> list[str]:
         return [str(item.get("title") or item.get("file_name") or "") for item in rows]
 
+    def test_library_main_sort_setting_persists_and_drives_query(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            db_path = base / "library.db"
+            report_path = base / "scan_report.json"
+            repo = LibraryRepository(db_path, report_path)
+            for title, file_mtime in (("Alpha", 1_700_000_000), ("Beta", 1_800_000_000)):
+                repo.upsert_book(
+                    {
+                        "resource_id": f"book-{title.lower()}",
+                        "path": str(base / f"{title}.pdf"),
+                        "file_name": f"{title}.pdf",
+                        "extension": ".pdf",
+                        "title": title,
+                        "resource_type": "book",
+                        "tags_json": "[]",
+                        "file_mtime": file_mtime,
+                    }
+                )
+
+            self.assertEqual(repo.get_library_sort_order_main(), "title_asc")
+            repo.set_library_sort_order_main("file_mtime_desc")
+
+            reopened = LibraryRepository(db_path, report_path)
+            self.assertEqual(reopened.get_library_sort_order_main(), "file_mtime_desc")
+            rows = reopened.list_books(
+                include_missing=False,
+                exclude_resource_type="text_novel",
+                order_by=reopened.get_library_sort_order_main(),
+            )
+            self.assertEqual(self._titles(rows), ["Beta", "Alpha"])
+
+    def test_book_collection_sort_keeps_added_default_and_supports_field_order(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            db_path = base / "library.db"
+            report_path = base / "scan_report.json"
+            repo = LibraryRepository(db_path, report_path)
+            book_ids: dict[str, int] = {}
+            for title in ("Beta", "Alpha"):
+                repo.upsert_book(
+                    {
+                        "resource_id": f"book-{title.lower()}",
+                        "path": str(base / f"{title}.pdf"),
+                        "file_name": f"{title}.pdf",
+                        "extension": ".pdf",
+                        "title": title,
+                        "resource_type": "book",
+                        "tags_json": "[]",
+                    }
+                )
+                book_id = repo.get_book_int_id(f"book-{title.lower()}")
+                self.assertIsNotNone(book_id)
+                assert book_id is not None
+                book_ids[title] = book_id
+
+            collection_id = repo.create_collection("Books", kind=COLLECTION_KIND_BOOK)
+            repo.add_book_to_collection(book_ids["Beta"], collection_id)
+            repo.add_book_to_collection(book_ids["Alpha"], collection_id)
+
+            self.assertEqual(repo.get_library_sort_order_fav(), "added_desc")
+            self.assertEqual(
+                self._titles(repo.get_books_in_collection(collection_id, order_by="added_desc")),
+                ["Alpha", "Beta"],
+            )
+            self.assertEqual(
+                self._titles(repo.get_books_in_collection(collection_id, order_by="added_asc")),
+                ["Beta", "Alpha"],
+            )
+            self.assertEqual(
+                self._titles(repo.get_books_in_collection(collection_id, order_by="title_asc")),
+                ["Alpha", "Beta"],
+            )
+
+            repo.set_library_sort_order_fav("title_desc")
+            reopened = LibraryRepository(db_path, report_path)
+            self.assertEqual(reopened.get_library_sort_order_fav(), "title_desc")
+            self.assertEqual(reopened.get_library_sort_order_main(), "title_asc")
+
+    def test_library_supports_all_field_orders_and_invalid_fallbacks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            repo = LibraryRepository(base / "library.db", base / "scan_report.json")
+            for payload in (
+                {
+                    "path": "Z:/books/alpha.pdf",
+                    "file_name": "alpha.pdf",
+                    "extension": ".pdf",
+                    "title": "Alpha",
+                    "author": "Same",
+                    "tags_json": '["beta"]',
+                    "resource_type": "book",
+                    "file_mtime": 300,
+                },
+                {
+                    "path": "A:/books/beta.pdf",
+                    "file_name": "beta.pdf",
+                    "extension": ".pdf",
+                    "title": "Beta",
+                    "author": "",
+                    "tags_json": "[]",
+                    "resource_type": "book",
+                    "file_mtime": 100,
+                },
+                {
+                    "path": "M:/books/gamma.pdf",
+                    "file_name": "gamma.pdf",
+                    "extension": ".pdf",
+                    "title": "Gamma",
+                    "author": "same",
+                    "tags_json": '["Alpha", "Omega"]',
+                    "resource_type": "book",
+                    "file_mtime": 200,
+                },
+            ):
+                repo.upsert_book(payload)
+
+            def sorted_titles(order: str) -> list[str]:
+                return self._titles(
+                    repo.list_books(
+                        include_missing=False,
+                        exclude_resource_type="text_novel",
+                        order_by=order,
+                    )
+                )
+
+            expected = {
+                "file_mtime_asc": ["Beta", "Gamma", "Alpha"],
+                "file_mtime_desc": ["Alpha", "Gamma", "Beta"],
+                "title_asc": ["Alpha", "Beta", "Gamma"],
+                "title_desc": ["Gamma", "Beta", "Alpha"],
+                "author_asc": ["Beta", "Alpha", "Gamma"],
+                "author_desc": ["Alpha", "Gamma", "Beta"],
+                "tags_asc": ["Beta", "Gamma", "Alpha"],
+                "tags_desc": ["Alpha", "Gamma", "Beta"],
+                "path_asc": ["Beta", "Gamma", "Alpha"],
+                "path_desc": ["Alpha", "Gamma", "Beta"],
+            }
+            for order, titles in expected.items():
+                with self.subTest(order=order):
+                    self.assertEqual(sorted_titles(order), titles)
+
+            repo.set_library_sort_order_main("invalid")
+            repo.set_library_sort_order_fav("invalid")
+            self.assertEqual(repo.get_library_sort_order_main(), "title_asc")
+            self.assertEqual(repo.get_library_sort_order_fav(), "added_desc")
+
     def test_text_novel_sort_order_by_file_mtime_and_title(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             base = Path(tmp_dir)

@@ -47,6 +47,20 @@ DEFAULT_COVER_SELECTED_BORDER_COLOR = "#8EA7C6"
 COLLECTION_KIND_BOOK = "book"
 COLLECTION_KIND_TEXT_NOVEL = "text_novel"
 COLLECTION_KIND_COMIC = "comic"
+BOOK_FIELD_SORT_ORDERS = frozenset(
+    {
+        "file_mtime_asc",
+        "file_mtime_desc",
+        "title_asc",
+        "title_desc",
+        "author_asc",
+        "author_desc",
+        "tags_asc",
+        "tags_desc",
+        "path_asc",
+        "path_desc",
+    }
+)
 COLLECTION_KINDS = frozenset(
     {COLLECTION_KIND_BOOK, COLLECTION_KIND_TEXT_NOVEL, COLLECTION_KIND_COMIC}
 )
@@ -554,6 +568,10 @@ class LibraryRepository:
             self.set_setting("text_novel_sort_order_main", "file_mtime_desc")
         if self.get_setting("text_novel_sort_order_fav", None) is None:
             self.set_setting("text_novel_sort_order_fav", "file_mtime_desc")
+        if self.get_setting("library_sort_order_main", None) is None:
+            self.set_setting("library_sort_order_main", "title_asc")
+        if self.get_setting("library_sort_order_fav", None) is None:
+            self.set_setting("library_sort_order_fav", "added_desc")
         if self.get_setting("preview_cache_dir", None) is None:
             self.set_setting("preview_cache_dir", "")
         with self._connection() as conn:
@@ -895,26 +913,66 @@ class LibraryRepository:
         self.set_setting("text_novel_view_mode", self._normalize_text_novel_view_mode(value))
 
     @staticmethod
+    def _normalize_library_sort_order(value: str | None) -> str:
+        normalized = str(value or "").strip().lower()
+        return normalized if normalized in BOOK_FIELD_SORT_ORDERS else "title_asc"
+
+    def get_library_sort_order_main(self) -> str:
+        return self._normalize_library_sort_order(
+            self.get_setting("library_sort_order_main", "title_asc")
+        )
+
+    def set_library_sort_order_main(self, value: str) -> None:
+        self.set_setting("library_sort_order_main", self._normalize_library_sort_order(value))
+
+    @staticmethod
+    def _normalize_library_collection_sort_order(value: str | None) -> str:
+        normalized = str(value or "").strip().lower()
+        allowed = BOOK_FIELD_SORT_ORDERS | {"added_asc", "added_desc"}
+        return normalized if normalized in allowed else "added_desc"
+
+    def get_library_sort_order_fav(self) -> str:
+        return self._normalize_library_collection_sort_order(
+            self.get_setting("library_sort_order_fav", "added_desc")
+        )
+
+    def set_library_sort_order_fav(self, value: str) -> None:
+        self.set_setting(
+            "library_sort_order_fav",
+            self._normalize_library_collection_sort_order(value),
+        )
+
+    @staticmethod
     def _normalize_text_novel_sort_order(value: str | None) -> str:
         normalized = str(value or "").strip().lower()
-        allowed = {
-            "file_mtime_asc",
-            "file_mtime_desc",
-            "title_asc",
-            "title_desc",
-            "author_asc",
-            "author_desc",
-            "tags_asc",
-            "tags_desc",
-            "path_asc",
-            "path_desc",
-        }
-        return normalized if normalized in allowed else "file_mtime_desc"
+        return normalized if normalized in BOOK_FIELD_SORT_ORDERS else "file_mtime_desc"
 
     @staticmethod
     def _text_novel_order_clause(order_by: str | None, *, table_alias: str = "") -> str:
+        return LibraryRepository._book_field_order_clause(
+            order_by,
+            table_alias=table_alias,
+            default_order="file_mtime_desc",
+        )
+
+    @staticmethod
+    def _library_order_clause(order_by: str | None, *, table_alias: str = "") -> str:
+        return LibraryRepository._book_field_order_clause(
+            order_by,
+            table_alias=table_alias,
+            default_order="title_asc",
+        )
+
+    @staticmethod
+    def _book_field_order_clause(
+        order_by: str | None,
+        *,
+        table_alias: str = "",
+        default_order: str,
+    ) -> str:
         prefix = f"{table_alias}." if table_alias else ""
-        normalized = LibraryRepository._normalize_text_novel_sort_order(order_by)
+        candidate = str(order_by or "").strip().lower()
+        normalized = candidate if candidate in BOOK_FIELD_SORT_ORDERS else default_order
         mtime_expr = f"COALESCE({prefix}file_mtime, 0)"
         title_expr = f"lower(COALESCE({prefix}title, {prefix}file_name))"
         author_expr = f"lower(COALESCE({prefix}author, ''))"
@@ -944,7 +1002,9 @@ class LibraryRepository:
         }
         if normalized in field_orders:
             return f"{field_orders[normalized]}, {stable_tail}"
-        return f"{mtime_expr} DESC, {stable_tail}"
+        if normalized == "file_mtime_desc":
+            return f"{mtime_expr} DESC, {stable_tail}"
+        return f"{title_expr} ASC, {path_expr} ASC"
 
     def get_text_novel_sort_order_main(self) -> str:
         return self._normalize_text_novel_sort_order(
@@ -2484,8 +2544,17 @@ class LibraryRepository:
         )
         if kind == COLLECTION_KIND_TEXT_NOVEL and order_by:
             order_clause = self._text_novel_order_clause(order_by, table_alias="b")
+        elif kind == COLLECTION_KIND_BOOK and order_by:
+            normalized = self._normalize_library_collection_sort_order(order_by)
+            if normalized in {"added_asc", "added_desc"}:
+                direction = "ASC" if normalized == "added_asc" else "DESC"
+                stable_tail = self._library_order_clause("title_asc", table_alias="b")
+                order_clause = f"cb.added_at {direction}, {stable_tail}"
+            else:
+                order_clause = self._library_order_clause(normalized, table_alias="b")
         else:
-            order_clause = "cb.added_at DESC"
+            stable_tail = self._library_order_clause("title_asc", table_alias="b")
+            order_clause = f"cb.added_at DESC, {stable_tail}"
         with self._connection() as conn:
             try:
                 rows = conn.execute(

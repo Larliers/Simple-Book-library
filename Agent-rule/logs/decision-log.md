@@ -34,6 +34,14 @@
 {"decision_id":"decision-20260919-001","timestamp":"2026-09-19T18:30:00+08:00","owner":"maintenance-agent","title":"CBZ 读取缓存使用匿名 v2 marker 和同源即时加 30 天 TTL","context":"路径加 mtime token 会在同一 CBZ 修改后遗留完整解压目录，旧 marker 无法识别同源，也没有全局生命周期","options":["只删除同源旧 token","只按全局 TTL 清理","匿名来源哈希识别同源并叠加 30 天 TTL"],"decision":"保留既有 token；marker 写入版本、规范化源路径哈希和 mtime_ns，成功访问刷新 marker mtime；当前缓存成功后立即删除同源旧 token，其他直接子目录超过 30 天再删除","rationale":["保留 token 避免扩大调用方改动","来源哈希支持同源识别且不把私人绝对路径落盘","先确认当前缓存成功再清理，避免提取失败放大影响","直接子目录和逐项容错限制删除边界"],"impact":["兼容旧纯 mtime marker，命中后自动升级","无数据库 schema 或 Bridge API 变化","清理失败不阻断漫画打开"],"followups":["若缓存规模仍不可控，再以运行数据评估容量上限；本轮不引入 LRU 数据库"]}
 ```
 
+## 2026-09-19 - 总书库与书籍合集持久化排序
+
+完整决策记录见 `logs/history/2026-09-19.md`。
+
+```json
+{"decision_id":"decision-20260919-002","timestamp":"2026-09-19T15:57:44+08:00","owner":"library-agent + ui-agent","title":"总书库与书籍合集复用字段排序契约并保持独立默认值","context":"总书库与书籍合集需要获得与 Text Novel 一致的字段排序体验，同时保留各自既有默认顺序和独立持久化状态","options":["两类页面共用一个设置键与同一默认值","独立设置键并共享字段排序实现，合集额外支持加入时间","仅在前端临时排序，不持久化"],"decision":"独立设置键；共享字段排序实现；合集额外支持加入时间","rationale":["总书库默认标题 A-Z，合集默认最新加入，不能共用单一状态","Repository 统一空值、大小写和标题/路径稳定兜底，避免页面间语义漂移","下拉、表头按钮、箭头与 aria-sort 共用后端 sort 状态，重启后可恢复"],"impact":["settings 新增 library_sort_order_main 与 library_sort_order_fav","library payload 与书籍合集详情 payload 新增 sort","setPageSort 支持 library 与 collections，不改变合集总览、Text Novel、Comic 和搜索范围","600px 以下沿用单列响应式 seam 以容纳返回按钮、排序控件和五列表格","兼容性：无 schema 迁移，旧库补默认设置，旧版本忽略新增键","回滚：回退本功能代码即可，遗留设置键可安全保留且无需清库"],"followups":[]}
+```
+
 ## 2026-09-15 - Quick Add 定向回写
 
 完整决策记录见 `logs/history/2026-09-15.md`。

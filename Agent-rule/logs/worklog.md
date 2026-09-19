@@ -625,3 +625,27 @@
 ### 风险与验证
 - 风险较低：仅调整设置页路径行布局与列表滚动策略，不涉及扫描/存储逻辑。
 - 验证标准：窄窗口宽度下 Delete 按钮完整可见且可点击；Library/Comic 两个列表行为一致。
+
+---
+
+## 2026-09-19 - 总书库与书籍合集持久化排序
+
+### 任务
+为总书库和已打开的书籍合集详情增加持久化排序，并复用 Text Novel 的下拉与 List 表头交互。
+
+### 实现内容
+- Repository 新增 `library_sort_order_main`、`library_sort_order_fav`：总书库支持 10 档字段排序，书籍合集再增加加入时间升/降序；非法值分别回退到 `title_asc`、`added_desc`。
+- Bridge 为两类 payload 增加 `sort`，扩展 `setPageSort(page, order)`，保持主页与合集状态独立，并在排序后的资源上继续搜索过滤。
+- Web UI 为总书库显示 10 档下拉、合集详情显示 12 档下拉；List 保留封面列，标题/作者/标签/路径使用原生按钮并同步箭头与 `aria-sort`。
+- 600px 以下为总书库和书籍合集详情启用现有单列响应式布局，保证 390px 下返回按钮、排序下拉及表格无横向溢出。
+- 同步 UI contract、UI agent、module registry 与 `src_construction.md`。
+
+### 影响、兼容性与回滚
+- 影响仅限 Library 主页和已打开的书籍合集详情；合集总览、Text Novel、Comic、搜索范围及 Grid/List 切换规则不变。
+- 无数据库 schema 迁移；旧库自动补默认设置。旧版本会忽略新增设置键，新版本遇到非法值会分别回退到 `title_asc` / `added_desc`。
+- 回滚时可直接回退本功能代码；`app_settings` 中遗留的两个新增键可安全保留，无需清库或数据迁移。
+
+### 验证结果
+- Python 全套：`283` 项通过。
+- Node 行为测试：random recommendations、tag management、shortcuts、quick add 共 4 组通过。
+- Qt WebEngine GUI：Glass/Vaporwave 两套皮肤，Library/合集详情的 1440、749、390px 均通过；下拉数量、选中态、表头双向切换、箭头、`aria-sort`、封面列、返回按钮、持久化和横向溢出均已检查，控制台脚本错误为空。

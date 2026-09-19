@@ -682,6 +682,69 @@ class WebBridgeSmokeTests(unittest.TestCase):
             bridge.setPageSort(PAGE_COMIC, "folder_mtime_desc")
             self.assertEqual(len(interaction_events), 2)
 
+    def test_library_page_sort_updates_main_and_collection_payloads(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="bookhub_library_sort_") as tmp:
+            repo = LibraryRepository(db_path=str(Path(tmp) / "library.db"))
+            for payload in (
+                {
+                    "resource_id": "book-alpha",
+                    "path": "Z:/books/alpha.pdf",
+                    "file_name": "alpha.pdf",
+                    "extension": ".pdf",
+                    "title": "Alpha",
+                    "author": "Zulu",
+                    "tags_json": '["Alpha"]',
+                    "resource_type": "book",
+                },
+                {
+                    "resource_id": "book-beta",
+                    "path": "A:/books/beta.pdf",
+                    "file_name": "beta.pdf",
+                    "extension": ".pdf",
+                    "title": "Beta",
+                    "author": "Alpha",
+                    "tags_json": '["Zulu"]',
+                    "resource_type": "book",
+                },
+            ):
+                repo.upsert_book(payload)
+
+            collection_id = repo.create_collection("Books")
+            for resource_id in ("book-alpha", "book-beta"):
+                book_id = repo.get_book_int_id(resource_id)
+                self.assertIsNotNone(book_id)
+                repo.add_book_to_collection(int(book_id), collection_id)
+
+            bridge = UiBridge(repo, set())
+            interaction_events: list[dict[str, object]] = []
+            bridge.interactionEvent.connect(lambda raw: interaction_events.append(json.loads(raw)))
+            initial_payload = json.loads(bridge.getBootstrap())["pages"][PAGE_LIBRARY]
+            self.assertEqual(initial_payload["sort"], "title_asc")
+            self.assertEqual([item["title"] for item in initial_payload["items"]], ["Alpha", "Beta"])
+
+            main_payload = json.loads(bridge.setPageSort(PAGE_LIBRARY, "author_asc"))
+            self.assertEqual(main_payload["sort"], "author_asc")
+            self.assertEqual([item["title"] for item in main_payload["items"]], ["Beta", "Alpha"])
+            search_payload = json.loads(bridge.search(PAGE_LIBRARY, "books"))
+            self.assertEqual([item["title"] for item in search_payload["items"]], ["Beta", "Alpha"])
+
+            bridge.openCollection(PAGE_COLLECTIONS, collection_id)
+            collection_payload = json.loads(bridge.setPageSort(PAGE_COLLECTIONS, "title_desc"))
+            self.assertEqual(collection_payload["sort"], "title_desc")
+            self.assertEqual([item["title"] for item in collection_payload["items"]], ["Beta", "Alpha"])
+            self.assertEqual(repo.get_library_sort_order_main(), "author_asc")
+            self.assertEqual(repo.get_library_sort_order_fav(), "title_desc")
+            self.assertEqual([event["event"] for event in interaction_events], ["sort", "sort"])
+            self.assertTrue(all(event["resource_id"] is None for event in interaction_events))
+
+            reopened = UiBridge(LibraryRepository(db_path=str(Path(tmp) / "library.db")), set())
+            reopened_main = json.loads(reopened.getBootstrap())["pages"][PAGE_LIBRARY]
+            reopened_collection = json.loads(reopened.openCollection(PAGE_COLLECTIONS, collection_id))
+            self.assertEqual(reopened_main["sort"], "author_asc")
+            self.assertEqual([item["title"] for item in reopened_main["items"]], ["Beta", "Alpha"])
+            self.assertEqual(reopened_collection["sort"], "title_desc")
+            self.assertEqual([item["title"] for item in reopened_collection["items"]], ["Beta", "Alpha"])
+
     def test_nav_items_typed_collections_order(self) -> None:
         pages = [page for page, _, _ in NAV_ITEMS]
         self.assertEqual(

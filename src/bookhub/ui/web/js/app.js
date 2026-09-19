@@ -111,7 +111,12 @@ function isNovelCollectionDetail(page, data) {
   return page === "novel_collections" && Boolean(d && d.mode === "collection_detail" && d.collectionId);
 }
 
-const TEXT_NOVEL_SORT_OPTIONS = [
+function isLibraryCollectionDetail(page, data) {
+  const d = data || currentPageData();
+  return page === "collections" && Boolean(d && d.mode === "collection_detail" && d.collectionId);
+}
+
+const BOOK_FIELD_SORT_OPTIONS = [
   ["file_mtime_desc", "text_novel.sort.file_mtime_desc", "File Date: Newest First"],
   ["file_mtime_asc", "text_novel.sort.file_mtime_asc", "File Date: Oldest First"],
   ["title_asc", "text_novel.sort.title_asc", "Title: A-Z"],
@@ -124,7 +129,13 @@ const TEXT_NOVEL_SORT_OPTIONS = [
   ["path_desc", "text_novel.sort.path_desc", "Path: Z-A"],
 ];
 
-function setTextNovelPageSort(page, order) {
+const BOOK_COLLECTION_SORT_OPTIONS = [
+  ["added_desc", "favorites.sort.added_desc", "Added Time: Newest First"],
+  ["added_asc", "favorites.sort.added_asc", "Added Time: Oldest First"],
+  ...BOOK_FIELD_SORT_OPTIONS,
+];
+
+function setBookPageSort(page, order) {
   if (!State.bridge || !State.bridge.setPageSort) return;
   State.bridge.setPageSort(page, order, (json) => {
     const data = safeParse(json);
@@ -669,7 +680,7 @@ function renderPage(expectedGen) {
   if (data.mode === "collections") { renderCollections(area, data.items); return; }
   if (page === "comic" || data.mode === "comic") { renderComic(area, data, gen); return; }
   if (viewModeForPage(page) === "list") {
-    renderTable(area, data.items, page, isNovelCollectionDetail(page, data) ? data.sort : "");
+    renderTable(area, data.items, page, data.sort || "");
     return;
   }
   renderGrid(area, data.items, page, data.mode === "collection_detail", gen);
@@ -711,7 +722,7 @@ function renderPageTools(page, data) {
     const back = elem("button", "ghost-btn", t("common.back", "Back"));
     back.addEventListener("click", () => executeAction("exit_collection", null));
     tools.appendChild(back);
-    if (data.mode !== "comic" && !isNovelCollectionDetail(page, data)) return;
+    if (data.mode !== "comic" && !isNovelCollectionDetail(page, data) && !isLibraryCollectionDetail(page, data)) return;
   }
   if (data.mode === "collections") {
     const add = elem("button", "primary-btn", t("common.new_list", "New List"));
@@ -747,13 +758,30 @@ function renderPageTools(page, data) {
     const wrap = elem("div", "page-sort");
     wrap.appendChild(elem("span", "small-note", t("text_novel.sort.label", "Sort")));
     const sel = elem("select", "sort-select");
-    TEXT_NOVEL_SORT_OPTIONS.forEach(([value, key, fb]) => {
+    BOOK_FIELD_SORT_OPTIONS.forEach(([value, key, fb]) => {
       const opt = elem("option", null, t(key, fb));
       opt.value = value;
       if ((data.sort || "file_mtime_desc") === value) opt.selected = true;
       sel.appendChild(opt);
     });
-    sel.addEventListener("change", () => setTextNovelPageSort(page, sel.value));
+    sel.addEventListener("change", () => setBookPageSort(page, sel.value));
+    wrap.appendChild(sel);
+    tools.appendChild(wrap);
+  }
+  if (page === "library" || isLibraryCollectionDetail(page, data)) {
+    const inBookCollection = isLibraryCollectionDetail(page, data);
+    const wrap = elem("div", "page-sort");
+    wrap.appendChild(elem("span", "small-note", t("favorites.sort.label", "Sort")));
+    const sel = elem("select", "sort-select");
+    const options = inBookCollection ? BOOK_COLLECTION_SORT_OPTIONS : BOOK_FIELD_SORT_OPTIONS;
+    const defaultOrder = inBookCollection ? "added_desc" : "title_asc";
+    options.forEach(([value, key, fb]) => {
+      const opt = elem("option", null, t(key, fb));
+      opt.value = value;
+      if ((data.sort || defaultOrder) === value) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener("change", () => setBookPageSort(page, sel.value));
     wrap.appendChild(sel);
     tools.appendChild(wrap);
   }
@@ -1285,14 +1313,16 @@ function renderComic(area, data, gen) {
   }
 }
 
-function renderTable(area, items, page, textNovelSort) {
+function renderTable(area, items, page, pageSort) {
   const gen = State.renderGen;
   const topSpacer = elem("div", "virt-spacer-top");
   const table = elem("table", "table");
   const thead = elem("thead");
   const htr = elem("tr");
-  const sortableTextNovel = page === "text_novel" || (page === "novel_collections" && Boolean(textNovelSort));
-  const showCoverColumn = !sortableTextNovel;
+  const sortableBookList = page === "library"
+    || page === "text_novel"
+    || ((page === "collections" || page === "novel_collections") && Boolean(pageSort));
+  const showCoverColumn = page !== "text_novel" && page !== "novel_collections";
   const headers = [
     ["title", t("detail.title", "Title")],
     ["author", t("detail.author", "Author")],
@@ -1301,12 +1331,12 @@ function renderTable(area, items, page, textNovelSort) {
   ];
   if (showCoverColumn) htr.appendChild(elem("th", null, t("detail.cover", "Cover")));
   headers.forEach(([field, label]) => {
-    if (!sortableTextNovel) {
+    if (!sortableBookList) {
       htr.appendChild(elem("th", null, label));
       return;
     }
     const th = elem("th", "sortable-column-header");
-    const currentSort = String(textNovelSort || "file_mtime_desc");
+    const currentSort = String(pageSort || (page === "library" ? "title_asc" : "file_mtime_desc"));
     const ascending = currentSort === `${field}_asc`;
     const descending = currentSort === `${field}_desc`;
     th.setAttribute("aria-sort", ascending ? "ascending" : (descending ? "descending" : "none"));
@@ -1319,7 +1349,7 @@ function renderTable(area, items, page, textNovelSort) {
     }
     button.addEventListener("click", () => {
       const nextOrder = ascending ? `${field}_desc` : `${field}_asc`;
-      setTextNovelPageSort(page, nextOrder);
+      setBookPageSort(page, nextOrder);
     });
     th.appendChild(button);
     htr.appendChild(th);

@@ -445,11 +445,19 @@ class UiBridge(QObject):
 
     # ---- data loading --------------------------------------------------
     def reload_data(self) -> None:
-        library = self._repo.list_books(include_missing=None, exclude_resource_type="text_novel")
-        self._library_records = library
-        self._library_vm.set_resources([self._record_to_item(r) for r in library])
+        self._reload_library_vm()
         self._reload_text_vm()
         self._reload_comic_vms()
+
+    def _reload_library_vm(self) -> None:
+        library_order = self._repo.get_library_sort_order_main()
+        library = self._repo.list_books(
+            include_missing=None,
+            exclude_resource_type="text_novel",
+            order_by=library_order,
+        )
+        self._library_records = library
+        self._library_vm.set_resources([self._record_to_item(r) for r in library])
 
     def _reload_text_vm(self) -> None:
         text_order = self._repo.get_text_novel_sort_order_main()
@@ -621,7 +629,11 @@ class UiBridge(QObject):
     def _page_resources(self, page: str) -> dict[str, Any]:
         if page == PAGE_LIBRARY:
             items = self._library_vm.filtered_resources(include_missing=False)
-            return {"mode": "grid_or_list", "items": [self._item_payload(i) for i in items]}
+            return {
+                "mode": "grid_or_list",
+                "sort": self._repo.get_library_sort_order_main(),
+                "items": [self._item_payload(i) for i in items],
+            }
         if page == PAGE_TEXT:
             items = self._text_vm.filtered_resources(include_missing=False)
             return {
@@ -674,11 +686,10 @@ class UiBridge(QObject):
                     payload["collectionId"] = int(cid)
                     payload["collectionName"] = name
                     return payload
-                collection_order = (
-                    self._repo.get_text_novel_sort_order_fav()
-                    if kind == COLLECTION_KIND_TEXT_NOVEL
-                    else None
-                )
+                if kind == COLLECTION_KIND_TEXT_NOVEL:
+                    collection_order = self._repo.get_text_novel_sort_order_fav()
+                else:
+                    collection_order = self._repo.get_library_sort_order_fav()
                 rows = self._repo.get_books_in_collection(int(cid), order_by=collection_order)
                 payload: dict[str, Any] = {
                     "mode": "collection_detail",
@@ -688,6 +699,8 @@ class UiBridge(QObject):
                 }
                 if kind == COLLECTION_KIND_TEXT_NOVEL:
                     payload["sort"] = self._repo.get_text_novel_sort_order_fav()
+                else:
+                    payload["sort"] = self._repo.get_library_sort_order_fav()
                 return payload
         collections = self._repo.get_all_collections(kind)
         count_key, count_fb = {
@@ -908,7 +921,14 @@ class UiBridge(QObject):
     def setPageSort(self, page: str, order: str) -> str:
         value = str(order or "").strip().lower()
         emit_sort_event = False
-        if page == PAGE_COMIC:
+        if page == PAGE_LIBRARY:
+            self._repo.set_library_sort_order_main(value)
+            self._reload_library_vm()
+            emit_sort_event = True
+        elif page == PAGE_COLLECTIONS:
+            self._repo.set_library_sort_order_fav(value)
+            emit_sort_event = True
+        elif page == PAGE_COMIC:
             self._repo.set_comic_sort_order_main(value)
             self._reload_comic_vms()
         elif page == PAGE_COMIC_COLLECTIONS:
