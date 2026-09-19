@@ -1,6 +1,6 @@
 ﻿# src 结构说明书（精简且完整）
 
-更新时间：2026-09-16
+更新时间：2026-09-19
 
 ## 1. 文档目标
 - 保留字符串式文件路径结构。
@@ -263,6 +263,7 @@ src/
 - `src/bookhub/ui/viewmodels/library_viewmodel.py`：Library/Text/Comic 资源查询过滤、字段前缀搜索（`title:`/`author:`/`tag:`）、普通 query 匹配 title/author/tags/path/info_text、视图模式、搜索建议状态。
 
 ## 4. 当前关键实现（简要）
+- 2026-09-19 远程同步：将 Codex 已提交的 Library 排序 `dde2105` 与当日 P1 修复推送到 `origin/main`；安装包版本仍为 v2.4.0，本轮未触发 Release。
 - 2026-09-19 Library 排序：总书库新增十档字段排序并默认标题 A-Z；书籍合集详情新增同款十档及加入时间新旧两档并默认最新加入。主页/合集分键持久化；List 保留封面列，四个文本表头与下拉共享 `setPageSort`、方向箭头和 `aria-sort`；搜索在排序结果上继续过滤，Text Novel/Comic 不受影响。
 - 2026-09-15 Quick Add 收尾：`scan_depth`/`text_preview_chars` 非法字符串回退默认；真实 WebEngine 补齐图书/小说/漫画创建与加入已有合集，全量测试 270 passed。
 - 2026-09-15 Quick Add 合集无刷新与快捷创建：`setCollectionMembership` 不再触发全页资源广播；三类资源统一通过 `applyCollectionQuickAdd` 批量提交，Repository 单事务校验 kind/ID 并支持 trim+casefold 同名复用。搜索无同名时可直接“创建并添加”；成功只替换目标合集页缓存与当前详情，普通列表保持 DOM 和滚动位置，仅从当前合集移除可见资源时保存滚动后重绘。

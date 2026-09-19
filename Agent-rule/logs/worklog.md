@@ -2,7 +2,7 @@
 
 ## 最新记录
 ```json
-{"log_id":"worklog-20260919-001","timestamp":"2026-09-19T18:30:00+08:00","actor":"maintenance-agent","task":"修复并归档 BUG-6、BUG-8、BUG-9","changes":["Qt slot 整型设置统一交给 Repository normalizer","修复 Vaporwave 五个字体资源路径","CBZ v2 匿名 marker 与同源即时/30 天 TTL 两层淘汰","同步主清单、结构说明和日志"],"affected_files":["src/bookhub/ui/web_window.py","src/bookhub/ui/web/css/skins/vaporwave/fonts.css","src/bookhub/library/formats/cbz.py","src/tests/test_repository_orphan_cleanup.py","src/tests/test_web_bridge_smoke.py","src/tests/test_new_formats_import.py","bugissue.md","src_construction.md","Agent-rule/logs/history/2026-09-19.md","Agent-rule/logs/evidence/2026-09-19-p1-bug-fixes.md","Agent-rule/logs/decision-log.md","Agent-rule/logs/worklog.md"],"outputs":["BUG-6/8/9 已归档，主待办剩 8 项","全量 279 passed, 54 subtests passed","四组 Node 与 JS 语法检查通过","双皮肤三视口 GUI 通过"],"risks":["390px Library 保持既有固定双栏压缩布局","BUG-7 未改，仍需真实负载基准"],"next_actions":["按 bugissue.md 处理低-3 与失效范围优化"]}
+{"log_id":"worklog-20260919-003","timestamp":"2026-09-19T16:20:00+08:00","actor":"maintenance-agent","task":"根据今日 Codex 对话将总书库排序功能推送到 origin/main","changes":["确认工作树干净且 feat 已由 Codex 提交为 dde2105","补齐发布留档并将本地领先提交推送到 origin/main"],"affected_files":["Agent-rule/logs/history/2026-09-19.md","Agent-rule/logs/worklog.md","src_construction.md"],"outputs":["origin/main 包含 dde2105 feat: add persistent library sorting","顺带发布当日 P1：c060b72 / 2193f1d / 78e7885 / 31395c5"],"risks":["未触发 Release，安装包仍停在 v2.4.0","不能单独推送 feat 而不带上其之前的 4 个 P1 提交"],"next_actions":["等待用户确认是否 workflow_dispatch 打新 Release"]}
 ```
 
 ## 记录规则
@@ -23,6 +23,14 @@
   "risks": ["string"],
   "next_actions": ["string"]
 }
+```
+
+## 2026-09-19 - 发布总书库排序到 origin
+
+完整记录见 `logs/history/2026-09-19.md`。今日 Codex 会话「为总书库增加排列功能」已由 Codex 提交 `dde2105`，本轮只做发布与留档。
+
+```json
+{"log_id":"worklog-20260919-003","timestamp":"2026-09-19T16:20:00+08:00","actor":"maintenance-agent","task":"根据今日 Codex 对话将总书库排序功能推送到 origin/main","changes":["确认工作树干净且 feat 已由 Codex 提交为 dde2105","补齐发布留档并将本地领先提交推送到 origin/main"],"affected_files":["Agent-rule/logs/history/2026-09-19.md","Agent-rule/logs/worklog.md","src_construction.md"],"outputs":["origin/main 包含 dde2105 feat: add persistent library sorting","顺带发布当日 P1：c060b72 / 2193f1d / 78e7885 / 31395c5"],"risks":["未触发 Release，安装包仍停在 v2.4.0","不能单独推送 feat 而不带上其之前的 4 个 P1 提交"],"next_actions":["等待用户确认是否 workflow_dispatch 打新 Release"]}
 ```
 
 ## 2026-09-19 - P1 三项缺陷修复
