@@ -11,7 +11,15 @@
 
 ## 2. 字符串式文件路径结构
 
-### 2.1 UI 设计原型（Dev_Document，非运行时）
+### 2.1 对外文档资产
+
+```text
+docs/assets/screenshots/
+└─ simple-book-library-glass-1920x1080.png  # 双语 README 共用的真实 Glass 日间界面主图；1920×1080，匿名演示数据
+```
+
+### 2.2 UI 设计原型（Dev_Document，非运行时）
+
 ```text
 Simple-Book-library-Dev_Document/UI/
 ├─ 新UI/
@@ -32,7 +40,8 @@ Simple-Book-library-Dev_Document/UI/
 └─ 旧UI-2.0/                         # 旧版 HTML/PNG 史料
 ```
 
-### 2.2 运行时源码（src）
+### 2.3 运行时源码（src）
+
 ```text
 src/
 ├─ main.py

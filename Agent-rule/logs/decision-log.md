@@ -2,7 +2,7 @@
 
 ## 最新决策
 ```json
-{"decision_id":"decision-20260920-001","timestamp":"2026-09-20T09:30:00+08:00","owner":"library-agent + ui-agent","title":"批量 Quick Add 使用单事务命令与定向缓存响应","context":"逐项调用会产生部分成功、重复刷新和来源页丢失风险","options":["前端循环单项接口","Bridge 聚合但 Repository 逐项提交","Repository 单事务接收完整意图并返回定向缓存"],"decision":"选择 Repository 单事务命令；全部校验后再写入，任一 SQLite 错误整体回滚；成功不广播 resourcesChanged","rationale":["事务边界与一次提交一致","真实 sourcePage 避免跨类误写","定向缓存保持页面和滚动位置"],"impact":["新增 apply_batch_quick_add 与 applyBatchQuickAdd","不新增表或依赖","旧单项接口保持兼容"],"followups":[]}
+{"decision_id":"decision-20260920-002","timestamp":"2026-09-20T15:20:05+08:00","owner":"maintenance-agent + ui-agent","title":"README 采用稳定版/main 双口径与匿名真实运行截图","context":"稳定版下载能力、main 源码进展和公开截图隐私需要同时准确表达","options":["仅改 README","新增 documentation agent/contract","在 shared-rules 增加最小文档规则"],"decision":"选择最小规则补丁；README 分开稳定版与 main，主图使用真实 Qt WebEngine 和隔离匿名数据","rationale":["避免向下载用户承诺未发布能力","保留 main 进展透明度","真实匿名截图兼顾可信度、隐私和版权边界"],"impact":["规则版本升至 v0.1.1","双语 README 保持事实与版本标记同步","业务接口和 registry 不变"],"followups":["下一次 Release 后同步版本口径和截图"]}
 ```
 
 ## 决策记录规则
@@ -52,6 +52,36 @@
     "前端失败保留弹窗和选择，成功清选但不重绘当前结果视图"
   ],
   "followups": []
+}
+```
+
+```json
+{
+  "decision_id": "decision-20260920-002",
+  "timestamp": "2026-09-20T15:20:05+08:00",
+  "owner": "maintenance-agent + ui-agent",
+  "title": "README 采用稳定版/main 双口径与匿名真实运行截图",
+  "context": "现有 README 首屏缺少当前 UI 证据，版本标题仍停留在 v2.1.0；main 已有 v2.4.0 之后的功能，若与 Release 混写会误导下载用户。现有规则也没有约束双语同步、版本标记和公开截图隐私。",
+  "options": [
+    "A: 仅改写 README，不增加长期维护规则",
+    "B: 新增独立 documentation agent 与 contract",
+    "C: 在 shared-rules 中增加最小对外文档规则，保持业务 agent/contract/registry 不变"
+  ],
+  "decision": "选择 C；README 明确分开稳定版 v2.4.0 与 current main，主截图使用真实 Qt WebEngine 和隔离匿名数据",
+  "rationale": [
+    "用户下载入口需要只承诺已发布能力，main 新功能仍可透明展示",
+    "真实运行截图比静态设计稿更能证明当前界面，同时隔离数据库和生成封面避免泄露私人书库或版权内容",
+    "文档维护是跨模块约束，不需要创造第二套 agent/contract 或修改运行时 registry"
+  ],
+  "impact": [
+    "规则版本由 v0.1.0 升至 v0.1.1；两份 README 必须同步事实并保留发布工作流版本标记",
+    "新增 docs/assets/screenshots 公开资产路径，src_construction 同步当前结构",
+    "无运行时、数据库、CLI、模块合同或依赖变化；远端 GitHub Description/Topics 不在本次写入范围"
+  ],
+  "followups": [
+    "下一次 Release 前将已验证的 main 能力移入稳定版描述并重新采集版本截图",
+    "仓库管理员可手动更新 GitHub Description 与 Topics"
+  ]
 }
 ```
 

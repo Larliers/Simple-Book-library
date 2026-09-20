@@ -1,91 +1,99 @@
-# Simple Book Library
+# Simple Book Library — Local Ebook & Comic Manager for Windows
 
-**v2.4.0** · [English](README.en.md) | [中文](README.md) · [GitHub Releases](https://github.com/Larliers/Simple-Book-library/releases)
+**v2.4.0** · **Windows 10 / 11** · **MIT License** · [中文](README.md)
 
-A local Windows desktop library for your personal collection. Scan PDF / EPUB / HTML / Markdown / FB2 / DOCX books, comic image folders and CBZ archives, and TXT novels into one library, browse cover grids, and open items with your system default apps. The UI is a **Qt WebEngine** glassmorphism SPA with switchable **Glass** and **Vaporwave** skins.
+Simple Book Library is an offline personal library organizer for PDFs, EPUBs, documents, CBZ comics, comic image folders, and TXT novels.
 
-## What's new in v2.1.0
+It catalogs local files in one desktop library while letting you keep the reading apps you already use.
 
-- **Settings → General → About**: shows the current version and checks GitHub for the latest release; prompts you to open the download page when an update is available
-- **Dual UI skins**: switch between Glass and Vaporwave under Settings → Appearance (restart required); Vaporwave includes day/night variants and bundled local woff2 fonts
-- **Improved CBZ open**: extracts all image pages to a read cache, then opens the first page in your default image viewer
-- **Vaporwave layout fix**: production DOM aligned with the Glass skin layout; Settings, modals, toasts, and Text Rules render correctly
+**[Download the latest stable Windows package](https://github.com/Larliers/Simple-Book-library/releases/latest)**
 
-## Who is this for?
+![Simple Book Library Glass interface at 1920×1080 with a local ebook cover grid, sorting controls, and resource details](docs/assets/screenshots/simple-book-library-glass-1920x1080.png)
 
-- One place for local PDFs, EPUBs, HTML, Markdown, FB2, DOCX, comic folders/CBZ, and TXT novels
-- Folder-based scanning instead of adding files one by one
-- Tags, typed collections (books / novels / comics), and TXT import rules
-- Large libraries with incremental scans, configurable fingerprint strategies, and viewport virtualization
+_Captured from the real Qt WebEngine interface with anonymous demo records and programmatically generated covers._
 
-## Features
+## Who is it for?
 
-| Section | Formats | What you can do |
-|---------|---------|-----------------|
-| **Library** | PDF, EPUB, HTML/HTM, Markdown, FB2/FB2.ZIP, DOCX | Grid / list view, detail pane, tags, search |
-| **Comic** | **Leaf image folders** and **CBZ** | One folder or CBZ = one volume; waterfall or paginated layout |
-| **Text Novel** | TXT (auto-detects encoding) | Persistent grid/list view, text preview, custom import rule chains; grid cards show cover and title |
-| **Book Collections** | Library books | Named book lists |
-| **Novel Collections** | Text novels | Named novel lists |
-| **Comic Collections** | Comics | Named comic lists |
-| **Settings** | — | Paths & Scan, appearance, thumbnail cache, error logs, update check |
+- Readers with local PDFs, EPUBs, DOCX files, or Markdown books spread across multiple folders.
+- Comic collectors who want a local CBZ comic library or an index of image-based comic folders.
+- TXT novel readers who need encoding detection, covers, previews, and configurable import rules.
+- Anyone who wants an offline ebook manager without cloud uploads, accounts, or a built-in reader.
 
-### Import & scan
+## Core features
 
-1. Set Library / Comic / Text roots under **Settings → Paths & Scan**.
-2. Run a scan to recurse into those roots (**folder-level import only**).
-3. Metadata extraction and cover thumbnails are generated automatically.
+### One library for three local collections
 
-Notes:
+- **Library**: PDF, EPUB, HTML, Markdown, FB2, and DOCX with grid/list views, details, search, tags, and covers.
+- **Text Novel**: TXT with UTF-8, GBK, and other encoding detection, plus metadata rules for filenames and body text.
+- **Comic**: leaf image folders and CBZ archives, with waterfall or paginated browsing and external viewer support.
 
-- **Fingerprint strategy** (Settings → General): new installs default to **Quick** (first 4MB); Fast (size+mtime only, may miss content-only changes) or Strict (full SHA256) are optional. Unchanged Library/Text files are skipped on rescan.
-- **Per-directory scan strategy** (optional): assign a strategy per root when enabled; global strategy applies when disabled; saved overrides are kept.
-- **Comic scan**: directory snapshot (fast) or full rescan each time (strict); same-title conflicts: skip incoming / keep both / prefer newer.
-- **TXT encoding preference**: Simplified first / Traditional first / Auto; text rules extract metadata from filename or body.
-- **TXT sidecar covers**: place a same-stem WebP/PNG/JPG/JPEG beside the TXT file. Priority is WebP → PNG → JPG → JPEG; scans cache a thumbnail while manually edited covers remain authoritative.
-- **Thumbnail cache**: default `img_preview/`; relocate under Settings (migrate / rewire index / switch only), and clear or regenerate Library, Comic, and Text Novel thumbnails independently.
-- Missing sources are logged and removed; same name+extension under different paths is skipped and logged.
+### Built for personal libraries that keep growing
 
-### Browse & open
+- Scan one or more root folders instead of entering files individually.
+- Skip unchanged content with incremental scanning and Fast, Quick, or Strict fingerprint strategies.
+- Keep large cover grids and lists responsive with viewport virtualization.
+- Organize books, novels, and comics in separate typed collections.
 
-- **Single click**: select and show details.
-- **Double click**: open with the system default app.
-- Search: Library supports `title:` / `author:` / `tag:` prefixes.
-- Large lists use viewport virtualization; grid columns and buffer screens are configurable.
+### Local-first by design
 
-### Text rules (TXT)
+- The database, cover cache, and scan logs stay on your computer.
+- Double-click an item to open it with the Windows default app you already trust.
+- Switch between offline Glass and Vaporwave skins, each with day, night, and automatic themes.
 
-Open **Rules** next to a text root under Settings → Paths & Scan to edit rule chains with live preview, templates, and common regex helpers.
+## Stable release vs. main
 
-### Appearance
+| Status | Included capabilities |
+|--------|-----------------------|
+| **Stable v2.4.0** | Three resource scanners and collection types, covers and thumbnails, search, TXT import rules, random recommendations, configurable shortcuts, Text Novel grid/list sorting, and Glass/Vaporwave skins |
+| **Current main** | Adds a standalone tag manager, in-place Quick Add for all three resource types, persistent Library/book-collection sorting, multi-selection and batch collection actions, plus later fixes |
 
-- **Glass**: default glassmorphism skin.
-- **Vaporwave**: neon vaporwave skin (restart required after switching).
-- **Day/night theme**: auto by local time or manual.
+The Releases page contains the stable build. Features listed under main remain source-only until a later Release completes validation; choose the stable package if you simply want to use the app.
 
-### Where data lives
+## Get started in three steps
 
-| Path | Purpose |
-|------|---------|
-| **Development** | |
-| `src/sql/library.db` | SQLite library database |
-| `img_preview/` (default) | Cover thumbnail cache |
-| `src/Scan_error_logs/` | Scan conflicts, missing-file removals, etc. |
-| `src/fonts/` | Optional custom fonts |
-| **Packaged app (next to main.exe)** | |
-| `sql/library.db` | SQLite library database |
-| `img_preview/` | Cover thumbnail cache |
-| `Scan_error_logs/` | Scan conflicts, missing-file removals, etc. |
+1. Download the `win64.zip` from [GitHub Releases](https://github.com/Larliers/Simple-Book-library/releases/latest), extract it, and double-click `main.exe`.
+2. Open **Settings → Paths & Scan** and add roots for books, comics, or TXT novels.
+3. Select **Scan** to build the library. Click for details or double-click to open a resource in its default app.
 
-When upgrading, keep those three user-data folders and replace only `main.exe` and bundled program files.
+> Imports are folder-based; individual files cannot be dragged into the window. The first scan of a large collection may take time while metadata and covers are generated.
 
-## Requirements
+## Supported formats
 
-- **OS**: Windows 10 / 11
-- **Python**: **3.10.6** recommended (3.10+; matches locked deps)
-- **UI language**: Simplified Chinese by default (some Settings strings fall back to English)
+| Resource | Supported content | Browse and organize |
+|----------|-------------------|---------------------|
+| **Ebooks and documents** | PDF, EPUB, HTML/HTM, Markdown, FB2/FB2.ZIP, DOCX | Grid/list views, details, tags, search, book collections |
+| **Text novels** | TXT | Encoding detection, text preview, same-stem sidecar covers, import rules, novel collections |
+| **Comics** | Leaf folders containing JPG/JPEG/PNG/WebP/GIF/BMP/TIFF images, plus CBZ | Waterfall/pagination, covers, comic collections, external opening |
 
-## Getting started
+### Search, covers, and TXT rules
+
+- Library search understands `title:`, `author:`, and `tag:` prefixes.
+- PDFs prefer an embedded cover and fall back to a title placeholder when no usable image exists.
+- TXT files can use a same-stem WebP, PNG, JPG, or JPEG cover; manually selected covers remain authoritative.
+- Edit TXT rule chains and preview extracted metadata under **Settings → Paths & Scan → Rules**.
+
+## Local data and privacy
+
+The core workflow does not require an online service. Simple Book Library does not upload book content or fetch online catalogs. The update checker contacts GitHub Release information only when you invoke it.
+
+| Run mode | Data location |
+|----------|---------------|
+| **Packaged app** | `sql/library.db`, `img_preview/`, and `Scan_error_logs/` beside `main.exe` |
+| **From source** | `src/sql/library.db`, root-level `img_preview/`, and `src/Scan_error_logs/` |
+
+When upgrading a packaged copy, keep those three user-data directories and replace only `main.exe` and the bundled program files.
+
+## Limitations
+
+- This project is a local resource manager, not a built-in PDF, EPUB, TXT, or comic reader.
+- It does not provide cloud sync, online content scraping, user accounts, or cross-device libraries.
+- Comics support image folders and CBZ, but not CBR or other archive formats.
+- Opening resources depends on Windows file associations and your installed reader or image viewer.
+- Scan and thumbnail jobs are mutually exclusive. Without PyMuPDF, PDFs remain indexable but metadata and covers may be incomplete.
+
+## Run from source
+
+Source development requires Windows 10/11 and Python 3.10+. Python 3.10.6 is recommended to match the locked environment.
 
 ```powershell
 python -m venv .venv
@@ -94,46 +102,26 @@ pip install -r requirements.txt
 .\.venv\Scripts\pythonw.exe src\main.py
 ```
 
-## Build an exe
-
-```powershell
-.\scripts\build_nuitka.ps1          # standalone folder (recommended)
-.\scripts\build_nuitka.ps1 -Onefile # single-file exe
-.\scripts\pack_release.ps1          # rename, seed data dirs, create zip
-```
-
-Output: `build/nuitka/main.dist/` (raw build); `build/release/Simple-Book-library-v{version}-win64.zip` (release artifact). The first Nuitka build downloads MinGW automatically and can take a while.
-
-## One-click Release (GitHub Actions)
-
-1. Open **Actions → Release → Run workflow**
-2. Choose bump type (`patch` / `minor` / `major`)
-3. The workflow bumps the version, commits, tags, builds with Nuitka, packs the zip, and creates a GitHub Release
-
-Release tags (e.g. `v2.1.2`) must match `APP_VERSION` (e.g. `2.1.2`) or the in-app update check will report incorrectly.
-
-## Developer checks
+### Developer checks and packaging
 
 ```powershell
 pip install -r requirements-dev.txt
 $env:PYTHONPATH="src"
 .\.venv\Scripts\python.exe -m pytest src/tests -q
 .\.venv\Scripts\python.exe src\main.py --check-pymupdf
+
+.\scripts\build_nuitka.ps1
+.\scripts\pack_release.ps1
 ```
 
-## Limitations
+See [`src_construction.md`](src_construction.md) for the source map. Historical UI references live under `Simple-Book-library-Dev_Document/UI/`.
 
-- Import is **scan-from-configured-roots only**; single-file drag-and-drop is not supported.
-- Comics support **image folders** and **CBZ**; CBR and other archives are not supported.
-- Opening files depends on OS file associations.
-- Scan and thumbnail jobs are mutually exclusive; first-time scans of large libraries can take a while.
-- Without PyMuPDF, PDFs can still be indexed but metadata and covers may be incomplete.
+## Get help
 
-## Further reading
+For scan, cover, encoding, or interface problems, open a [GitHub Issue](https://github.com/Larliers/Simple-Book-library/issues) with reproduction steps, your Windows version, and relevant errors.
 
-- Source layout: [`src_construction.md`](src_construction.md)
-- UI design references: `Simple-Book-library-Dev_Document/UI/`
+Do not upload private books, databases, or complete logs containing personal paths.
 
 ## License
 
-See notices in the repository. Third-party packages follow their own licenses.
+Simple Book Library is available under the [MIT License](LICENSE). Third-party dependencies and fonts retain their respective licenses.

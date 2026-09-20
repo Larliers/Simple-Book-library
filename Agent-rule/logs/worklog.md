@@ -701,3 +701,28 @@
 - Python 全套：`283` 项通过。
 - Node 行为测试：random recommendations、tag management、shortcuts、quick add 共 4 组通过。
 - Qt WebEngine GUI：Glass/Vaporwave 两套皮肤，Library/合集详情的 1440、749、390px 均通过；下拉数量、选中态、表头双向切换、箭头、`aria-sort`、封面列、返回按钮、持久化和横向溢出均已检查，控制台脚本错误为空。
+
+---
+
+## 2026-09-20 - 双语 README 用户向重写与公开主截图
+
+### 任务
+将中英文 README 重组为面向个人藏书用户的产品入口，并用匿名演示数据生成当前 Web UI 的 1920×1080 Glass 主截图。
+
+### 实现内容
+- `README.md` / `README.en.md` 改为“定位与下载 → 截图 → 目标用户 → 核心能力 → 稳定版/main → 上手 → 格式 → 隐私与限制 → 开发与帮助”的用户向顺序。
+- 保留两份 README 各一个 `**v2.4.0**` 标记，稳定版与 main 未发布能力分开描述，避免 Release 安装包承诺源码独有功能。
+- 新增 `docs/assets/screenshots/simple-book-library-glass-1920x1080.png`：真实 Qt WebEngine、Glass 日间、隔离临时数据库、虚构书名与程序生成封面。
+- `shared-rules.md` 增加对外文档维护规则，`project-context.md` 规则版本升级为 `v0.1.1`；业务 agent、contract 与 registry 不变。
+- `src_construction.md` 插入公开文档资产路径，保持当前事实结构。
+
+### 影响、兼容性与回滚
+- 仅修改公开文档、截图资产和规则说明，不改变运行时代码、数据库、CLI、模块接口或依赖。
+- 现有 Release workflow 仍可通过粗体版本标记同步两个 README。
+- 回滚时可恢复两份 README 与规则文档并删除新增截图；用户数据和运行时无需迁移。
+
+### 验证结果
+- 远端 tags、本地 tag 与 `APP_VERSION` 均确认最新稳定版本为 `v2.4.0`。
+- 截图尺寸为 1920×1080、492557 bytes；真实页面 `scrollWidth == clientWidth == 1920`，脚本错误为空。
+- 截图正文仅出现 `C:\DemoLibrary\...` 演示路径，不含用户目录或工作区路径；人工目检封面、详情、排序与导航清晰可见。
+- 中英文 README 本地链接完整，各有一个 Release workflow 可识别的版本标记；`git diff --check` 通过。
