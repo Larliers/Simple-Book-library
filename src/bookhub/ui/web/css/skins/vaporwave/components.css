@@ -258,7 +258,7 @@
 .cover-grid.with-meta { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 
 .book-card {
-  min-width: 0; border-radius: var(--radius); padding: 0; background: transparent; border: 0; cursor: pointer;
+  position: relative; min-width: 0; border-radius: var(--radius); padding: 0; background: transparent; border: 0; cursor: pointer;
 }
 .cover-wrap { position: relative; width: 100%; }
 .format-badge {
@@ -281,6 +281,13 @@
 }
 .book-card:hover .cover { transform: rotate(-1deg) translateY(-3px); box-shadow: 4px 4px 0 var(--vw-hard-shadow), 0 0 14px rgba(255, 113, 206, 0.25); }
 .book-card.selected .cover { outline-color: var(--vw-cyan); box-shadow: 4px 4px 0 var(--vw-hard-shadow), 0 0 14px rgba(1, 205, 254, 0.35); }
+.book-card.selected .cover-fallback { outline-color: var(--vw-cyan); }
+.book-card.selected::after {
+  content: "✓"; position: absolute; top: 7px; right: 7px; z-index: 3;
+  display: grid; place-items: center; width: 24px; height: 24px; border-radius: 2px;
+  color: #090616; background: var(--vw-cyan); border: 2px solid var(--vw-hard-shadow);
+  box-shadow: 3px 3px 0 var(--vw-hard-shadow), 0 0 10px rgba(1, 205, 254, 0.45); font-weight: 900;
+}
 .book-card:focus-visible { outline: none; }
 .book-card:focus-visible .cover,
 .book-card:focus-visible .cover-fallback { outline: 2px solid var(--vw-cyan); outline-offset: 4px; }
@@ -555,6 +562,24 @@
 }
 .list-item:hover { background: var(--hover-bg); }
 .list-item-action { cursor: default; }
+.batch-quick-add-modal { width: min(920px, calc(100vw - 48px)); max-width: 100%; }
+.batch-selection-summary { display: grid; gap: 8px; }
+.batch-selection-actions { flex-wrap: wrap; }
+.batch-collection-groups {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 12px;
+}
+.batch-collection-group {
+  min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--line-dark);
+  border-radius: var(--radius); background: rgba(12, 8, 30, 0.38);
+}
+.batch-collection-list { max-height: 220px; overflow: auto; }
+.batch-collection-option { width: 100%; text-align: left; cursor: pointer; }
+.batch-collection-option.selected {
+  border-color: var(--vw-cyan); background: rgba(1, 205, 254, 0.14); color: var(--vw-cyan);
+  box-shadow: inset 3px 0 0 var(--vw-cyan);
+}
+.batch-pending-tags, .batch-pending-collections { min-height: 8px; margin-top: 8px; }
+.batch-quick-add-modal[data-submitting="true"] { cursor: progress; }
 .list-action-btn {
   min-height: 28px; padding: 0 10px; flex: 0 0 auto; font-weight: 650;
   background: transparent; border-color: transparent;

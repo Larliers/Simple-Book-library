@@ -2,7 +2,51 @@
 
 ## 最新记录
 ```json
-{"log_id":"worklog-20260919-003","timestamp":"2026-09-19T16:20:00+08:00","actor":"maintenance-agent","task":"根据今日 Codex 对话将总书库排序功能推送到 origin/main","changes":["确认工作树干净且 feat 已由 Codex 提交为 dde2105","补齐发布留档并将本地领先提交推送到 origin/main"],"affected_files":["Agent-rule/logs/history/2026-09-19.md","Agent-rule/logs/worklog.md","src_construction.md"],"outputs":["origin/main 包含 dde2105 feat: add persistent library sorting","顺带发布当日 P1：c060b72 / 2193f1d / 78e7885 / 31395c5"],"risks":["未触发 Release，安装包仍停在 v2.4.0","不能单独推送 feat 而不带上其之前的 4 个 P1 提交"],"next_actions":["等待用户确认是否 workflow_dispatch 打新 Release"]}
+{"log_id":"worklog-20260920-001","timestamp":"2026-09-20T09:30:00+08:00","actor":"library-agent + ui-agent","task":"为图书、文本小说和漫画增加跨视图多选及多合集、多 Tag 批量添加","changes":["Repository 单事务批量写入","Bridge 定向缓存响应","Web UI 多选与批量弹窗","双皮肤和文案/契约同步"],"affected_files":["src/bookhub/library/repository.py","src/bookhub/ui/web_bridge.py","src/bookhub/ui/web/js/app.js","src/tests/js/test_multi_select.js"],"outputs":["292 passed, 70 subtests passed","五组 Node 行为测试通过","双皮肤三视口 Qt WebEngine 验收通过"],"risks":["仅实现批量添加，不含批量移除或删除"],"next_actions":[]}
+```
+
+## 2026-09-20 - 三类资源多选与原子批量 Quick Add
+
+```json
+{
+  "log_id": "worklog-20260920-001",
+  "timestamp": "2026-09-20T09:30:00+08:00",
+  "actor": "library-agent + ui-agent",
+  "task": "为图书、文本小说和漫画增加跨视图多选及多合集、多 Tag 批量添加",
+  "changes": [
+    "Repository 新增混合资源单事务 apply_batch_quick_add，先全量校验再创建合集、写成员和 Tag",
+    "Bridge 新增严格 applyBatchQuickAdd JSON interface，返回定向来源页/合集页缓存和 Tag 失效标记",
+    "Web UI 新增完整有序数据多选状态机、键盘/右键/ARIA 交互、批量详情面板与分 kind 弹窗",
+    "Glass/Vaporwave 补齐选中标记、批量分组和窄窗口样式",
+    "同步中英文文案、UI agent/contract、结构说明、行为测试和 GUI 证据"
+  ],
+  "affected_files": [
+    "src/bookhub/library/repository.py",
+    "src/bookhub/ui/web_bridge.py",
+    "src/bookhub/ui/web/js/app.js",
+    "src/bookhub/ui/web/css/skins/glass/components.css",
+    "src/bookhub/ui/web/css/skins/vaporwave/components.css",
+    "src/bookhub/i18n/locales/zh-cn.json",
+    "src/tests/test_collection_kinds.py",
+    "src/tests/test_web_bridge_smoke.py",
+    "src/tests/js/test_quick_add.js",
+    "src/tests/js/test_multi_select.js",
+    "Agent-rule/agents/ui-agent.md",
+    "Agent-rule/contracts/ui-contract.md",
+    "src_construction.md"
+  ],
+  "outputs": [
+    "Python 全量 292 passed, 70 subtests passed",
+    "五组 Node 行为测试和两组 JS 语法检查通过",
+    "Glass/Vaporwave 在 1400、1120、520px 的 Qt WebEngine 验收通过",
+    "Agent-rule/logs/evidence/2026-09-20-batch-quick-add-gui.md"
+  ],
+  "risks": [
+    "本次只增加批量添加；批量移除、删除、打开和封面编辑仍保持单项语义",
+    "窄窗口批量弹窗依赖内部纵向滚动查看全部分组和提交按钮"
+  ],
+  "next_actions": []
+}
 ```
 
 ## 记录规则

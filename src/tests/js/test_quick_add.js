@@ -65,9 +65,11 @@ class FakeNode {
 const nodes = {
   overlay: new FakeNode(),
   contentArea: new FakeNode("main"),
+  contextMenu: new FakeNode(),
   toastStack: new FakeNode(),
 };
 nodes.overlay.classList.add("hidden");
+nodes.contextMenu.classList.add("hidden");
 
 const document = {
   activeElement: null,
@@ -318,6 +320,124 @@ assert.deepStrictEqual(calls.at(-1), ["library", "book-1", {
 assert.strictEqual(State.scrollPos.collections, 777);
 assert.strictEqual(scheduledRenders, 1);
 assert.strictEqual(detailClears, 1);
+
+closeModal();
+State.currentPage = "tag_manager";
+State.pages = {
+  library: { mode: "grid_or_list", items: [] },
+  text_novel: { mode: "grid_or_list", items: [] },
+  comic: { mode: "comic", items: [] },
+  collections: { mode: "collections", items: [] },
+  novel_collections: { mode: "collections", items: [] },
+  comic_collections: { mode: "collections", items: [] },
+};
+const batchRefs = [
+  { sourcePage: "library", id: "book-1" },
+  { sourcePage: "text_novel", id: "novel-1" },
+  { sourcePage: "comic", id: "comic-1" },
+];
+configureResourceSelection("tag_manager", { mode: "tag_detail", tag: "Mixed" }, batchRefs);
+selectAllResourcesInScope();
+let batchPayload = null;
+State.bridge.getTags = (callback) => callback(JSON.stringify(["Recent Batch"]));
+State.bridge.getCollections = (page, callback) => callback(JSON.stringify(
+  page === "library" ? [{ id: 7, name: "Existing Books", nameKey: "existing books" }] : []
+));
+State.bridge.applyBatchQuickAdd = (payloadJson, callback) => {
+  batchPayload = JSON.parse(payloadJson);
+  callback(JSON.stringify({
+    ok: true,
+    summary: { resourceCount: 3, collectionLinksAdded: 4, tagsAdded: 6 },
+    createdCollections: { book: [], text_novel: [], comic: [] },
+    resourceTags: batchRefs.map((ref) => ({ sourcePage: ref.sourcePage, resourceId: ref.id, tags: ["Tag One"] })),
+    sourcePages: State.pages,
+    collectionPages: {},
+    tagCatalogInvalidated: true,
+  }));
+};
+document.getElementById("contentArea").scrollTop = 909;
+openBatchQuickAddModal(selectedResourceRefs());
+const batchOverlay = document.getElementById("overlay");
+const tagInput = walk(batchOverlay, (node) => node.className.includes("batch-tag-input"))[0];
+tagInput.value = "Tag One";
+tagInput.dispatch("keydown", { key: "Enter" });
+const existingBooks = walk(
+  batchOverlay,
+  (node) => node.tagName === "BUTTON" && node.textContent === "Existing Books"
+)[0];
+existingBooks.dispatch("click");
+const comicSearch = walk(
+  batchOverlay,
+  (node) => node.className.includes("batch-collection-search") && node.dataset.kind === "comic"
+)[0];
+comicSearch.value = "New Comics";
+comicSearch.dispatch("keydown", { key: "Enter" });
+walk(
+  batchOverlay,
+  (node) => node.tagName === "BUTTON" && node.className.includes("batch-submit")
+)[0].dispatch("click");
+assert.deepStrictEqual(batchPayload, {
+  resources: [
+    { sourcePage: "library", resourceId: "book-1" },
+    { sourcePage: "text_novel", resourceId: "novel-1" },
+    { sourcePage: "comic", resourceId: "comic-1" },
+  ],
+  collections: {
+    book: { addIds: [7], createNames: [] },
+    text_novel: { addIds: [], createNames: [] },
+    comic: { addIds: [], createNames: ["New Comics"] },
+  },
+  tags: ["Tag One"],
+});
+assert.strictEqual(batchOverlay.classList.contains("hidden"), true);
+assert.strictEqual(selectedResourceRefs().length, 0);
+assert.strictEqual(document.getElementById("contentArea").scrollTop, 909);
+
+configureResourceSelection("tag_manager", { mode: "tag_detail", tag: "Mixed" }, batchRefs);
+selectAllResourcesInScope();
+State.bridge.applyBatchQuickAdd = (payloadJson, callback) => callback(JSON.stringify({
+  ok: false, error: "storage_error",
+}));
+openBatchQuickAddModal(selectedResourceRefs());
+const failedBatchOverlay = document.getElementById("overlay");
+const failedTagInput = walk(failedBatchOverlay, (node) => node.className.includes("batch-tag-input"))[0];
+failedTagInput.value = "Retry Tag";
+failedTagInput.dispatch("keydown", { key: "Enter" });
+walk(
+  failedBatchOverlay,
+  (node) => node.tagName === "BUTTON" && node.className.includes("batch-submit")
+)[0].dispatch("click");
+assert.strictEqual(failedBatchOverlay.classList.contains("hidden"), false);
+assert.strictEqual(selectedResourceRefs().length, 3);
+closeModal();
+
+State.currentPage = "library";
+State.pages.library = {
+  mode: "grid_or_list",
+  items: [
+    { id: "book-1", title: "Book One" },
+    { id: "book-2", title: "Book Two" },
+  ],
+};
+const contextRefs = [
+  { sourcePage: "library", id: "book-1" },
+  { sourcePage: "library", id: "book-2" },
+];
+configureResourceSelection("library", State.pages.library, contextRefs);
+selectAllResourcesInScope();
+openContextMenu({ clientX: 20, clientY: 30 }, "library", State.pages.library.items[0], false);
+assert.strictEqual(selectedResourceRefs().length, 2, "right-clicking a selected item must preserve the batch");
+const contextQuickAdd = walk(
+  document.getElementById("contextMenu"),
+  (node) => node.tagName === "BUTTON" && node.textContent.includes("Quick Add")
+)[0];
+contextQuickAdd.dispatch("click");
+assert.strictEqual(document.getElementById("overlay").classList.contains("hidden"), false);
+assert.strictEqual(
+  walk(document.getElementById("overlay"), (node) => node.className.includes("batch-submit")).length,
+  1,
+  "context Quick Add must open the batch modal for a multi-selection"
+);
 
 console.log("QUICK_ADD_BEHAVIOR_OK");
 `;

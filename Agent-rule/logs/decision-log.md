@@ -2,7 +2,7 @@
 
 ## 最新决策
 ```json
-{"decision_id":"decision-20260919-001","timestamp":"2026-09-19T18:30:00+08:00","owner":"maintenance-agent","title":"CBZ 读取缓存使用匿名 v2 marker 和同源即时加 30 天 TTL","context":"路径加 mtime token 会在同一 CBZ 修改后遗留完整解压目录，旧 marker 无法识别同源，也没有全局生命周期","options":["只删除同源旧 token","只按全局 TTL 清理","匿名来源哈希识别同源并叠加 30 天 TTL"],"decision":"保留既有 token；marker 写入版本、规范化源路径哈希和 mtime_ns，成功访问刷新 marker mtime；当前缓存成功后立即删除同源旧 token，其他直接子目录超过 30 天再删除","rationale":["保留 token 避免扩大调用方改动","来源哈希支持同源识别且不把私人绝对路径落盘","先确认当前缓存成功再清理，避免提取失败放大影响","直接子目录和逐项容错限制删除边界"],"impact":["兼容旧纯 mtime marker，命中后自动升级","无数据库 schema 或 Bridge API 变化","清理失败不阻断漫画打开"],"followups":["若缓存规模仍不可控，再以运行数据评估容量上限；本轮不引入 LRU 数据库"]}
+{"decision_id":"decision-20260920-001","timestamp":"2026-09-20T09:30:00+08:00","owner":"library-agent + ui-agent","title":"批量 Quick Add 使用单事务命令与定向缓存响应","context":"逐项调用会产生部分成功、重复刷新和来源页丢失风险","options":["前端循环单项接口","Bridge 聚合但 Repository 逐项提交","Repository 单事务接收完整意图并返回定向缓存"],"decision":"选择 Repository 单事务命令；全部校验后再写入，任一 SQLite 错误整体回滚；成功不广播 resourcesChanged","rationale":["事务边界与一次提交一致","真实 sourcePage 避免跨类误写","定向缓存保持页面和滚动位置"],"impact":["新增 apply_batch_quick_add 与 applyBatchQuickAdd","不新增表或依赖","旧单项接口保持兼容"],"followups":[]}
 ```
 
 ## 决策记录规则
@@ -23,6 +23,35 @@
   "rationale": ["string"],
   "impact": ["string"],
   "followups": ["string"]
+}
+```
+
+```json
+{
+  "decision_id": "decision-20260920-001",
+  "timestamp": "2026-09-20T09:30:00+08:00",
+  "owner": "library-agent + ui-agent",
+  "title": "批量 Quick Add 使用单事务命令与定向缓存响应",
+  "context": "多资源同时添加到多个 typed collection 和多个 Tag 时，逐项调用旧接口会产生部分成功、重复刷新和来源页丢失风险",
+  "options": [
+    "前端循环调用既有单项合集与 Tag 接口",
+    "Bridge 聚合但 Repository 仍逐项提交",
+    "Repository 单事务接收完整意图，Bridge 只做严格适配并返回定向缓存"
+  ],
+  "decision": "选择 Repository 单事务命令；全部资源、kind、合集 ID、名称和 Tag 校验完成后才写入，任一 SQLite 错误整体回滚；成功只返回受影响缓存，不广播 resourcesChanged",
+  "rationale": [
+    "事务边界与用户一次提交的意图一致，失败不会留下半批数据",
+    "真实 sourcePage 与 typed collection 显式进入 payload，避免混合标签页跨类误写",
+    "定向缓存保持当前页面和滚动位置，避免批量写入触发全量重绘",
+    "旧 applyCollectionQuickAdd 和单项 Tag interface 保持兼容"
+  ],
+  "impact": [
+    "新增 apply_batch_quick_add 与 applyBatchQuickAdd，不新增数据库表或依赖",
+    "合集名称在同 kind 内按 trim+casefold 复用；Tag 按精确大小写、输入顺序去重",
+    "错误稳定为 invalid_payload、resource_not_found、resource_kind_mismatch、invalid_collection、storage_error",
+    "前端失败保留弹窗和选择，成功清选但不重绘当前结果视图"
+  ],
+  "followups": []
 }
 ```
 

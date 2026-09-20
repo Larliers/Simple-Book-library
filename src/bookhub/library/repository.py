@@ -2444,6 +2444,210 @@ class LibraryRepository:
                 "member_ids": [int(row["collection_id"]) for row in member_rows],
             }
 
+    def apply_batch_quick_add(
+        self,
+        *,
+        resources: list[dict[str, Any]],
+        collections: dict[str, dict[str, Any]] | None = None,
+        tags: list[str] | tuple[str, ...] = (),
+    ) -> dict[str, Any]:
+        """Atomically add mixed resources to typed collections and tags."""
+        page_kinds = {
+            "library": COLLECTION_KIND_BOOK,
+            "text_novel": COLLECTION_KIND_TEXT_NOVEL,
+            "comic": COLLECTION_KIND_COMIC,
+        }
+        if not isinstance(resources, list) or not resources:
+            raise ValueError("invalid_payload")
+
+        normalized_resources: list[tuple[str, str, str]] = []
+        seen_resources: set[tuple[str, str]] = set()
+        for resource in resources:
+            if not isinstance(resource, dict):
+                raise ValueError("invalid_payload")
+            source_page = str(resource.get("source_page") or "").strip()
+            resource_id = str(resource.get("resource_id") or "").strip()
+            if source_page not in page_kinds or not resource_id:
+                raise ValueError("invalid_payload")
+            key = (source_page, resource_id)
+            if key in seen_resources:
+                continue
+            seen_resources.add(key)
+            normalized_resources.append((source_page, resource_id, page_kinds[source_page]))
+
+        raw_collections = collections or {}
+        if not isinstance(raw_collections, dict) or any(kind not in COLLECTION_KINDS for kind in raw_collections):
+            raise ValueError("invalid_payload")
+
+        normalized_collections: dict[str, dict[str, Any]] = {}
+        for kind in COLLECTION_KINDS:
+            config = raw_collections.get(kind, {})
+            if not isinstance(config, dict):
+                raise ValueError("invalid_payload")
+            raw_ids = config.get("add_ids", [])
+            raw_names = config.get("create_names", [])
+            if not isinstance(raw_ids, (list, tuple)) or not isinstance(raw_names, (list, tuple)):
+                raise ValueError("invalid_payload")
+            try:
+                add_ids = {int(value) for value in raw_ids}
+            except (TypeError, ValueError) as exc:
+                raise ValueError("invalid_collection") from exc
+            if any(isinstance(value, bool) for value in raw_ids) or any(value <= 0 for value in add_ids):
+                raise ValueError("invalid_collection")
+            create_names: list[str] = []
+            seen_name_keys: set[str] = set()
+            for value in raw_names:
+                if not isinstance(value, str):
+                    raise ValueError("invalid_payload")
+                clean_name = value.strip()
+                if not clean_name:
+                    continue
+                name_key = clean_name.casefold()
+                if name_key in seen_name_keys:
+                    continue
+                seen_name_keys.add(name_key)
+                create_names.append(clean_name)
+            normalized_collections[kind] = {
+                "add_ids": add_ids,
+                "create_names": create_names,
+            }
+
+        normalized_tags: list[str] = []
+        seen_tags: set[str] = set()
+        if not isinstance(tags, (list, tuple)):
+            raise ValueError("invalid_payload")
+        for value in tags:
+            if not isinstance(value, str):
+                raise ValueError("invalid_payload")
+            clean_tag = value.strip()
+            if not clean_tag or clean_tag in seen_tags:
+                continue
+            seen_tags.add(clean_tag)
+            normalized_tags.append(clean_tag)
+
+        if not normalized_tags and not any(
+            config["add_ids"] or config["create_names"]
+            for config in normalized_collections.values()
+        ):
+            raise ValueError("invalid_payload")
+
+        self._init_collections_tables()
+        created_collections: dict[str, list[dict[str, Any]]] = {
+            kind: [] for kind in COLLECTION_KINDS
+        }
+        collection_links_added = 0
+        tags_added = 0
+        resource_tags: list[dict[str, Any]] = []
+
+        with self._connection() as conn:
+            resolved_resources: list[dict[str, Any]] = []
+            resource_kinds: set[str] = set()
+            for source_page, resource_id, kind in normalized_resources:
+                if kind == COLLECTION_KIND_COMIC:
+                    row = conn.execute(
+                        "SELECT id, tags_json FROM comics WHERE resource_id = ?",
+                        (resource_id,),
+                    ).fetchone()
+                    table = "comics"
+                else:
+                    row = conn.execute(
+                        "SELECT id, resource_type, tags_json FROM books WHERE resource_id = ?",
+                        (resource_id,),
+                    ).fetchone()
+                    table = "books"
+                    if row and book_collection_kind(row["resource_type"]) != kind:
+                        raise ValueError("resource_kind_mismatch")
+                if not row:
+                    raise ValueError("resource_not_found")
+                resource_kinds.add(kind)
+                resolved_resources.append(
+                    {
+                        "source_page": source_page,
+                        "resource_id": resource_id,
+                        "kind": kind,
+                        "table": table,
+                        "db_id": int(row["id"]),
+                        "tags": self._normalized_tag_values(row["tags_json"]),
+                    }
+                )
+
+            collection_ids_by_kind: dict[str, set[int]] = {}
+            for kind, config in normalized_collections.items():
+                requested_ids = set(config["add_ids"])
+                create_names = list(config["create_names"])
+                if (requested_ids or create_names) and kind not in resource_kinds:
+                    raise ValueError("resource_kind_mismatch")
+                rows = conn.execute(
+                    "SELECT id, name FROM collections WHERE kind = ? ORDER BY id ASC",
+                    (kind,),
+                ).fetchall()
+                by_id = {int(row["id"]): row for row in rows}
+                if not requested_ids.issubset(by_id):
+                    raise ValueError("invalid_collection")
+                by_name_key = {
+                    str(row["name"] or "").strip().casefold(): int(row["id"])
+                    for row in rows
+                }
+                for clean_name in create_names:
+                    name_key = clean_name.casefold()
+                    collection_id = by_name_key.get(name_key)
+                    if collection_id is None:
+                        cursor = conn.execute(
+                            "INSERT INTO collections (name, description, kind, created_at) VALUES (?, '', ?, ?)",
+                            (clean_name, kind, now_utc_iso()),
+                        )
+                        collection_id = int(cursor.lastrowid)
+                        by_name_key[name_key] = collection_id
+                        created_collections[kind].append({"id": collection_id, "name": clean_name})
+                    requested_ids.add(collection_id)
+                collection_ids_by_kind[kind] = requested_ids
+
+            for resource in resolved_resources:
+                kind = str(resource["kind"])
+                db_id = int(resource["db_id"])
+                if kind == COLLECTION_KIND_COMIC:
+                    link_table = "collection_comics"
+                    resource_column = "comic_id"
+                else:
+                    link_table = "collection_books"
+                    resource_column = "book_id"
+                for collection_id in sorted(collection_ids_by_kind.get(kind, set())):
+                    cursor = conn.execute(
+                        f"INSERT OR IGNORE INTO {link_table} (collection_id, {resource_column}, added_at) VALUES (?, ?, ?)",  # noqa: S608
+                        (collection_id, db_id, now_utc_iso()),
+                    )
+                    collection_links_added += max(0, int(cursor.rowcount))
+
+                final_tags = list(resource["tags"])
+                before_count = len(final_tags)
+                for tag in normalized_tags:
+                    if tag not in final_tags:
+                        final_tags.append(tag)
+                added_for_resource = len(final_tags) - before_count
+                if added_for_resource:
+                    conn.execute(
+                        f"UPDATE {resource['table']} SET tags_json = ?, updated_at = ? WHERE id = ?",  # noqa: S608
+                        (json.dumps(final_tags, ensure_ascii=False), now_utc_iso(), db_id),
+                    )
+                    tags_added += added_for_resource
+                resource_tags.append(
+                    {
+                        "source_page": resource["source_page"],
+                        "resource_id": resource["resource_id"],
+                        "tags": final_tags,
+                    }
+                )
+
+        return {
+            "summary": {
+                "resource_count": len(normalized_resources),
+                "collection_links_added": collection_links_added,
+                "tags_added": tags_added,
+            },
+            "created_collections": created_collections,
+            "resource_tags": resource_tags,
+        }
+
     def get_all_collections(self, kind: str | None = None) -> list[dict]:
         """Return collections ordered by creation time (newest first)."""
         self._init_collections_tables()

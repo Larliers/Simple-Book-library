@@ -196,6 +196,36 @@ settings payload 必须提供完整的 `shortcutBindings`，八个固定动作�
 - 校验与 SQLite 写入失败均返回 `{ok:false,error:string}`，不得部分写入；弹窗保持打开并恢复可操作状态。提交期间关闭、遮罩、标签与合集操作全部锁定。
 - 旧 `setCollectionMembership` 保留兼容，但不得广播全量页面刷新。
 
+## Batch Quick Add Extension
+
+`applyBatchQuickAdd(payloadJson)` 用于把多类资源原子添加到各自类型的多个合集和多个 Tag。资源必须携带真实 `sourcePage`：
+
+```json
+{
+  "resources": [
+    {"sourcePage": "library", "resourceId": "book-1"},
+    {"sourcePage": "text_novel", "resourceId": "novel-1"},
+    {"sourcePage": "comic", "resourceId": "comic-1"}
+  ],
+  "collections": {
+    "book": {"addIds": [1], "createNames": ["待读"]},
+    "text_novel": {"addIds": [2], "createNames": []},
+    "comic": {"addIds": [], "createNames": ["短篇"]}
+  },
+  "tags": ["科幻", "2026"]
+}
+```
+
+成功输出必须包含 `summary`、按 kind 分组的 `createdCollections`、每项最终 `resourceTags`、定向 `sourcePages` / `collectionPages` 缓存和 `tagCatalogInvalidated`。不得发出全量 `resourcesChanged`。
+
+- Repository 必须先校验所有资源、资源 kind、合集 ID、合集名称与 Tag，再在同一个 SQLite 事务内创建合集、写成员关系和 Tag；任一步失败全部回滚。
+- 合集名称按 trim + Unicode `casefold` 在同 kind 内复用；Tag trim 后按输入顺序、精确大小写去重；重复成员与已有 Tag 为幂等 no-op。
+- Bridge 只接受 `library|text_novel|comic` 来源和 `book|text_novel|comic` 合集键；错误仅返回 `invalid_payload|resource_not_found|resource_kind_mismatch|invalid_collection|storage_error`。
+- 多选范围只覆盖三类资源主页、合集详情和标签详情；虚拟列表的 Shift 范围按完整有序数据计算，漫画分页按当前页计算。
+- 单选继续显示资源详情；多选显示数量、类型计数、批量添加和清空选择。全部资源节点必须可聚焦并同步 `aria-selected`。
+- 批量弹窗按 kind 分组，可多选既有合集、排队多个待创建名称，并以 chips 排队多个 Tag；提交期间所有关闭和编辑控件锁定。
+- 成功后关闭弹窗、清空选择并保持当前滚动位置；失败时弹窗和选择保持可重试状态。
+
 ## Error Shape
 ```json
 {

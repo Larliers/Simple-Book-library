@@ -29,6 +29,13 @@ const State = {
   tagRequestId: 0,
   tagOrder: "asc",
   tagSelection: null,
+  resourceSelection: {
+    scopeKey: "",
+    order: [],
+    selectedKeys: new Set(),
+    anchorKey: "",
+    focusKey: "",
+  },
   recentTag: null,
   recentCollections: { collections: null, novel_collections: null, comic_collections: null },
   shortcutCaptureAction: "",
@@ -55,6 +62,105 @@ const RESERVED_SHORTCUT_TOKENS = new Set([
   "Ctrl+Equal", "Ctrl+Shift+Equal", "Ctrl+Minus", "Ctrl+Digit0", "Ctrl+Numpad0",
   "Ctrl+NumpadAdd", "Ctrl+NumpadSubtract", "Alt+F4",
 ]);
+
+function resourceSelectionKey(ref) {
+  return `${String(ref && ref.sourcePage || "")}\u0000${String(ref && ref.id || "")}`;
+}
+
+function resourceSelectionScopeKey(page, data) {
+  const payload = data || {};
+  const parts = [String(page || ""), String(payload.mode || "")];
+  if (payload.collectionId) parts.push(`collection:${payload.collectionId}`);
+  if (payload.mode === "tag_detail") parts.push(`tag:${String(payload.tag || "")}`);
+  if (payload.sort) parts.push(`sort:${String(payload.sort)}`);
+  if (page === "comic" || page === "comic_collections") {
+    parts.push(`comic-page:${Number(State.comicPageNum[page] || 1)}`);
+  }
+  if (State.searchQueries && Object.prototype.hasOwnProperty.call(State.searchQueries, page)) {
+    parts.push(`query:${String(State.searchQueries[page] || "")}`);
+  }
+  return parts.join("|");
+}
+
+function clearResourceSelection() {
+  State.resourceSelection.selectedKeys = new Set();
+  State.resourceSelection.anchorKey = "";
+  State.resourceSelection.focusKey = "";
+  State.tagSelection = null;
+  if (State.currentPage) delete State.selected[State.currentPage];
+}
+
+function configureResourceSelection(page, data, refs) {
+  const order = (Array.isArray(refs) ? refs : [])
+    .map((ref) => ({ sourcePage: String(ref.sourcePage || ""), id: String(ref.id || "") }))
+    .filter((ref) => ref.sourcePage && ref.id);
+  const scopeKey = resourceSelectionScopeKey(page, data);
+  if (State.resourceSelection.scopeKey !== scopeKey) {
+    clearResourceSelection();
+    State.resourceSelection.scopeKey = scopeKey;
+  }
+  State.resourceSelection.order = order;
+  const availableKeys = new Set(order.map(resourceSelectionKey));
+  State.resourceSelection.selectedKeys = new Set(
+    [...State.resourceSelection.selectedKeys].filter((key) => availableKeys.has(key))
+  );
+  if (!availableKeys.has(State.resourceSelection.anchorKey)) State.resourceSelection.anchorKey = "";
+  if (!availableKeys.has(State.resourceSelection.focusKey)) State.resourceSelection.focusKey = "";
+  return selectedResourceRefs();
+}
+
+function selectedResourceRefs() {
+  return State.resourceSelection.order.filter((ref) => (
+    State.resourceSelection.selectedKeys.has(resourceSelectionKey(ref))
+  ));
+}
+
+function updateResourceSelection(ref, modifiers) {
+  const key = resourceSelectionKey(ref);
+  const orderedKeys = State.resourceSelection.order.map(resourceSelectionKey);
+  const targetIndex = orderedKeys.indexOf(key);
+  if (targetIndex < 0) return selectedResourceRefs();
+  const event = modifiers || {};
+  const ctrl = Boolean(event.ctrlKey || event.metaKey);
+  const shift = Boolean(event.shiftKey);
+  const selected = new Set(State.resourceSelection.selectedKeys);
+  if (shift && State.resourceSelection.anchorKey) {
+    const anchorIndex = orderedKeys.indexOf(State.resourceSelection.anchorKey);
+    if (anchorIndex >= 0) {
+      const start = Math.min(anchorIndex, targetIndex);
+      const end = Math.max(anchorIndex, targetIndex);
+      if (!ctrl) selected.clear();
+      orderedKeys.slice(start, end + 1).forEach((itemKey) => selected.add(itemKey));
+    }
+  } else if (ctrl) {
+    if (selected.has(key)) selected.delete(key);
+    else selected.add(key);
+    State.resourceSelection.anchorKey = key;
+  } else {
+    selected.clear();
+    selected.add(key);
+    State.resourceSelection.anchorKey = key;
+  }
+  if (!shift && !State.resourceSelection.anchorKey) State.resourceSelection.anchorKey = key;
+  State.resourceSelection.focusKey = key;
+  State.resourceSelection.selectedKeys = selected;
+  return selectedResourceRefs();
+}
+
+function selectAllResourcesInScope() {
+  State.resourceSelection.selectedKeys = new Set(
+    State.resourceSelection.order.map(resourceSelectionKey)
+  );
+  if (!State.resourceSelection.anchorKey && State.resourceSelection.order.length) {
+    State.resourceSelection.anchorKey = resourceSelectionKey(State.resourceSelection.order[0]);
+  }
+  if (State.resourceSelection.order.length) {
+    State.resourceSelection.focusKey = resourceSelectionKey(
+      State.resourceSelection.order[State.resourceSelection.order.length - 1]
+    );
+  }
+  return selectedResourceRefs();
+}
 
 function isShortcutKeyCode(code) {
   return /^(Key[A-Z]|Digit[0-9]|Numpad[0-9]|F(?:[1-9]|1[0-9]|2[0-4]))$/.test(code)
@@ -137,6 +243,8 @@ const BOOK_COLLECTION_SORT_OPTIONS = [
 
 function setBookPageSort(page, order) {
   if (!State.bridge || !State.bridge.setPageSort) return;
+  clearResourceSelection();
+  renderDetailEmpty();
   State.bridge.setPageSort(page, order, (json) => {
     const data = safeParse(json);
     if (!data) return;
@@ -189,6 +297,10 @@ function applyCollectionPageData(json) {
 function applyCollectionDataForPage(page, data) {
   const d = typeof data === "string" || data == null ? safeParse(data) : data;
   if (d) {
+    if (State.currentPage === page) {
+      clearResourceSelection();
+      renderDetailEmpty();
+    }
     State.pages[page] = d;
     if (State.currentPage === page) scheduleRenderPage();
   }
@@ -393,7 +505,10 @@ function wireSignals() {
     const data = safeParse(json);
     if (data && data.pages) {
       State.pages = data.pages;
-      const selectionCleared = clearInvalidCurrentSelectionAfterResourceChange();
+      const hadBatchSelection = selectedResourceRefs().length > 0;
+      clearResourceSelection();
+      const selectionCleared = clearInvalidCurrentSelectionAfterResourceChange() || hadBatchSelection;
+      if (selectionCleared) renderDetailEmpty();
       if (data.recommendationsInvalidated) {
         invalidateRandomRecommendations(true);
       }
@@ -548,6 +663,9 @@ function selectPage(page) {
   // Same-page nav click: avoid wiping/rebuilding hundreds of cards.
   if (page === State.currentPage && page !== "settings") return;
   savePageScroll(State.currentPage);
+  clearResourceSelection();
+  State.resourceSelection.scopeKey = "";
+  State.resourceSelection.order = [];
   if (page !== "settings") State.shortcutCaptureAction = "";
   State.currentPage = page;
   document.body.dataset.page = page;
@@ -746,6 +864,8 @@ function renderPageTools(page, data) {
       sel.appendChild(opt);
     });
     sel.addEventListener("change", () => {
+      clearResourceSelection();
+      renderDetailEmpty();
       State.bridge.setPageSort(page, sel.value, (json) => {
         const d = safeParse(json);
         if (d) { State.pages[page] = d; State.comicPageNum[page] = 1; State._comicPage = 1; clearPageScroll(page); scheduleRenderPage(); }
@@ -883,6 +1003,7 @@ function loadTagResources(tag) {
   const normalizedTag = String(tag || "").trim();
   if (!normalizedTag) return;
   State.tagLoading = true;
+  clearResourceSelection();
   State.tagDetail = { mode: "tag_detail", tag: normalizedTag, items: [] };
   State.tagSelection = null;
   const requestId = ++State.tagRequestId;
@@ -907,6 +1028,7 @@ function closeTagDetail() {
   State.tagRequestId += 1;
   State.tagLoading = false;
   State.tagDetail = null;
+  clearResourceSelection();
   State.tagSelection = null;
   clearPageScroll(TAG_MANAGER_PAGE);
   renderDetailEmpty();
@@ -969,27 +1091,25 @@ function renderTagDetail(area, data, gen) {
     else area.appendChild(buildEmpty(t("empty.default", "Nothing here yet.")));
     return;
   }
+  prepareResourceSelection(TAG_MANAGER_PAGE, data, items, (item) => ({
+    sourcePage: String(item.sourcePage || "library"),
+    id: String(item.id || ""),
+  }));
   mountVirtualCoverGrid(area, items, TAG_MANAGER_PAGE, true, gen, (item) => {
     const sourcePage = String(item.sourcePage || "library");
+    const ref = { sourcePage, id: String(item.id || "") };
     const card = elem("article", "book-card tag-resource-card");
     card.tabIndex = 0;
     card.setAttribute("role", "button");
     card.setAttribute("aria-label", `${tagSourceLabel(sourcePage)}: ${item.title || ""}`);
-    const selected = State.tagSelection;
-    if (selected && selected.sourcePage === sourcePage && String(selected.id) === String(item.id)) {
-      card.classList.add("selected");
-    }
+    applyResourceSelectionState(card, ref);
     card.appendChild(buildCoverSlot(item, "cover", sourcePage === "library"));
     const meta = elem("div", "tag-card-meta");
     meta.appendChild(elem("div", "card-title", item.title || ""));
     meta.appendChild(elem("span", `tag-source-badge tag-source-${sourcePage}`, tagSourceLabel(sourcePage)));
     card.appendChild(meta);
-    card.addEventListener("click", () => selectTaggedResource(sourcePage, item.id, card));
-    card.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" && event.key !== " ") return;
-      event.preventDefault();
-      selectTaggedResource(sourcePage, item.id, card);
-    });
+    card.addEventListener("click", (event) => handleResourceSelection(ref, event));
+    card.addEventListener("keydown", (event) => handleResourceSelectionKeydown(ref, event));
     card.addEventListener("dblclick", () => State.bridge.openResource(sourcePage, item.id));
     card.addEventListener("contextmenu", (event) => {
       event.preventDefault();
@@ -1216,13 +1336,94 @@ function mountVirtualCoverGrid(area, items, page, withMeta, gen, buildCard) {
   area._virtCleanup = attachVirtualWindow(area, gen, page, sync);
 }
 
+function resourceRefForPage(page, item) {
+  return {
+    sourcePage: tagSourcePage(page),
+    id: String(item && item.id || ""),
+  };
+}
+
+function prepareResourceSelection(page, data, items, refBuilder) {
+  const buildRef = refBuilder || ((item) => resourceRefForPage(page, item));
+  return configureResourceSelection(page, data, (items || []).map(buildRef));
+}
+
+function applyResourceSelectionState(node, ref) {
+  const selected = State.resourceSelection.selectedKeys.has(resourceSelectionKey(ref));
+  node.dataset.selectionKey = resourceSelectionKey(ref);
+  node.classList.toggle("selected", selected);
+  node.setAttribute("aria-selected", selected ? "true" : "false");
+}
+
+function syncResourceSelectionNodes() {
+  const area = $("contentArea");
+  if (!area) return;
+  area.querySelectorAll("[data-selection-key]").forEach((node) => {
+    const selected = State.resourceSelection.selectedKeys.has(String(node.dataset.selectionKey || ""));
+    node.classList.toggle("selected", selected);
+    node.setAttribute("aria-selected", selected ? "true" : "false");
+  });
+}
+
+function renderResourceSelectionDetail() {
+  const refs = selectedResourceRefs();
+  if (!refs.length) {
+    State.tagSelection = null;
+    if (State.currentPage) delete State.selected[State.currentPage];
+    renderDetailEmpty();
+    return;
+  }
+  if (refs.length > 1) {
+    State.tagSelection = null;
+    if (State.currentPage) delete State.selected[State.currentPage];
+    renderBatchSelectionPanel(refs);
+    return;
+  }
+  const ref = refs[0];
+  if (State.currentPage === TAG_MANAGER_PAGE) {
+    State.tagSelection = { sourcePage: ref.sourcePage, id: ref.id };
+  } else {
+    State.selected[State.currentPage] = ref.id;
+  }
+  const expectedKey = resourceSelectionKey(ref);
+  State.bridge.getDetail(ref.sourcePage, ref.id, (json) => {
+    const current = selectedResourceRefs();
+    if (current.length !== 1 || resourceSelectionKey(current[0]) !== expectedKey) return;
+    renderDetail(safeParse(json), ref.sourcePage);
+  });
+}
+
+function handleResourceSelection(ref, event) {
+  updateResourceSelection(ref, event || {});
+  syncResourceSelectionNodes();
+  renderResourceSelectionDetail();
+}
+
+function handleResourceSelectionKeydown(ref, event) {
+  if (!event) return;
+  if (event.key === "Enter") {
+    event.preventDefault();
+    handleResourceSelection(ref, {});
+    return;
+  }
+  if (event.key !== " ") return;
+  event.preventDefault();
+  handleResourceSelection(ref, event);
+}
+
 function renderGrid(area, items, page, isCollectionDetail, gen) {
   const showFormatBadge = page === "library" || (isCollectionDetail && page !== "comic" && page !== "comic_collections");
+  prepareResourceSelection(page, currentPageData(), items);
   mountVirtualCoverGrid(area, items, page, false, gen, (item) => {
+    const ref = resourceRefForPage(page, item);
     const card = elem("article", "book-card");
-    if (State.selected[page] === item.id) card.classList.add("selected");
+    card.setAttribute("role", "button");
+    card.setAttribute("tabindex", "0");
+    card.setAttribute("aria-label", item.title || "");
+    applyResourceSelectionState(card, ref);
     card.appendChild(buildCoverSlot(item, "cover", showFormatBadge));
-    card.addEventListener("click", () => selectResource(page, item.id, card));
+    card.addEventListener("click", (event) => handleResourceSelection(ref, event));
+    card.addEventListener("keydown", (event) => handleResourceSelectionKeydown(ref, event));
     card.addEventListener("dblclick", () => State.bridge.openResource(page, item.id));
     card.addEventListener("contextmenu", (e) => { e.preventDefault(); openContextMenu(e, page, item, isCollectionDetail); });
     return card;
@@ -1230,20 +1431,18 @@ function renderGrid(area, items, page, isCollectionDetail, gen) {
 }
 
 function renderTextNovelGrid(area, items, page, gen) {
+  prepareResourceSelection(page, currentPageData(), items);
   mountVirtualCoverGrid(area, items, page, true, gen, (item) => {
+    const ref = resourceRefForPage(page, item);
     const card = elem("article", "book-card");
     card.setAttribute("role", "button");
     card.setAttribute("tabindex", "0");
     card.setAttribute("aria-label", item.title || "");
-    if (State.selected[page] === item.id) card.classList.add("selected");
+    applyResourceSelectionState(card, ref);
     card.appendChild(buildCover(item, "cover"));
     card.appendChild(elem("div", "card-title", item.title || ""));
-    card.addEventListener("click", () => selectResource(page, item.id, card));
-    card.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" && event.key !== " ") return;
-      event.preventDefault();
-      selectResource(page, item.id, card);
-    });
+    card.addEventListener("click", (event) => handleResourceSelection(ref, event));
+    card.addEventListener("keydown", (event) => handleResourceSelectionKeydown(ref, event));
     card.addEventListener("dblclick", () => State.bridge.openResource(page, item.id));
     card.addEventListener("contextmenu", (event) => {
       event.preventDefault();
@@ -1297,12 +1496,16 @@ function renderComic(area, data, gen) {
     prev.disabled = State._comicPage <= 1;
     next.disabled = State._comicPage >= totalPages;
     prev.addEventListener("click", () => {
+      clearResourceSelection();
+      renderDetailEmpty();
       State._comicPage--;
       State.comicPageNum[pageKey] = State._comicPage;
       clearPageScroll(pageKey);
       scheduleRenderPage();
     });
     next.addEventListener("click", () => {
+      clearResourceSelection();
+      renderDetailEmpty();
       State._comicPage++;
       State.comicPageNum[pageKey] = State._comicPage;
       clearPageScroll(pageKey);
@@ -1315,6 +1518,7 @@ function renderComic(area, data, gen) {
 
 function renderTable(area, items, page, pageSort) {
   const gen = State.renderGen;
+  prepareResourceSelection(page, currentPageData(), items);
   const topSpacer = elem("div", "virt-spacer-top");
   const table = elem("table", "table");
   const thead = elem("thead");
@@ -1380,8 +1584,12 @@ function renderTable(area, items, page, pageSort) {
     const frag = document.createDocumentFragment();
     for (let i = range.start; i <= range.end; i++) {
       const item = items[i];
+      const ref = resourceRefForPage(page, item);
       const tr = elem("tr");
-      if (State.selected[page] === item.id) tr.classList.add("selected");
+      tr.setAttribute("role", "row");
+      tr.setAttribute("tabindex", "0");
+      tr.setAttribute("aria-label", item.title || "");
+      applyResourceSelectionState(tr, ref);
       if (showCoverColumn) {
         const coverTd = elem("td");
         if (item.cover) coverTd.appendChild(buildCover(item, "mini-cover"));
@@ -1391,7 +1599,8 @@ function renderTable(area, items, page, pageSort) {
       tr.appendChild(elem("td", null, item.author || ""));
       tr.appendChild(elem("td", null, (item.tags || []).join(", ")));
       tr.appendChild(elem("td", null, item.path || ""));
-      tr.addEventListener("click", () => selectResource(page, item.id, tr));
+      tr.addEventListener("click", (event) => handleResourceSelection(ref, event));
+      tr.addEventListener("keydown", (event) => handleResourceSelectionKeydown(ref, event));
       tr.addEventListener("dblclick", () => State.bridge.openResource(page, item.id));
       tr.addEventListener("contextmenu", (e) => { e.preventDefault(); openContextMenu(e, page, item, false); });
       frag.appendChild(tr);
@@ -1520,6 +1729,46 @@ function renderDetailEmpty() {
   $("detailContent").classList.add("hidden");
 }
 
+function renderBatchSelectionPanel(refs) {
+  const selectedRefs = Array.isArray(refs) ? refs : selectedResourceRefs();
+  const empty = $("detailEmpty");
+  const content = $("detailContent");
+  empty.classList.add("hidden");
+  content.classList.remove("hidden");
+  clear(content);
+  content.appendChild(elem(
+    "h2",
+    null,
+    fmt(t("batch.selection_count", "{count} items selected"), { count: selectedRefs.length })
+  ));
+  const counts = { library: 0, text_novel: 0, comic: 0 };
+  selectedRefs.forEach((ref) => {
+    if (Object.prototype.hasOwnProperty.call(counts, ref.sourcePage)) counts[ref.sourcePage] += 1;
+  });
+  const meta = elem("div", "detail-meta batch-selection-summary");
+  [
+    ["library", "batch.books", "Books"],
+    ["text_novel", "batch.novels", "Text Novels"],
+    ["comic", "batch.comics", "Comics"],
+  ].forEach(([page, key, fallback]) => {
+    if (!counts[page]) return;
+    meta.appendChild(buildDetailBlock(t(key, fallback), String(counts[page])));
+  });
+  content.appendChild(meta);
+  const actions = elem("div", "detail-actions batch-selection-actions");
+  const quickAdd = elem("button", "primary-btn", t("batch.quick_add", "Batch Quick Add"));
+  quickAdd.addEventListener("click", () => openBatchQuickAddModal(selectedResourceRefs()));
+  const clearButton = elem("button", "ghost-btn", t("batch.clear_selection", "Clear selection"));
+  clearButton.addEventListener("click", () => {
+    clearResourceSelection();
+    syncResourceSelectionNodes();
+    renderDetailEmpty();
+  });
+  actions.appendChild(quickAdd);
+  actions.appendChild(clearButton);
+  content.appendChild(actions);
+}
+
 function renderDetail(d, sourcePage) {
   if (!d || !d.id) { renderDetailEmpty(); return; }
   const actionPage = sourcePage || State.currentPage;
@@ -1613,7 +1862,13 @@ const SHORTCUT_ACTIONS = {
     labelKey: "shortcut.action.quick_add",
     needsResource: true,
     available: () => true,
-    run: (context) => openQuickAddModal(context.item, context.page),
+    run: (context) => {
+      if (context.batchRefs && context.batchRefs.length > 1) {
+        openBatchQuickAddModal(context.batchRefs);
+      } else {
+        openQuickAddModal(context.item, context.page);
+      }
+    },
   },
   edit_cover: {
     labelKey: "shortcut.action.edit_cover",
@@ -1685,7 +1940,9 @@ function selectedResourceActionContext() {
   }
 
   if (State.currentPage === TAG_MANAGER_PAGE) {
-    const selected = State.tagSelection;
+    const batchRefs = selectedResourceRefs();
+    const focusKey = State.resourceSelection.focusKey;
+    const selected = batchRefs.find((ref) => resourceSelectionKey(ref) === focusKey) || batchRefs[0] || State.tagSelection;
     const items = State.tagDetail && Array.isArray(State.tagDetail.items) ? State.tagDetail.items : [];
     const item = selected
       ? items.find((entry) => entry.sourcePage === selected.sourcePage && String(entry.id) === String(selected.id))
@@ -1699,12 +1956,16 @@ function selectedResourceActionContext() {
       item,
       isCollectionDetail: false,
       collectionId: null,
+      batchRefs,
     };
   }
 
   const page = State.currentPage;
   const data = State.pages[page] || {};
-  const selectedId = State.selected[page];
+  const batchRefs = selectedResourceRefs();
+  const focusKey = State.resourceSelection.focusKey;
+  const focusedRef = batchRefs.find((ref) => resourceSelectionKey(ref) === focusKey) || batchRefs[0] || null;
+  const selectedId = focusedRef ? focusedRef.id : State.selected[page];
   const items = Array.isArray(data.items) ? data.items : [];
   const item = items.find((entry) => String(entry.id) === String(selectedId));
   if (!item) {
@@ -1712,10 +1973,11 @@ function selectedResourceActionContext() {
     return null;
   }
   return {
-    page,
+    page: focusedRef ? focusedRef.sourcePage : page,
     item,
     isCollectionDetail: isCollectionDetailData(data),
     collectionId: data.collectionId || null,
+    batchRefs,
   };
 }
 
@@ -1848,6 +2110,21 @@ function handleShortcutKeydown(event) {
     return dispatchShortcutInput(browserToken);
   }
   if (shortcutInteractionBlocked(event)) return false;
+  if (
+    event.ctrlKey
+    && !event.altKey
+    && !event.shiftKey
+    && !event.metaKey
+    && String(event.code || "") === "KeyA"
+    && State.resourceSelection.order.length
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    selectAllResourcesInScope();
+    syncResourceSelectionNodes();
+    renderResourceSelectionDetail();
+    return true;
+  }
   const inputToken = shortcutTokenFromKeyboardEvent(event);
   if (!inputToken || !shortcutActionForInput(inputToken)) return false;
   event.preventDefault();
@@ -1920,12 +2197,22 @@ function openCollectionCardMenu(event, item, openCol) {
 function openContextMenu(event, page, item, isCollectionDetail) {
   const menu = $("contextMenu");
   clear(menu);
+  const ref = { sourcePage: tagSourcePage(page), id: String(item.id) };
+  const selectionKey = resourceSelectionKey(ref);
+  if (
+    State.resourceSelection.order.includes(selectionKey)
+    && !State.resourceSelection.selectedKeys.has(selectionKey)
+  ) {
+    handleResourceSelection(ref, {});
+  }
+  const batchRefs = selectedResourceRefs();
   const isComic = page === "comic" || (page === "comic_collections" && isComicCollectionDetail());
   const context = {
     page,
     item,
     isCollectionDetail: Boolean(isCollectionDetail),
     collectionId: isCollectionDetail ? currentPageData().collectionId : null,
+    batchRefs,
   };
   menuAction(
     isComic ? t("menu.open_cover", "Open Cover") : t("menu.open_external", "Open External"),
@@ -2432,6 +2719,281 @@ function openQuickAddModal(item, sourcePage) {
     actions.appendChild(confirm);
     modal.appendChild(actions);
     renderCurrentChips();
+    tagInput.focus();
+  });
+}
+
+function openBatchQuickAddModal(refs) {
+  const selectedRefs = (Array.isArray(refs) ? refs : selectedResourceRefs()).map((ref) => ({
+    sourcePage: String(ref.sourcePage || ""),
+    id: String(ref.id || ""),
+  })).filter((ref) => ref.sourcePage && ref.id);
+  if (selectedRefs.length < 2) return;
+
+  const groups = [
+    { kind: "book", sourcePage: "library", labelKey: "batch.books", fallback: "Books" },
+    { kind: "text_novel", sourcePage: "text_novel", labelKey: "batch.novels", fallback: "Text Novels" },
+    { kind: "comic", sourcePage: "comic", labelKey: "batch.comics", fallback: "Comics" },
+  ].filter((group) => selectedRefs.some((ref) => ref.sourcePage === group.sourcePage));
+
+  openModal((modal, close) => {
+    let submitting = false;
+    let pendingLoads = groups.length;
+    let submit = null;
+    const syncSubmitDisabled = () => {
+      if (submit) submit.disabled = submitting || pendingLoads > 0;
+    };
+    const controls = [];
+    const selectedCollectionIds = Object.fromEntries(groups.map((group) => [group.kind, new Set()]));
+    const queuedCollectionNames = Object.fromEntries(groups.map((group) => [group.kind, []]));
+    const collectionRows = Object.fromEntries(groups.map((group) => [group.kind, []]));
+    const pendingTags = [];
+    const requestClose = () => { if (!submitting) close(); };
+    const closeButton = modalHeader(modal, t("batch.title", "Batch Quick Add"), requestClose);
+    controls.push(closeButton);
+    modal.classList.add("batch-quick-add-modal");
+    modal.appendChild(elem(
+      "p",
+      "small-note",
+      fmt(t("batch.selection_count", "{count} items selected"), { count: selectedRefs.length })
+    ));
+
+    const tagField = elem("div", "field batch-tag-field");
+    tagField.appendChild(elem("label", null, t("batch.tags", "Tags to add")));
+    const tagInput = elem("input", "batch-tag-input");
+    tagInput.placeholder = t("batch.tag_placeholder", "Type a tag and press Enter...");
+    controls.push(tagInput);
+    tagField.appendChild(tagInput);
+    const tagChips = elem("div", "chip-row batch-pending-tags");
+    const recentTags = elem("div", "chip-row recent-tags");
+    const renderTagChips = () => {
+      clear(tagChips);
+      pendingTags.forEach((tag) => {
+        const chip = elem("button", "chip chip-btn", `${tag} ×`);
+        chip.type = "button";
+        chip.disabled = submitting;
+        chip.addEventListener("click", () => {
+          if (submitting) return;
+          const index = pendingTags.indexOf(tag);
+          if (index >= 0) pendingTags.splice(index, 1);
+          renderTagChips();
+        });
+        tagChips.appendChild(chip);
+      });
+    };
+    const addPendingTag = (value) => {
+      const tag = String(value || "").trim();
+      if (!tag || pendingTags.includes(tag)) return;
+      pendingTags.push(tag);
+      renderTagChips();
+    };
+    tagInput.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      addPendingTag(tagInput.value);
+      tagInput.value = "";
+    });
+    tagField.appendChild(tagChips);
+    tagField.appendChild(elem("div", "kicker mt", t("quick_add.recent_tags", "Recent tags")));
+    tagField.appendChild(recentTags);
+    modal.appendChild(tagField);
+    State.bridge.getTags((json) => {
+      clear(recentTags);
+      (safeParse(json) || []).slice(0, 12).forEach((tag) => {
+        const chip = elem("button", "chip chip-btn", tag);
+        chip.type = "button";
+        chip.addEventListener("click", () => addPendingTag(tag));
+        controls.push(chip);
+        recentTags.appendChild(chip);
+      });
+    });
+
+    modal.appendChild(elem("hr", "modal-divider"));
+    const collectionWrap = elem("div", "batch-collection-groups");
+    modal.appendChild(collectionWrap);
+
+    groups.forEach((group) => {
+      const field = elem("section", "field batch-collection-group");
+      field.dataset.kind = group.kind;
+      field.appendChild(elem("label", null, t(group.labelKey, group.fallback)));
+      const search = elem("input", "batch-collection-search");
+      search.dataset.kind = group.kind;
+      search.placeholder = t("quick_add.collection_placeholder", "Search collections...");
+      controls.push(search);
+      field.appendChild(search);
+      const queued = elem("div", "chip-row batch-pending-collections");
+      const list = elem("div", "list-stack mt batch-collection-list");
+      field.appendChild(queued);
+      field.appendChild(list);
+      collectionWrap.appendChild(field);
+
+      const renderQueuedNames = () => {
+        clear(queued);
+        queuedCollectionNames[group.kind].forEach((name) => {
+          const chip = elem("button", "chip chip-btn", `${name} ×`);
+          chip.type = "button";
+          chip.disabled = submitting;
+          chip.addEventListener("click", () => {
+            if (submitting) return;
+            const index = queuedCollectionNames[group.kind].indexOf(name);
+            if (index >= 0) queuedCollectionNames[group.kind].splice(index, 1);
+            renderQueuedNames();
+          });
+          queued.appendChild(chip);
+        });
+      };
+
+      const queueCollectionName = (value) => {
+        const name = String(value || "").trim();
+        if (!name) return;
+        const names = queuedCollectionNames[group.kind];
+        if (!names.some((current) => current.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+          names.push(name);
+        }
+        search.value = "";
+        renderQueuedNames();
+        renderRows();
+      };
+
+      const renderRows = () => {
+        clear(list);
+        const query = String(search.value || "").trim().toLocaleLowerCase();
+        if (query) {
+          const create = elem(
+            "button",
+            "list-item list-item-action quick-create-row",
+            fmt(t("quick_add.create_and_add", "Create and add “{name}”"), { name: search.value.trim() })
+          );
+          create.type = "button";
+          create.disabled = submitting;
+          create.addEventListener("click", () => queueCollectionName(search.value));
+          list.appendChild(create);
+        }
+        collectionRows[group.kind]
+          .filter((collection) => !query || String(collection.name || "").toLocaleLowerCase().includes(query))
+          .forEach((collection) => {
+            const collectionId = Number(collection.id);
+            const selected = selectedCollectionIds[group.kind].has(collectionId);
+            const button = elem(
+              "button",
+              selected ? "list-item list-item-action batch-collection-option selected" : "list-item list-item-action batch-collection-option",
+              String(collection.name || "")
+            );
+            button.type = "button";
+            button.dataset.collectionId = String(collectionId);
+            button.setAttribute("aria-pressed", selected ? "true" : "false");
+            button.disabled = submitting;
+            button.addEventListener("click", () => {
+              if (submitting) return;
+              if (selectedCollectionIds[group.kind].has(collectionId)) {
+                selectedCollectionIds[group.kind].delete(collectionId);
+              } else {
+                selectedCollectionIds[group.kind].add(collectionId);
+              }
+              renderRows();
+            });
+            list.appendChild(button);
+          });
+      };
+
+      search.addEventListener("input", renderRows);
+      search.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        queueCollectionName(search.value);
+      });
+      State.bridge.getCollections(group.sourcePage, (json) => {
+        collectionRows[group.kind] = safeParse(json) || [];
+        pendingLoads = Math.max(0, pendingLoads - 1);
+        renderRows();
+        syncSubmitDisabled();
+      });
+    });
+
+    const actions = elem("div", "modal-actions");
+    const cancel = elem("button", "ghost-btn", t("common.cancel", "Cancel"));
+    cancel.addEventListener("click", requestClose);
+    submit = elem("button", "primary-btn batch-submit", t("batch.confirm", "Add to selected items"));
+    controls.push(cancel, submit);
+    const setSubmitting = (value) => {
+      submitting = value;
+      modal.dataset.submitting = value ? "true" : "false";
+      controls.forEach((control) => { control.disabled = value; });
+      syncSubmitDisabled();
+    };
+
+    submit.addEventListener("click", () => {
+      if (submitting || pendingLoads > 0) return;
+      const collections = {};
+      groups.forEach((group) => {
+        collections[group.kind] = {
+          addIds: [...selectedCollectionIds[group.kind]].sort((a, b) => a - b),
+          createNames: queuedCollectionNames[group.kind].slice(),
+        };
+      });
+      const hasCollectionTarget = Object.values(collections).some((config) => (
+        config.addIds.length || config.createNames.length
+      ));
+      if (!pendingTags.length && !hasCollectionTarget) {
+        showToast(
+          t("batch.no_targets_title", "Nothing to add"),
+          t("batch.no_targets", "Choose at least one collection or tag."),
+          "warning"
+        );
+        return;
+      }
+      const payload = {
+        resources: selectedRefs.map((ref) => ({ sourcePage: ref.sourcePage, resourceId: ref.id })),
+        collections,
+        tags: pendingTags.slice(),
+      };
+      setSubmitting(true);
+      State.bridge.applyBatchQuickAdd(JSON.stringify(payload), (json) => {
+        const result = safeParse(json);
+        if (!result || !result.ok) {
+          setSubmitting(false);
+          showToast(
+            t("batch.save_failed_title", "Batch update failed"),
+            t("batch.save_failed", "No changes were saved. Please try again."),
+            "warning"
+          );
+          return;
+        }
+        Object.entries(result.sourcePages || {}).forEach(([page, data]) => {
+          State.pages[page] = data;
+        });
+        Object.entries(result.collectionPages || {}).forEach(([page, data]) => {
+          State.pages[page] = data;
+        });
+        if (result.tagCatalogInvalidated) {
+          State.tagRequestId += 1;
+          State.tagCatalog = null;
+        }
+        if (State.tagDetail && Array.isArray(State.tagDetail.items)) {
+          const tagsByResource = new Map((result.resourceTags || []).map((entry) => [
+            resourceSelectionKey({ sourcePage: entry.sourcePage, id: entry.resourceId }),
+            Array.isArray(entry.tags) ? entry.tags : [],
+          ]));
+          State.tagDetail.items.forEach((item) => {
+            const key = resourceSelectionKey({ sourcePage: item.sourcePage, id: item.id });
+            if (tagsByResource.has(key)) item.tags = tagsByResource.get(key).slice();
+          });
+        }
+        close();
+        clearResourceSelection();
+        syncResourceSelectionNodes();
+        renderDetailEmpty();
+        showToast(
+          t("batch.saved_title", "Batch update complete"),
+          fmt(t("batch.saved", "Updated {count} items."), { count: Number(result.summary && result.summary.resourceCount || selectedRefs.length) }),
+          "success"
+        );
+      });
+    });
+    actions.appendChild(cancel);
+    actions.appendChild(submit);
+    modal.appendChild(actions);
+    syncSubmitDisabled();
     tagInput.focus();
   });
 }
@@ -3358,6 +3920,8 @@ function commitSearch() {
   State.bridge.search(ctx, State.searchQuery, (json) => {
     const data = safeParse(json);
     if (!data) return;
+    clearResourceSelection();
+    renderDetailEmpty();
     State.pages[ctx] = data;
     if (State.currentPage === ctx) scheduleRenderPage();
   });

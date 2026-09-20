@@ -480,6 +480,159 @@ class WebBridgeSmokeTests(unittest.TestCase):
         self.assertEqual(result["detail"]["bookCollections"], [result["createdCollection"]])
         self.assertEqual(emitted, [])
 
+    def test_apply_batch_quick_add_returns_targeted_mixed_state_without_refresh(self) -> None:
+        bridge = self._make_bridge()
+        bridge._repo.upsert_book(
+            {
+                "resource_id": "batch-book",
+                "path": r"C:\library\batch-book.pdf",
+                "title": "Batch Book",
+                "file_name": "batch-book.pdf",
+                "extension": ".pdf",
+                "resource_type": "book",
+                "tags_json": "[]",
+            }
+        )
+        bridge._repo.upsert_book(
+            {
+                "resource_id": "batch-novel",
+                "path": r"C:\library\batch-novel.txt",
+                "title": "Batch Novel",
+                "file_name": "batch-novel.txt",
+                "extension": ".txt",
+                "resource_type": "text_novel",
+                "tags_json": "[]",
+            }
+        )
+        bridge._repo.upsert_comic(
+            {
+                "resource_id": "batch-comic",
+                "path": r"C:\comics\batch-comic",
+                "title": "Batch Comic",
+                "image_count": 3,
+            }
+        )
+        bridge.reload_data()
+        book_collection_id = bridge.createCollection(PAGE_LIBRARY, "Batch Books")
+        emitted: list[dict[str, object]] = []
+        bridge.resourcesChanged.connect(lambda payload: emitted.append(json.loads(payload)))
+
+        result = json.loads(
+            bridge.applyBatchQuickAdd(
+                json.dumps(
+                    {
+                        "resources": [
+                            {"sourcePage": PAGE_LIBRARY, "resourceId": "batch-book"},
+                            {"sourcePage": PAGE_TEXT, "resourceId": "batch-novel"},
+                            {"sourcePage": PAGE_COMIC, "resourceId": "batch-comic"},
+                        ],
+                        "collections": {
+                            "book": {"addIds": [book_collection_id], "createNames": []},
+                            "text_novel": {"addIds": [], "createNames": ["Batch Novels"]},
+                            "comic": {"addIds": [], "createNames": ["Batch Comics"]},
+                        },
+                        "tags": ["Batch", "2026"],
+                    }
+                )
+            )
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["summary"]["resourceCount"], 3)
+        self.assertEqual(set(result["sourcePages"]), {PAGE_LIBRARY, PAGE_TEXT, PAGE_COMIC})
+        self.assertEqual(
+            set(result["collectionPages"]),
+            {PAGE_COLLECTIONS, PAGE_NOVEL_COLLECTIONS, PAGE_COMIC_COLLECTIONS},
+        )
+        self.assertEqual(len(result["resourceTags"]), 3)
+        self.assertTrue(result["tagCatalogInvalidated"])
+        self.assertEqual(emitted, [])
+
+    def test_apply_batch_quick_add_rejects_malformed_payload(self) -> None:
+        bridge = self._make_bridge()
+
+        malformed = [
+            "[]",
+            json.dumps({"resources": "not-a-list", "collections": {}, "tags": []}),
+            json.dumps(
+                {
+                    "resources": [{"sourcePage": PAGE_LIBRARY, "resourceId": "book"}],
+                    "collections": {"book": {"addIds": [True], "createNames": []}},
+                    "tags": [],
+                }
+            ),
+            json.dumps(
+                {
+                    "resources": [{"sourcePage": PAGE_TAG_MANAGER, "resourceId": "book"}],
+                    "collections": {},
+                    "tags": ["Tag"],
+                }
+            ),
+            json.dumps(
+                {
+                    "resources": [{"sourcePage": PAGE_LIBRARY, "resourceId": "book"}],
+                    "collections": {},
+                    "tags": ["Tag"],
+                    "unexpected": True,
+                }
+            ),
+            json.dumps(
+                {
+                    "resources": [{"sourcePage": PAGE_LIBRARY, "resourceId": "book", "kind": "book"}],
+                    "collections": {},
+                    "tags": ["Tag"],
+                }
+            ),
+        ]
+
+        for payload in malformed:
+            with self.subTest(payload=payload):
+                result = json.loads(bridge.applyBatchQuickAdd(payload))
+                self.assertEqual(result, {"ok": False, "error": "invalid_payload"})
+
+    def test_apply_batch_quick_add_returns_storage_error_and_rolls_back(self) -> None:
+        bridge = self._make_bridge()
+        bridge._repo.upsert_book(
+            {
+                "resource_id": "batch-storage-error",
+                "path": r"C:\library\batch-storage-error.pdf",
+                "title": "Batch Storage Error",
+                "file_name": "batch-storage-error.pdf",
+                "extension": ".pdf",
+                "resource_type": "book",
+                "tags_json": "[]",
+            }
+        )
+        bridge.reload_data()
+        with bridge._repo._connection() as conn:
+            conn.execute(
+                """
+                CREATE TRIGGER fail_bridge_batch_insert
+                BEFORE INSERT ON collection_books
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced bridge batch failure');
+                END
+                """
+            )
+
+        result = json.loads(
+            bridge.applyBatchQuickAdd(
+                json.dumps(
+                    {
+                        "resources": [{"sourcePage": PAGE_LIBRARY, "resourceId": "batch-storage-error"}],
+                        "collections": {
+                            "book": {"addIds": [], "createNames": ["Rolled Back Batch"]},
+                        },
+                        "tags": ["Rolled Back Tag"],
+                    }
+                )
+            )
+        )
+
+        self.assertEqual(result, {"ok": False, "error": "storage_error"})
+        self.assertEqual(bridge._repo.get_all_collections(), [])
+        self.assertEqual(bridge._repo.get_resources_by_tag("Rolled Back Tag"), [])
+
     def test_apply_collection_quick_add_supports_text_and_comic_kinds(self) -> None:
         bridge = self._make_bridge()
         bridge._repo.upsert_book(
@@ -1185,6 +1338,33 @@ class SettingsUiStructureTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("QUICK_ADD_BEHAVIOR_OK", completed.stdout)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is not available")
+    def test_multi_select_frontend_behavior(self) -> None:
+        script = PROJECT_ROOT / "src" / "tests" / "js" / "test_multi_select.js"
+        app_js = PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js"
+        completed = subprocess.run(
+            [shutil.which("node") or "node", str(script), str(app_js)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("MULTI_SELECT_BEHAVIOR_OK", completed.stdout)
+
+    def test_batch_quick_add_strings_and_both_skins_are_wired(self) -> None:
+        strings = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web_bridge.py").read_text(encoding="utf-8")
+        locale = (PROJECT_ROOT / "src" / "bookhub" / "i18n" / "locales" / "zh-cn.json").read_text(encoding="utf-8")
+        for key in ("batch.title", "batch.selection_count", "batch.confirm", "batch.save_failed"):
+            self.assertIn(f'("{key}",', strings)
+            self.assertIn(f'"{key}":', locale)
+        css_root = PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "css" / "skins"
+        for skin in ("glass", "vaporwave"):
+            css = (css_root / skin / "components.css").read_text(encoding="utf-8")
+            self.assertIn(".batch-quick-add-modal", css)
+            self.assertIn(".batch-collection-groups", css)
+            self.assertIn(".batch-collection-option.selected", css)
 
     def test_random_recommendations_keep_source_page_for_actions(self) -> None:
         app_js = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")

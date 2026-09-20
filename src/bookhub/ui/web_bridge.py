@@ -194,6 +194,22 @@ def _web_strings() -> dict[str, str]:
         ("quick_add.create_and_add", "Create and add “{name}”"),
         ("quick_add.save_failed_title", "Collection update failed"),
         ("quick_add.save_failed", "Could not save collection changes. Please try again."),
+        ("batch.title", "Batch Quick Add"),
+        ("batch.selection_count", "{count} items selected"),
+        ("batch.books", "Books"),
+        ("batch.novels", "Text Novels"),
+        ("batch.comics", "Comics"),
+        ("batch.quick_add", "Batch Quick Add"),
+        ("batch.clear_selection", "Clear selection"),
+        ("batch.tags", "Tags to add"),
+        ("batch.tag_placeholder", "Type a tag and press Enter..."),
+        ("batch.confirm", "Add to selected items"),
+        ("batch.no_targets_title", "Nothing to add"),
+        ("batch.no_targets", "Choose at least one collection or tag."),
+        ("batch.save_failed_title", "Batch update failed"),
+        ("batch.save_failed", "No changes were saved. Please try again."),
+        ("batch.saved_title", "Batch update complete"),
+        ("batch.saved", "Updated {count} items."),
         ("settings.title", "Settings"),
         ("settings.nav.general", "General"),
         ("settings.nav.paths", "Paths & Scan"),
@@ -1190,7 +1206,6 @@ class UiBridge(QObject):
             return json.dumps({"ok": False, "error": "invalid_payload"}, ensure_ascii=False)
         if not isinstance(payload, dict):
             return json.dumps({"ok": False, "error": "invalid_payload"}, ensure_ascii=False)
-
         def collection_ids(key: str) -> list[int]:
             values = payload.get(key, [])
             if not isinstance(values, list) or any(
@@ -1241,6 +1256,115 @@ class UiBridge(QObject):
             "collectionPage": collection_page,
             "collectionPageData": self._page_resources(collection_page),
             "detail": self._detail_for(page, resource_id) or {},
+        }
+        return json.dumps(response, ensure_ascii=False)
+
+    @Slot(str, result=str)
+    def applyBatchQuickAdd(self, payload_json: str) -> str:
+        try:
+            payload = json.loads(payload_json or "{}")
+        except (TypeError, json.JSONDecodeError):
+            return json.dumps({"ok": False, "error": "invalid_payload"}, ensure_ascii=False)
+        if not isinstance(payload, dict):
+            return json.dumps({"ok": False, "error": "invalid_payload"}, ensure_ascii=False)
+        if any(key not in {"resources", "collections", "tags"} for key in payload):
+            return json.dumps({"ok": False, "error": "invalid_payload"}, ensure_ascii=False)
+
+        raw_resources = payload.get("resources")
+        raw_collections = payload.get("collections", {})
+        raw_tags = payload.get("tags", [])
+        if not isinstance(raw_resources, list) or not isinstance(raw_collections, dict) or not isinstance(raw_tags, list):
+            return json.dumps({"ok": False, "error": "invalid_payload"}, ensure_ascii=False)
+
+        resources: list[dict[str, str]] = []
+        allowed_source_pages = {PAGE_LIBRARY, PAGE_TEXT, PAGE_COMIC}
+        for item in raw_resources:
+            if not isinstance(item, dict) or set(item) != {"sourcePage", "resourceId"}:
+                return json.dumps({"ok": False, "error": "invalid_payload"}, ensure_ascii=False)
+            source_page = item.get("sourcePage")
+            resource_id = item.get("resourceId")
+            if (
+                not isinstance(source_page, str)
+                or source_page not in allowed_source_pages
+                or not isinstance(resource_id, str)
+                or not resource_id.strip()
+            ):
+                return json.dumps({"ok": False, "error": "invalid_payload"}, ensure_ascii=False)
+            resources.append({"source_page": source_page, "resource_id": resource_id.strip()})
+
+        collections: dict[str, dict[str, Any]] = {}
+        valid_kinds = {COLLECTION_KIND_BOOK, COLLECTION_KIND_TEXT_NOVEL, COLLECTION_KIND_COMIC}
+        if any(kind not in valid_kinds for kind in raw_collections):
+            return json.dumps({"ok": False, "error": "invalid_payload"}, ensure_ascii=False)
+        for kind, config in raw_collections.items():
+            if not isinstance(config, dict) or any(key not in {"addIds", "createNames"} for key in config):
+                return json.dumps({"ok": False, "error": "invalid_payload"}, ensure_ascii=False)
+            add_ids = config.get("addIds", [])
+            create_names = config.get("createNames", [])
+            if (
+                not isinstance(add_ids, list)
+                or any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in add_ids)
+                or not isinstance(create_names, list)
+                or any(not isinstance(value, str) for value in create_names)
+            ):
+                return json.dumps({"ok": False, "error": "invalid_payload"}, ensure_ascii=False)
+            collections[kind] = {"add_ids": add_ids, "create_names": create_names}
+        if any(not isinstance(tag, str) for tag in raw_tags):
+            return json.dumps({"ok": False, "error": "invalid_payload"}, ensure_ascii=False)
+
+        try:
+            result = self._repo.apply_batch_quick_add(
+                resources=resources,
+                collections=collections,
+                tags=raw_tags,
+            )
+        except ValueError as exc:
+            error = str(exc)
+            if error not in {
+                "invalid_payload",
+                "resource_not_found",
+                "resource_kind_mismatch",
+                "invalid_collection",
+            }:
+                error = "invalid_payload"
+            return json.dumps({"ok": False, "error": error}, ensure_ascii=False)
+        except sqlite3.Error:
+            return json.dumps({"ok": False, "error": "storage_error"}, ensure_ascii=False)
+
+        self.reload_data()
+        affected_source_pages = {item["source_page"] for item in resources}
+        affected_kinds = {
+            kind
+            for kind, config in collections.items()
+            if config.get("add_ids") or any(str(name or "").strip() for name in config.get("create_names", []))
+        }
+        summary = result.get("summary", {})
+        response = {
+            "ok": True,
+            "error": "",
+            "summary": {
+                "resourceCount": int(summary.get("resource_count", 0)),
+                "collectionLinksAdded": int(summary.get("collection_links_added", 0)),
+                "tagsAdded": int(summary.get("tags_added", 0)),
+            },
+            "createdCollections": result.get("created_collections", {}),
+            "resourceTags": [
+                {
+                    "sourcePage": item.get("source_page"),
+                    "resourceId": item.get("resource_id"),
+                    "tags": item.get("tags", []),
+                }
+                for item in result.get("resource_tags", [])
+            ],
+            "sourcePages": {
+                page: self._page_resources(page)
+                for page in sorted(affected_source_pages)
+            },
+            "collectionPages": {
+                COLLECTION_KIND_PAGES[kind]: self._page_resources(COLLECTION_KIND_PAGES[kind])
+                for kind in sorted(affected_kinds)
+            },
+            "tagCatalogInvalidated": int(summary.get("tags_added", 0)) > 0,
         }
         return json.dumps(response, ensure_ascii=False)
 

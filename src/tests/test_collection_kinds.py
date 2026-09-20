@@ -58,6 +58,16 @@ class CollectionKindIsolationTests(unittest.TestCase):
             )
             return int(conn.execute("SELECT id FROM comics WHERE path = ?", (path,)).fetchone()["id"])
 
+    def _resource_id(self, repo: LibraryRepository, table: str, row_id: int) -> str:
+        self.assertIn(table, {"books", "comics"})
+        with repo._connection() as conn:
+            row = conn.execute(
+                f"SELECT resource_id FROM {table} WHERE id = ?",  # noqa: S608
+                (int(row_id),),
+            ).fetchone()
+        self.assertIsNotNone(row)
+        return str(row["resource_id"])
+
     def test_cross_kind_membership_rejected(self) -> None:
         repo = self._repo()
         book_id = self._book(repo, "a.pdf")
@@ -198,6 +208,128 @@ class CollectionKindIsolationTests(unittest.TestCase):
                 for collection in repo.get_all_collections(COLLECTION_KIND_BOOK)
             )
         )
+
+    def test_apply_batch_quick_add_updates_mixed_resources_atomically(self) -> None:
+        repo = self._repo()
+        book_id = self._book(repo, "batch-book.pdf")
+        novel_id = self._book(repo, "batch-novel.txt", "text_novel")
+        comic_id = self._comic(repo, "batch-comic")
+        book_collection_id = repo.create_collection("Books", kind=COLLECTION_KIND_BOOK)
+        novel_collection_id = repo.create_collection("Novels", kind=COLLECTION_KIND_TEXT_NOVEL)
+
+        result = repo.apply_batch_quick_add(
+            resources=[
+                {"source_page": "library", "resource_id": self._resource_id(repo, "books", book_id)},
+                {"source_page": "text_novel", "resource_id": self._resource_id(repo, "books", novel_id)},
+                {"source_page": "comic", "resource_id": self._resource_id(repo, "comics", comic_id)},
+            ],
+            collections={
+                COLLECTION_KIND_BOOK: {"add_ids": [book_collection_id], "create_names": ["Later"]},
+                COLLECTION_KIND_TEXT_NOVEL: {"add_ids": [novel_collection_id], "create_names": []},
+                COLLECTION_KIND_COMIC: {"add_ids": [], "create_names": ["Short Comics"]},
+            },
+            tags=["Science Fiction", "2026"],
+        )
+
+        self.assertEqual(result["summary"]["resource_count"], 3)
+        self.assertEqual(result["summary"]["collection_links_added"], 4)
+        self.assertEqual(result["summary"]["tags_added"], 6)
+        self.assertEqual(result["created_collections"][COLLECTION_KIND_BOOK][0]["name"], "Later")
+        self.assertEqual(result["created_collections"][COLLECTION_KIND_COMIC][0]["name"], "Short Comics")
+        self.assertTrue(repo.is_book_in_collection(book_id, book_collection_id))
+        self.assertTrue(repo.is_book_in_collection(novel_id, novel_collection_id))
+        self.assertEqual(len(repo.get_resources_by_tag("Science Fiction")), 3)
+
+    def test_apply_batch_quick_add_is_idempotent_and_reuses_casefolded_names(self) -> None:
+        repo = self._repo()
+        book_id = self._book(repo, "batch-repeat.pdf")
+        resource_id = self._resource_id(repo, "books", book_id)
+        resources = [{"source_page": "library", "resource_id": resource_id}]
+
+        first = repo.apply_batch_quick_add(
+            resources=resources,
+            collections={
+                COLLECTION_KIND_BOOK: {"add_ids": [], "create_names": ["Reading List"]},
+            },
+            tags=["Sci-Fi", "Sci-Fi"],
+        )
+        second = repo.apply_batch_quick_add(
+            resources=resources,
+            collections={
+                COLLECTION_KIND_BOOK: {"add_ids": [], "create_names": [" reading list "]},
+            },
+            tags=["Sci-Fi"],
+        )
+
+        self.assertEqual(first["summary"]["collection_links_added"], 1)
+        self.assertEqual(first["summary"]["tags_added"], 1)
+        self.assertEqual(second["summary"]["collection_links_added"], 0)
+        self.assertEqual(second["summary"]["tags_added"], 0)
+        self.assertEqual(second["created_collections"][COLLECTION_KIND_BOOK], [])
+        self.assertEqual(len(repo.get_all_collections(COLLECTION_KIND_BOOK)), 1)
+
+    def test_apply_batch_quick_add_rolls_back_all_kinds_after_storage_error(self) -> None:
+        repo = self._repo()
+        book_id = self._book(repo, "batch-rollback.pdf")
+        comic_id = self._comic(repo, "batch-rollback")
+        with repo._connection() as conn:
+            conn.execute(
+                """
+                CREATE TRIGGER fail_batch_comic_insert
+                BEFORE INSERT ON collection_comics
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced batch quick add failure');
+                END
+                """
+            )
+
+        with self.assertRaises(sqlite3.IntegrityError):
+            repo.apply_batch_quick_add(
+                resources=[
+                    {"source_page": "library", "resource_id": self._resource_id(repo, "books", book_id)},
+                    {"source_page": "comic", "resource_id": self._resource_id(repo, "comics", comic_id)},
+                ],
+                collections={
+                    COLLECTION_KIND_BOOK: {"add_ids": [], "create_names": ["Rollback Books"]},
+                    COLLECTION_KIND_COMIC: {"add_ids": [], "create_names": ["Rollback Comics"]},
+                },
+                tags=["Must Roll Back"],
+            )
+
+        self.assertEqual(repo.get_all_collections(COLLECTION_KIND_BOOK), [])
+        self.assertEqual(repo.get_all_collections(COLLECTION_KIND_COMIC), [])
+        self.assertEqual(repo.get_resources_by_tag("Must Roll Back"), [])
+
+    def test_apply_batch_quick_add_validates_every_target_before_writing(self) -> None:
+        repo = self._repo()
+        book_id = self._book(repo, "batch-invalid.pdf")
+        novel_id = self._book(repo, "batch-invalid.txt", "text_novel")
+
+        with self.assertRaisesRegex(ValueError, "resource_kind_mismatch"):
+            repo.apply_batch_quick_add(
+                resources=[
+                    {"source_page": "library", "resource_id": self._resource_id(repo, "books", novel_id)},
+                ],
+                collections={
+                    COLLECTION_KIND_BOOK: {"add_ids": [], "create_names": ["Must Not Exist"]},
+                },
+                tags=["Must Not Exist"],
+            )
+
+        with self.assertRaisesRegex(ValueError, "invalid_collection"):
+            repo.apply_batch_quick_add(
+                resources=[
+                    {"source_page": "library", "resource_id": self._resource_id(repo, "books", book_id)},
+                ],
+                collections={
+                    COLLECTION_KIND_BOOK: {"add_ids": [999999], "create_names": ["Still Must Not Exist"]},
+                },
+                tags=["Still Must Not Exist"],
+            )
+
+        self.assertEqual(repo.get_all_collections(COLLECTION_KIND_BOOK), [])
+        self.assertEqual(repo.get_resources_by_tag("Must Not Exist"), [])
+        self.assertEqual(repo.get_resources_by_tag("Still Must Not Exist"), [])
 
     def test_strips_novels_from_book_collections(self) -> None:
         repo = self._repo()

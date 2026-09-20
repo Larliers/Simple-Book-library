@@ -1,6 +1,6 @@
 ﻿# src 结构说明书（精简且完整）
 
-更新时间：2026-09-19
+更新时间：2026-09-20
 
 ## 1. 文档目标
 - 保留字符串式文件路径结构。
@@ -41,7 +41,8 @@ src/
 │  │  ├─ test_random_recommendations.js
 │  │  ├─ test_tag_management.js
 │  │  ├─ test_shortcuts.js
-│  │  └─ test_quick_add.js
+│  │  ├─ test_quick_add.js
+│  │  └─ test_multi_select.js
 │  ├─ test_comic_preview_pipeline.py
 │  ├─ test_comic_page_cache.py
 │  ├─ test_rule_engine.py
@@ -174,9 +175,10 @@ src/
 - `src/tests/js/test_random_recommendations.js`：以 Node 内置 `vm` 和最小 DOM 假件真实执行生产 `app.js`；覆盖图书/小说/漫画推荐交互、缓存与响应式密度，以及 Library/Text Novel 的 Grid/List、排序下拉、可访问表头、封面列差异和书籍合集加入时间选项。
 - `src/tests/js/test_tag_management.js`：以 Node 内置 `vm` 和最小 DOM 假件执行生产 `app.js`；覆盖目录请求去重与旧响应丢弃、目录 click 调用 `openTag`、直接 `loadTagResources` 不发事件、标签详情、三类来源卡片、键盘/双击/右键路由、搜索禁用、范围至少一项，以及标签页复用合集前进/后退。
 - `src/tests/js/test_shortcuts.js`：以 Node 内置 `vm` 执行生产 `app.js`；覆盖按键规范化/保留键、`BrowserBack`/`keyCode` 166/167/`button`/`which`/`buttons` 侧键录入、`auxclick` 去重、统一动作路由、Library/合集详情/随机推荐来源、无选择和不可用提示、输入/模态/长按屏蔽、冲突保持录入、Escape 取消、原生侧键分发，以及退出/进入最近系列分动作和三类合集独立记忆。
-- `src/tests/js/test_quick_add.js`：以 Node 内置 `vm` 和最小 DOM 假件执行生产 `app.js`；覆盖无同名时点击/Enter 快捷创建、Unicode casefold 同名、部分匹配、批量确认、提交锁、失败留窗、定向缓存/详情回写、普通页不重绘与当前合集移除时保存滚动后重绘。
+- `src/tests/js/test_quick_add.js`：以 Node 内置 `vm` 和最小 DOM 假件执行生产 `app.js`；覆盖单项快捷创建/Unicode casefold/成员调整，以及多资源多合集多 Tag payload、右键批量入口、提交锁、失败留窗、成功清选、滚动保持和定向缓存回写。
+- `src/tests/js/test_multi_select.js`：以 Node 内置 `vm` 执行生产多选状态机；覆盖单击、Ctrl、Shift、Ctrl+Shift、Ctrl+A、Ctrl+Space、Shift+Space、混合来源同 ID、同范围保留与排序换范围清空。
 - `src/tests/test_comic_search.py`：漫画顶栏搜索回归（ViewModel title/path/info_text 过滤；UiBridge comic 与 comic_collections 总览 context 路由，PySide6 可用时跑 Bridge 集成）。
-- `src/tests/test_collection_kinds.py`：合集 kind 隔离（book/text_novel/comic 互不混装）、跨类加入拒绝、小说成员从书籍合集剥离、收藏星标迁入默认「收藏」合集、删漫画清 `collection_comics`，以及批量成员事务、同名复用、非法资源/kind 和真实 SQLite 异常回滚。
+- `src/tests/test_collection_kinds.py`：合集 kind 隔离（book/text_novel/comic 互不混装）、跨类加入拒绝、小说成员从书籍合集剥离、收藏星标迁入默认「收藏」合集、删漫画清 `collection_comics`；覆盖单项成员事务及混合资源批量合集/Tag 的同名复用、幂等、预校验和真实 SQLite 异常整批回滚。
 - `src/tests/test_library_viewmodel_search.py`：Library/Text 搜索与字段前缀建议回归。
 - `src/tests/test_update_checker.py`：GitHub 更新检查回归（版本 normalize/compare、mock API 成功/404/有更新/已最新/网络错误）。
 - `src/tests/test_app_paths.py`：运行时路径回归（dev 态 repo 根路径 vs Nuitka frozen 态 exe 同级 `img_preview`/`sql`/`Scan_error_logs`）。
@@ -192,7 +194,7 @@ src/
 ### 3.3 国际化组件（bookhub/i18n）
 - `src/bookhub/i18n/__init__.py`：国际化导出入口。
 - `src/bookhub/i18n/language.py`：语言切换、词典加载、回退策略。
-- `src/bookhub/i18n/locales/zh-cn.json`：中文文案键值表；含随机推荐、标签管理目录/详情/来源/范围与校验提示，以及快捷键设置导航、动作分组、录入/清除、鼠标侧键、冲突/无选择/不可用、退出与进入最近系列及合集页提示；设置导航将路径与扫描合并命名；含 `text_novel.sort.*` 文件日期及标题/作者/标签/路径十档排序文案；含 `text.rules.step.loop_inline` 单行内循环提取。
+- `src/bookhub/i18n/locales/zh-cn.json`：中文文案键值表；含随机推荐、标签管理、快捷键、单项/批量 Quick Add 的分组、计数、提交与错误提示；设置导航将路径与扫描合并命名；含 `text_novel.sort.*` 十档排序及 `text.rules.step.loop_inline` 文案。
 
 ### 3.4 书库后端组件（bookhub/library）
 - `src/bookhub/library/__init__.py`：后端模块导出入口。
@@ -226,22 +228,22 @@ src/
 ### 3.5 UI 主组件（bookhub/ui）
 - `src/bookhub/ui/__init__.py`：UI 包导出入口。
 - `src/bookhub/ui/web_window.py`：当前主窗口 `WebAppWindow`；负责 WebEngine、主题底色/缩放、扫描/缩略图/缓存迁移/更新、原生目录与封面选择、资源删除及设置写库；`scanDepth`、`textPreviewChars`、`comicPageSize`、`viewportBufferScreens`、`gridColumns` 均把原值交给 Repository 单一归一化，不在 Qt slot 预先 `int()`；扫描、根目录变更和资源删除同时发出标签目录失效信号；手动编辑书籍/小说封面时标记 `cover_source=manual`；`ShortcutWebView` 统一转发鼠标 Back/Forward 并阻止网页历史导航。
-- `src/bookhub/ui/web/js/app.js`：单一 SPA 壳；Library/Text Novel 共用十档字段排序下拉与 List 表头交互，Library/书籍合集保留封面列且合集另含加入时间两档；Quick Add 对三类资源批量提交合集增删并定向回写；其余含标签目录/详情、统一快捷键/右键动作、随机推荐、主内容视图、搜索、主题和任务交互。
+- `src/bookhub/ui/web/js/app.js`：单一 SPA 壳；Library/Text Novel 共用排序与 Grid/List；资源主页、合集详情、标签详情用复合来源键维护完整有序多选、键盘/右键/ARIA 状态，批量 Quick Add 按 kind 提交多个合集与 Tag 并定向回写；其余含单项 Quick Add、标签管理、快捷键、随机推荐、搜索、主题和任务交互。
 - `src/bookhub/ui/web/js/text_rules.js`：Text Rules 宽屏遮罩三栏编辑器（字段/规则链/步骤/预览）；防抖单样本预览、多样本预览、内置模板、用户预设、常用正则与帮助抽屉；经 Bridge 读写 `rules_json`。`renderTextRulesPanel()` 仅在 `openTextRulesPanel` 打开时构建一次性外壳（`.tr-overlay`/`.tr-host`/header/footer，带入场动画）；此后所有编辑（字段切换、规则/步骤增删移动、source/类别/类型 change、模板/预设）改调用 `renderTrBody()` 仅重建 `.tr-body` 三栏内容并保存/恢复各栏 `scrollTop`，不再重播入场动画；`installTrWheelGuard` 在 host 上拦截落在 `<select>` 的滚轮事件（Windows 悬停滚轮会静默改变原生 select 值并触发 change），`preventDefault` 后手动转发 `deltaY` 给 `.tr-col`/`.tr-drawer-body`，修复滚动时误触发全量重建导致的「白屏/像整页重载」；预览 diag 展示 `detectedEncoding` 与置信度。
-- `src/bookhub/ui/web_bridge.py`：`UiBridge(QObject)` 前后端桥；Library/Text Novel 主页及各自合集详情 payload 下发独立 `sort`，`setPageSort` 持久化后重载对应 ViewModel 并发出可追踪 sort 事件；其余包括 Quick Add 定向回写、标签管理、随机推荐、资源变化、主题/设置/扫描/更新、资源与合集 CRUD、搜索、详情与 Text Rules。
-- `src/bookhub/library/repository.py`：`PRAGMA foreign_keys` + `busy_timeout`；删书/漫画与移根时清关联表；`collections.kind` 隔离三类资源；标签字段前缀清理与设置归一化保持既有规则。`text_novel_sort_order_main/fav` 支持十档字段排序并默认 `file_mtime_desc`；`library_sort_order_main` 同样支持十档且默认 `title_asc`，`library_sort_order_fav` 额外接受 `added_asc|added_desc` 并默认 `added_desc`；字段排序共享大小写不敏感、标签显示文本一致及标题/路径稳定兜底。
+- `src/bookhub/ui/web_bridge.py`：`UiBridge(QObject)` 前后端桥；`applyBatchQuickAdd` 严格校验混合资源 payload、映射五类稳定错误并返回受影响来源页/合集页缓存、逐项 Tag 与失效标记，不广播全量刷新；其余包括排序、单项 Quick Add、标签、推荐、设置/扫描、资源 CRUD 与 Text Rules。
+- `src/bookhub/library/repository.py`：`PRAGMA foreign_keys` + `busy_timeout`；`collections.kind` 隔离三类资源；`apply_batch_quick_add` 先校验全部资源/kind/合集，再在单事务内创建/复用多个合集、幂等写成员及精确大小写 Tag，异常整批回滚；其余含排序、标签清理、设置归一化、扫描指纹和资源维护。
 - `src/bookhub/ui/web_scheme.py`：`app://` 自定义 URL scheme；`register_app_scheme()`（须在 QApplication 前调用）、`to_local_path()`（`file://`/裸路径归一化）、`AppSchemeHandler`（`app://app/*` 服务 `web/` 静态资源含 woff2 字体；`app://img/x?p=` 仅服务白名单封面图，越权拒绝）。
 - `src/bookhub/ui/web/index.html`：玻璃拟态 UI 骨架（侧栏含 Import Books、顶栏/主区/详情栏/遮罩/toast/右键菜单挂载点）；`data-ui-skin` + `data-theme` 双轴；`data-skin-link` 样式链由 `app.js` 按皮肤动态注入；`#vwSceneMount` 供蒸汽波 vw-scene 背景层。
 - `src/bookhub/ui/web/fonts/`：蒸汽波 Web 字体（Sora/Space Mono woff2 + OFL.txt）；`skins/vaporwave/fonts.css` 以从皮肤目录返回三级的相对 URL 解析为 `app://app/fonts/*`，不依赖 CDN。
 - `src/bookhub/ui/web/css/base.css`：布局/结构/动画（无 skin 色板）；Glass 与 Vaporwave 共用；含标签分组多列目录、混合资源卡片/来源标识和 1120px/600px 无横向溢出响应式，Library、Text Novel 及对应合集详情在 600px 以下统一单列，提供统一键盘焦点描边。
 - `src/bookhub/ui/web/css/app.css`：legacy 入口，`@import` glass bundle（兼容旧引用）。
 - `src/bookhub/ui/web/css/skins/glass/tokens.css`：玻璃拟态 day/night CSS 变量。
-- `src/bookhub/ui/web/css/skins/glass/components.css`：玻璃拟态组件样式；含标签按钮/来源标识/焦点态、随机推荐响应式网格和快捷键窄屏无溢出重排。
+- `src/bookhub/ui/web/css/skins/glass/components.css`：玻璃拟态组件样式；含资源多选勾选标识、批量面板/分组弹窗/选中合集态，以及标签、推荐、快捷键和焦点样式。
 - `src/bookhub/ui/web/css/skins/vaporwave/fonts.css`：蒸汽波 @font-face，五个 `../../../fonts/` URL 从 `css/skins/vaporwave/` 正确解析到 `web/fonts/` 本地 woff2。
 - `src/bookhub/ui/web/css/skins/vaporwave/tokens.css`：蒸汽波 day/night token（Sora/Space Mono 语义变量）。
 - `src/bookhub/ui/web/css/skins/vaporwave/background.css`：vw-scene 大气渐变 + CRT 扫描线（已移除太阳/动态透视网格）；night 子选择器微调。
 - `src/bookhub/ui/web/css/skins/vaporwave/layout.css`：蒸汽波 z-index 层叠（不改生产 grid）。
-- `src/bookhub/ui/web/css/skins/vaporwave/components.css`：蒸汽波组件重皮肤；与 Glass 保持标签目录/来源标识、随机推荐及快捷键列表结构一致，使用霓虹焦点描边与 Space Mono，窄屏不横向溢出。
+- `src/bookhub/ui/web/css/skins/vaporwave/components.css`：蒸汽波组件重皮肤；与 Glass 保持资源多选勾选标识、批量弹窗/分组/选中合集、标签、推荐及快捷键结构一致，使用霓虹焦点描边与 Space Mono。
 - `src/bookhub/ui/web/js/qwebchannel.js`：Qt 官方 `qwebchannel.js` 原样内置（从 Qt 资源导出）。
 - `requirements-dev.txt`：开发/测试依赖（`pytest==8.3.5`）；运行依赖仍见根目录 `requirements.txt`。
 
