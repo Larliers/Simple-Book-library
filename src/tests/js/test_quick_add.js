@@ -59,7 +59,18 @@ class FakeNode {
     if (target === this) return true;
     return this.children.some((child) => child.contains(target));
   }
-  querySelectorAll() { return []; }
+  querySelectorAll(selector) {
+    const tags = new Set(String(selector).split(",").map((value) => value.trim().toUpperCase()));
+    const matches = [];
+    const visit = (node) => {
+      node.children.forEach((child) => {
+        if (tags.has(child.tagName)) matches.push(child);
+        visit(child);
+      });
+    };
+    visit(this);
+    return matches;
+  }
 }
 
 const nodes = {
@@ -359,6 +370,20 @@ document.getElementById("contentArea").scrollTop = 909;
 openBatchQuickAddModal(selectedResourceRefs());
 const batchOverlay = document.getElementById("overlay");
 const tagInput = walk(batchOverlay, (node) => node.className.includes("batch-tag-input"))[0];
+const labelledBatchInputs = walk(
+  batchOverlay,
+  (node) => node.tagName === "INPUT" && (
+    node.className.includes("batch-tag-input") || node.className.includes("batch-collection-search")
+  )
+);
+labelledBatchInputs.forEach((input) => {
+  assert.ok(input.attributes.id, "batch inputs must expose a stable id");
+  assert.strictEqual(
+    walk(batchOverlay, (node) => node.tagName === "LABEL" && node.attributes.for === input.attributes.id).length,
+    1,
+    "each batch input must have an associated label"
+  );
+});
 tagInput.value = "Tag One";
 tagInput.dispatch("keydown", { key: "Enter" });
 const existingBooks = walk(
@@ -395,9 +420,8 @@ assert.strictEqual(document.getElementById("contentArea").scrollTop, 909);
 
 configureResourceSelection("tag_manager", { mode: "tag_detail", tag: "Mixed" }, batchRefs);
 selectAllResourcesInScope();
-State.bridge.applyBatchQuickAdd = (payloadJson, callback) => callback(JSON.stringify({
-  ok: false, error: "storage_error",
-}));
+let failedBatchCallback = null;
+State.bridge.applyBatchQuickAdd = (payloadJson, callback) => { failedBatchCallback = callback; };
 openBatchQuickAddModal(selectedResourceRefs());
 const failedBatchOverlay = document.getElementById("overlay");
 const failedTagInput = walk(failedBatchOverlay, (node) => node.className.includes("batch-tag-input"))[0];
@@ -407,8 +431,25 @@ walk(
   failedBatchOverlay,
   (node) => node.tagName === "BUTTON" && node.className.includes("batch-submit")
 )[0].dispatch("click");
+assert.ok(failedBatchCallback, "batch submission must reach the bridge");
+const lockedControls = walk(
+  failedBatchOverlay,
+  (node) => ["BUTTON", "INPUT", "SELECT", "TEXTAREA"].includes(node.tagName)
+);
+assert.ok(lockedControls.length > 4);
+assert.strictEqual(
+  lockedControls.every((control) => control.disabled),
+  true,
+  "all modal controls, including dynamically rendered chips and options, must lock during submit"
+);
+failedBatchCallback(JSON.stringify({ ok: false, error: "storage_error" }));
 assert.strictEqual(failedBatchOverlay.classList.contains("hidden"), false);
 assert.strictEqual(selectedResourceRefs().length, 3);
+assert.strictEqual(
+  lockedControls.every((control) => !control.disabled),
+  true,
+  "failed submission must unlock the modal for retry"
+);
 closeModal();
 
 State.currentPage = "library";
@@ -417,14 +458,17 @@ State.pages.library = {
   items: [
     { id: "book-1", title: "Book One" },
     { id: "book-2", title: "Book Two" },
+    { id: "book-3", title: "Book Three" },
   ],
 };
 const contextRefs = [
   { sourcePage: "library", id: "book-1" },
   { sourcePage: "library", id: "book-2" },
+  { sourcePage: "library", id: "book-3" },
 ];
 configureResourceSelection("library", State.pages.library, contextRefs);
-selectAllResourcesInScope();
+updateResourceSelection(contextRefs[0], {});
+updateResourceSelection(contextRefs[1], { ctrlKey: true });
 openContextMenu({ clientX: 20, clientY: 30 }, "library", State.pages.library.items[0], false);
 assert.strictEqual(selectedResourceRefs().length, 2, "right-clicking a selected item must preserve the batch");
 const contextQuickAdd = walk(
@@ -437,6 +481,23 @@ assert.strictEqual(
   walk(document.getElementById("overlay"), (node) => node.className.includes("batch-submit")).length,
   1,
   "context Quick Add must open the batch modal for a multi-selection"
+);
+closeModal();
+
+openContextMenu({ clientX: 20, clientY: 30 }, "library", State.pages.library.items[2], false);
+assert.deepStrictEqual(
+  selectedResourceRefs().map((ref) => ref.id),
+  ["book-3"],
+  "right-clicking an unselected resource must replace the prior batch with that resource"
+);
+walk(
+  document.getElementById("contextMenu"),
+  (node) => node.tagName === "BUTTON" && node.textContent.includes("Quick Add")
+)[0].dispatch("click");
+assert.strictEqual(
+  walk(document.getElementById("overlay"), (node) => node.className.includes("batch-submit")).length,
+  0,
+  "Quick Add must fall back to the single-resource modal after right-clicking an unselected item"
 );
 
 console.log("QUICK_ADD_BEHAVIOR_OK");

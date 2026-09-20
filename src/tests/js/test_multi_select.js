@@ -81,7 +81,23 @@ assert.deepStrictEqual(
   ["book-1", "book-2", "book-3", "book-4", "book-5"]
 );
 
+State.currentPage = TAG_MANAGER_PAGE;
+State.tagDetail = { mode: "tag_detail", tag: "Hidden", items: refs };
+State.tagCatalog = { mode: "tag_index", items: [] };
+scheduleRenderPage = () => {};
+renderDetailEmpty = () => {};
+closeTagDetail();
+let hiddenCtrlADefaultPrevented = false;
+assert.strictEqual(handleShortcutKeydown({
+  code: "KeyA", key: "a", ctrlKey: true, altKey: false, shiftKey: false, metaKey: false,
+  repeat: false, target: null,
+  preventDefault() { hiddenCtrlADefaultPrevented = true; }, stopPropagation() {},
+}), false, "Ctrl+A must not reselect resources after leaving a tag detail");
+assert.strictEqual(hiddenCtrlADefaultPrevented, false);
+assert.strictEqual(State.resourceSelection.order.length, 0);
+
 configureResourceSelection("library", { mode: "grid_or_list", sort: "title_asc" }, refs);
+selectAllResourcesInScope();
 assert.strictEqual(selectedResourceRefs().length, 5, "same data scope must retain selection across Grid/List rendering");
 configureResourceSelection("library", { mode: "grid_or_list", sort: "title_desc" }, refs.slice().reverse());
 assert.strictEqual(selectedResourceRefs().length, 0, "sort changes must clear selection");

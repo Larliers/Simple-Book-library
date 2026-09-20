@@ -174,8 +174,10 @@ const collectCards = (node) => {
 };
 collectCards(area);
 assert.strictEqual(cards.length, 3);
+assert.strictEqual(area.attributes.role, "listbox");
+assert.strictEqual(area.attributes["aria-multiselectable"], "true");
 cards.forEach((card) => {
-  assert.strictEqual(card.attributes.role, "button");
+  assert.strictEqual(card.attributes.role, "option");
   card.dispatch("click");
   card.dispatch("keydown", { key: "Enter", preventDefault() {} });
   card.dispatch("dblclick");

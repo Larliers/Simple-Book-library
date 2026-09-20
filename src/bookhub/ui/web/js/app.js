@@ -90,13 +90,19 @@ function clearResourceSelection() {
   if (State.currentPage) delete State.selected[State.currentPage];
 }
 
+function resetResourceSelectionScope() {
+  clearResourceSelection();
+  State.resourceSelection.scopeKey = "";
+  State.resourceSelection.order = [];
+}
+
 function configureResourceSelection(page, data, refs) {
   const order = (Array.isArray(refs) ? refs : [])
     .map((ref) => ({ sourcePage: String(ref.sourcePage || ""), id: String(ref.id || "") }))
     .filter((ref) => ref.sourcePage && ref.id);
   const scopeKey = resourceSelectionScopeKey(page, data);
   if (State.resourceSelection.scopeKey !== scopeKey) {
-    clearResourceSelection();
+    resetResourceSelectionScope();
     State.resourceSelection.scopeKey = scopeKey;
   }
   State.resourceSelection.order = order;
@@ -243,7 +249,7 @@ const BOOK_COLLECTION_SORT_OPTIONS = [
 
 function setBookPageSort(page, order) {
   if (!State.bridge || !State.bridge.setPageSort) return;
-  clearResourceSelection();
+  resetResourceSelectionScope();
   renderDetailEmpty();
   State.bridge.setPageSort(page, order, (json) => {
     const data = safeParse(json);
@@ -298,7 +304,7 @@ function applyCollectionDataForPage(page, data) {
   const d = typeof data === "string" || data == null ? safeParse(data) : data;
   if (d) {
     if (State.currentPage === page) {
-      clearResourceSelection();
+      resetResourceSelectionScope();
       renderDetailEmpty();
     }
     State.pages[page] = d;
@@ -506,7 +512,7 @@ function wireSignals() {
     if (data && data.pages) {
       State.pages = data.pages;
       const hadBatchSelection = selectedResourceRefs().length > 0;
-      clearResourceSelection();
+      resetResourceSelectionScope();
       const selectionCleared = clearInvalidCurrentSelectionAfterResourceChange() || hadBatchSelection;
       if (selectionCleared) renderDetailEmpty();
       if (data.recommendationsInvalidated) {
@@ -663,9 +669,7 @@ function selectPage(page) {
   // Same-page nav click: avoid wiping/rebuilding hundreds of cards.
   if (page === State.currentPage && page !== "settings") return;
   savePageScroll(State.currentPage);
-  clearResourceSelection();
-  State.resourceSelection.scopeKey = "";
-  State.resourceSelection.order = [];
+  resetResourceSelectionScope();
   if (page !== "settings") State.shortcutCaptureAction = "";
   State.currentPage = page;
   document.body.dataset.page = page;
@@ -748,6 +752,10 @@ function renderPage(expectedGen) {
   if (gen !== State.renderGen) return;
   teardownVirtualWindow(area);
   clear(area);
+  if (area.removeAttribute) {
+    area.removeAttribute("role");
+    area.removeAttribute("aria-multiselectable");
+  }
   // Large comic waterfall: skip enter animation — empty+animate looked like full white reload.
   const skipEnter = (page === "comic" || isComicCollectionDetail(data)) && (data.viewMode || "waterfall") !== "pagination" && count > 48;
   area.classList.remove("view-enter", "view-enter-skip");
@@ -766,6 +774,7 @@ function renderPage(expectedGen) {
   $("viewModeToggle").style.display = showViewToggle ? "" : "none";
 
   if (page === RANDOM_RECOMMENDATIONS_PAGE) {
+    resetResourceSelectionScope();
     if (State.recommendationsLoading && !State.recommendations) {
       area.appendChild(buildEmpty(t("recommendations.loading", "Loading recommendations...")));
     } else {
@@ -775,6 +784,7 @@ function renderPage(expectedGen) {
   }
 
   if (page === TAG_MANAGER_PAGE) {
+    if (data.mode !== "tag_detail") resetResourceSelectionScope();
     if (State.tagLoading && !State.tagCatalog && !State.tagDetail) {
       area.appendChild(buildEmpty(t("tags.loading", "Loading tags...")));
     } else if (data.mode === "tag_detail") {
@@ -786,6 +796,7 @@ function renderPage(expectedGen) {
   }
 
   if (!count) {
+    resetResourceSelectionScope();
     area.appendChild(buildEmpty(t("empty.default", "Nothing here yet.")));
     return;
   }
@@ -795,7 +806,11 @@ function renderPage(expectedGen) {
     else renderTextNovelGrid(area, data.items, page, gen);
     return;
   }
-  if (data.mode === "collections") { renderCollections(area, data.items); return; }
+  if (data.mode === "collections") {
+    resetResourceSelectionScope();
+    renderCollections(area, data.items);
+    return;
+  }
   if (page === "comic" || data.mode === "comic") { renderComic(area, data, gen); return; }
   if (viewModeForPage(page) === "list") {
     renderTable(area, data.items, page, data.sort || "");
@@ -864,7 +879,7 @@ function renderPageTools(page, data) {
       sel.appendChild(opt);
     });
     sel.addEventListener("change", () => {
-      clearResourceSelection();
+      resetResourceSelectionScope();
       renderDetailEmpty();
       State.bridge.setPageSort(page, sel.value, (json) => {
         const d = safeParse(json);
@@ -1003,7 +1018,7 @@ function loadTagResources(tag) {
   const normalizedTag = String(tag || "").trim();
   if (!normalizedTag) return;
   State.tagLoading = true;
-  clearResourceSelection();
+  resetResourceSelectionScope();
   State.tagDetail = { mode: "tag_detail", tag: normalizedTag, items: [] };
   State.tagSelection = null;
   const requestId = ++State.tagRequestId;
@@ -1028,7 +1043,7 @@ function closeTagDetail() {
   State.tagRequestId += 1;
   State.tagLoading = false;
   State.tagDetail = null;
-  clearResourceSelection();
+  resetResourceSelectionScope();
   State.tagSelection = null;
   clearPageScroll(TAG_MANAGER_PAGE);
   renderDetailEmpty();
@@ -1087,6 +1102,7 @@ function tagSourceLabel(sourcePage) {
 function renderTagDetail(area, data, gen) {
   const items = Array.isArray(data.items) ? data.items : [];
   if (!items.length) {
+    resetResourceSelectionScope();
     if (State.tagLoading) area.appendChild(buildEmpty(t("tags.loading", "Loading tags...")));
     else area.appendChild(buildEmpty(t("empty.default", "Nothing here yet.")));
     return;
@@ -1095,12 +1111,14 @@ function renderTagDetail(area, data, gen) {
     sourcePage: String(item.sourcePage || "library"),
     id: String(item.id || ""),
   }));
+  area.setAttribute("role", "listbox");
+  area.setAttribute("aria-multiselectable", "true");
   mountVirtualCoverGrid(area, items, TAG_MANAGER_PAGE, true, gen, (item) => {
     const sourcePage = String(item.sourcePage || "library");
     const ref = { sourcePage, id: String(item.id || "") };
     const card = elem("article", "book-card tag-resource-card");
     card.tabIndex = 0;
-    card.setAttribute("role", "button");
+    card.setAttribute("role", "option");
     card.setAttribute("aria-label", `${tagSourceLabel(sourcePage)}: ${item.title || ""}`);
     applyResourceSelectionState(card, ref);
     card.appendChild(buildCoverSlot(item, "cover", sourcePage === "library"));
@@ -1414,10 +1432,12 @@ function handleResourceSelectionKeydown(ref, event) {
 function renderGrid(area, items, page, isCollectionDetail, gen) {
   const showFormatBadge = page === "library" || (isCollectionDetail && page !== "comic" && page !== "comic_collections");
   prepareResourceSelection(page, currentPageData(), items);
+  area.setAttribute("role", "listbox");
+  area.setAttribute("aria-multiselectable", "true");
   mountVirtualCoverGrid(area, items, page, false, gen, (item) => {
     const ref = resourceRefForPage(page, item);
     const card = elem("article", "book-card");
-    card.setAttribute("role", "button");
+    card.setAttribute("role", "option");
     card.setAttribute("tabindex", "0");
     card.setAttribute("aria-label", item.title || "");
     applyResourceSelectionState(card, ref);
@@ -1432,10 +1452,12 @@ function renderGrid(area, items, page, isCollectionDetail, gen) {
 
 function renderTextNovelGrid(area, items, page, gen) {
   prepareResourceSelection(page, currentPageData(), items);
+  area.setAttribute("role", "listbox");
+  area.setAttribute("aria-multiselectable", "true");
   mountVirtualCoverGrid(area, items, page, true, gen, (item) => {
     const ref = resourceRefForPage(page, item);
     const card = elem("article", "book-card");
-    card.setAttribute("role", "button");
+    card.setAttribute("role", "option");
     card.setAttribute("tabindex", "0");
     card.setAttribute("aria-label", item.title || "");
     applyResourceSelectionState(card, ref);
@@ -1496,7 +1518,7 @@ function renderComic(area, data, gen) {
     prev.disabled = State._comicPage <= 1;
     next.disabled = State._comicPage >= totalPages;
     prev.addEventListener("click", () => {
-      clearResourceSelection();
+      resetResourceSelectionScope();
       renderDetailEmpty();
       State._comicPage--;
       State.comicPageNum[pageKey] = State._comicPage;
@@ -1504,7 +1526,7 @@ function renderComic(area, data, gen) {
       scheduleRenderPage();
     });
     next.addEventListener("click", () => {
-      clearResourceSelection();
+      resetResourceSelectionScope();
       renderDetailEmpty();
       State._comicPage++;
       State.comicPageNum[pageKey] = State._comicPage;
@@ -1521,6 +1543,8 @@ function renderTable(area, items, page, pageSort) {
   prepareResourceSelection(page, currentPageData(), items);
   const topSpacer = elem("div", "virt-spacer-top");
   const table = elem("table", "table");
+  table.setAttribute("role", "grid");
+  table.setAttribute("aria-multiselectable", "true");
   const thead = elem("thead");
   const htr = elem("tr");
   const sortableBookList = page === "library"
@@ -2200,7 +2224,7 @@ function openContextMenu(event, page, item, isCollectionDetail) {
   const ref = { sourcePage: tagSourcePage(page), id: String(item.id) };
   const selectionKey = resourceSelectionKey(ref);
   if (
-    State.resourceSelection.order.includes(selectionKey)
+    State.resourceSelection.order.some((current) => resourceSelectionKey(current) === selectionKey)
     && !State.resourceSelection.selectedKeys.has(selectionKey)
   ) {
     handleResourceSelection(ref, {});
@@ -2743,14 +2767,12 @@ function openBatchQuickAddModal(refs) {
     const syncSubmitDisabled = () => {
       if (submit) submit.disabled = submitting || pendingLoads > 0;
     };
-    const controls = [];
     const selectedCollectionIds = Object.fromEntries(groups.map((group) => [group.kind, new Set()]));
     const queuedCollectionNames = Object.fromEntries(groups.map((group) => [group.kind, []]));
     const collectionRows = Object.fromEntries(groups.map((group) => [group.kind, []]));
     const pendingTags = [];
     const requestClose = () => { if (!submitting) close(); };
-    const closeButton = modalHeader(modal, t("batch.title", "Batch Quick Add"), requestClose);
-    controls.push(closeButton);
+    modalHeader(modal, t("batch.title", "Batch Quick Add"), requestClose);
     modal.classList.add("batch-quick-add-modal");
     modal.appendChild(elem(
       "p",
@@ -2759,10 +2781,12 @@ function openBatchQuickAddModal(refs) {
     ));
 
     const tagField = elem("div", "field batch-tag-field");
-    tagField.appendChild(elem("label", null, t("batch.tags", "Tags to add")));
+    const tagLabel = elem("label", null, t("batch.tags", "Tags to add"));
     const tagInput = elem("input", "batch-tag-input");
+    tagInput.setAttribute("id", "batch-tag-input");
+    tagLabel.setAttribute("for", "batch-tag-input");
     tagInput.placeholder = t("batch.tag_placeholder", "Type a tag and press Enter...");
-    controls.push(tagInput);
+    tagField.appendChild(tagLabel);
     tagField.appendChild(tagInput);
     const tagChips = elem("div", "chip-row batch-pending-tags");
     const recentTags = elem("div", "chip-row recent-tags");
@@ -2802,8 +2826,8 @@ function openBatchQuickAddModal(refs) {
       (safeParse(json) || []).slice(0, 12).forEach((tag) => {
         const chip = elem("button", "chip chip-btn", tag);
         chip.type = "button";
+        chip.disabled = submitting;
         chip.addEventListener("click", () => addPendingTag(tag));
-        controls.push(chip);
         recentTags.appendChild(chip);
       });
     });
@@ -2815,11 +2839,14 @@ function openBatchQuickAddModal(refs) {
     groups.forEach((group) => {
       const field = elem("section", "field batch-collection-group");
       field.dataset.kind = group.kind;
-      field.appendChild(elem("label", null, t(group.labelKey, group.fallback)));
+      const collectionLabel = elem("label", null, t(group.labelKey, group.fallback));
       const search = elem("input", "batch-collection-search");
+      const searchId = `batch-collection-search-${group.kind}`;
+      search.setAttribute("id", searchId);
+      collectionLabel.setAttribute("for", searchId);
       search.dataset.kind = group.kind;
       search.placeholder = t("quick_add.collection_placeholder", "Search collections...");
-      controls.push(search);
+      field.appendChild(collectionLabel);
       field.appendChild(search);
       const queued = elem("div", "chip-row batch-pending-collections");
       const list = elem("div", "list-stack mt batch-collection-list");
@@ -2914,11 +2941,12 @@ function openBatchQuickAddModal(refs) {
     const cancel = elem("button", "ghost-btn", t("common.cancel", "Cancel"));
     cancel.addEventListener("click", requestClose);
     submit = elem("button", "primary-btn batch-submit", t("batch.confirm", "Add to selected items"));
-    controls.push(cancel, submit);
     const setSubmitting = (value) => {
       submitting = value;
       modal.dataset.submitting = value ? "true" : "false";
-      controls.forEach((control) => { control.disabled = value; });
+      modal.querySelectorAll("button, input, select, textarea").forEach((control) => {
+        control.disabled = value;
+      });
       syncSubmitDisabled();
     };
 
@@ -3920,7 +3948,7 @@ function commitSearch() {
   State.bridge.search(ctx, State.searchQuery, (json) => {
     const data = safeParse(json);
     if (!data) return;
-    clearResourceSelection();
+    resetResourceSelectionScope();
     renderDetailEmpty();
     State.pages[ctx] = data;
     if (State.currentPage === ctx) scheduleRenderPage();

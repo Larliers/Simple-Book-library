@@ -175,8 +175,8 @@ src/
 - `src/tests/js/test_random_recommendations.js`：以 Node 内置 `vm` 和最小 DOM 假件真实执行生产 `app.js`；覆盖图书/小说/漫画推荐交互、缓存与响应式密度，以及 Library/Text Novel 的 Grid/List、排序下拉、可访问表头、封面列差异和书籍合集加入时间选项。
 - `src/tests/js/test_tag_management.js`：以 Node 内置 `vm` 和最小 DOM 假件执行生产 `app.js`；覆盖目录请求去重与旧响应丢弃、目录 click 调用 `openTag`、直接 `loadTagResources` 不发事件、标签详情、三类来源卡片、键盘/双击/右键路由、搜索禁用、范围至少一项，以及标签页复用合集前进/后退。
 - `src/tests/js/test_shortcuts.js`：以 Node 内置 `vm` 执行生产 `app.js`；覆盖按键规范化/保留键、`BrowserBack`/`keyCode` 166/167/`button`/`which`/`buttons` 侧键录入、`auxclick` 去重、统一动作路由、Library/合集详情/随机推荐来源、无选择和不可用提示、输入/模态/长按屏蔽、冲突保持录入、Escape 取消、原生侧键分发，以及退出/进入最近系列分动作和三类合集独立记忆。
-- `src/tests/js/test_quick_add.js`：以 Node 内置 `vm` 和最小 DOM 假件执行生产 `app.js`；覆盖单项快捷创建/Unicode casefold/成员调整，以及多资源多合集多 Tag payload、右键批量入口、提交锁、失败留窗、成功清选、滚动保持和定向缓存回写。
-- `src/tests/js/test_multi_select.js`：以 Node 内置 `vm` 执行生产多选状态机；覆盖单击、Ctrl、Shift、Ctrl+Shift、Ctrl+A、Ctrl+Space、Shift+Space、混合来源同 ID、同范围保留与排序换范围清空。
+- `src/tests/js/test_quick_add.js`：以 Node 内置 `vm` 和最小 DOM 假件执行生产 `app.js`；覆盖单项快捷创建/Unicode casefold/成员调整，以及多资源多合集多 Tag payload、右键已选/未选分流、全控件提交锁、失败留窗、成功清选、滚动保持、显式表单标签和定向缓存回写。
+- `src/tests/js/test_multi_select.js`：以 Node 内置 `vm` 执行生产多选状态机；覆盖单击、Ctrl、Shift、Ctrl+Shift、Ctrl+A、Ctrl+Space、Shift+Space、混合来源同 ID、同范围保留、排序换范围清空，以及退出详情后旧范围不可被快捷键重新选中。
 - `src/tests/test_comic_search.py`：漫画顶栏搜索回归（ViewModel title/path/info_text 过滤；UiBridge comic 与 comic_collections 总览 context 路由，PySide6 可用时跑 Bridge 集成）。
 - `src/tests/test_collection_kinds.py`：合集 kind 隔离（book/text_novel/comic 互不混装）、跨类加入拒绝、小说成员从书籍合集剥离、收藏星标迁入默认「收藏」合集、删漫画清 `collection_comics`；覆盖单项成员事务及混合资源批量合集/Tag 的同名复用、幂等、预校验和真实 SQLite 异常整批回滚。
 - `src/tests/test_library_viewmodel_search.py`：Library/Text 搜索与字段前缀建议回归。
@@ -228,7 +228,7 @@ src/
 ### 3.5 UI 主组件（bookhub/ui）
 - `src/bookhub/ui/__init__.py`：UI 包导出入口。
 - `src/bookhub/ui/web_window.py`：当前主窗口 `WebAppWindow`；负责 WebEngine、主题底色/缩放、扫描/缩略图/缓存迁移/更新、原生目录与封面选择、资源删除及设置写库；`scanDepth`、`textPreviewChars`、`comicPageSize`、`viewportBufferScreens`、`gridColumns` 均把原值交给 Repository 单一归一化，不在 Qt slot 预先 `int()`；扫描、根目录变更和资源删除同时发出标签目录失效信号；手动编辑书籍/小说封面时标记 `cover_source=manual`；`ShortcutWebView` 统一转发鼠标 Back/Forward 并阻止网页历史导航。
-- `src/bookhub/ui/web/js/app.js`：单一 SPA 壳；Library/Text Novel 共用排序与 Grid/List；资源主页、合集详情、标签详情用复合来源键维护完整有序多选、键盘/右键/ARIA 状态，批量 Quick Add 按 kind 提交多个合集与 Tag 并定向回写；其余含单项 Quick Add、标签管理、快捷键、随机推荐、搜索、主题和任务交互。
+- `src/bookhub/ui/web/js/app.js`：单一 SPA 壳；Library/Text Novel 共用排序与 Grid/List；资源主页、合集详情、标签详情用复合来源键维护完整有序多选，非资源视图会同步丢弃旧范围；卡片/表格提供 listbox/grid 多选语义，右键已选保批、未选收敛单选；批量 Quick Add 按 kind 提交多个合集与 Tag、提交期锁定全部控件并定向回写；其余含单项 Quick Add、标签管理、快捷键、随机推荐、搜索、主题和任务交互。
 - `src/bookhub/ui/web/js/text_rules.js`：Text Rules 宽屏遮罩三栏编辑器（字段/规则链/步骤/预览）；防抖单样本预览、多样本预览、内置模板、用户预设、常用正则与帮助抽屉；经 Bridge 读写 `rules_json`。`renderTextRulesPanel()` 仅在 `openTextRulesPanel` 打开时构建一次性外壳（`.tr-overlay`/`.tr-host`/header/footer，带入场动画）；此后所有编辑（字段切换、规则/步骤增删移动、source/类别/类型 change、模板/预设）改调用 `renderTrBody()` 仅重建 `.tr-body` 三栏内容并保存/恢复各栏 `scrollTop`，不再重播入场动画；`installTrWheelGuard` 在 host 上拦截落在 `<select>` 的滚轮事件（Windows 悬停滚轮会静默改变原生 select 值并触发 change），`preventDefault` 后手动转发 `deltaY` 给 `.tr-col`/`.tr-drawer-body`，修复滚动时误触发全量重建导致的「白屏/像整页重载」；预览 diag 展示 `detectedEncoding` 与置信度。
 - `src/bookhub/ui/web_bridge.py`：`UiBridge(QObject)` 前后端桥；`applyBatchQuickAdd` 严格校验混合资源 payload、映射五类稳定错误并返回受影响来源页/合集页缓存、逐项 Tag 与失效标记，不广播全量刷新；其余包括排序、单项 Quick Add、标签、推荐、设置/扫描、资源 CRUD 与 Text Rules。
 - `src/bookhub/library/repository.py`：`PRAGMA foreign_keys` + `busy_timeout`；`collections.kind` 隔离三类资源；`apply_batch_quick_add` 先校验全部资源/kind/合集，再在单事务内创建/复用多个合集、幂等写成员及精确大小写 Tag，异常整批回滚；其余含排序、标签清理、设置归一化、扫描指纹和资源维护。
