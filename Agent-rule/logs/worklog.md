@@ -2,7 +2,7 @@
 
 ## 最新记录
 ```json
-{"log_id":"worklog-20260920-001","timestamp":"2026-09-20T09:30:00+08:00","actor":"library-agent + ui-agent","task":"为图书、文本小说和漫画增加跨视图多选及多合集、多 Tag 批量添加","changes":["Repository 单事务批量写入","Bridge 定向缓存响应","Web UI 多选与批量弹窗","双皮肤和文案/契约同步"],"affected_files":["src/bookhub/library/repository.py","src/bookhub/ui/web_bridge.py","src/bookhub/ui/web/js/app.js","src/tests/js/test_multi_select.js"],"outputs":["292 passed, 70 subtests passed","五组 Node 行为测试通过","双皮肤三视口 Qt WebEngine 验收通过"],"risks":["仅实现批量添加，不含批量移除或删除"],"next_actions":[]}
+{"log_id":"worklog-20260920-002","timestamp":"2026-09-20T15:20:05+08:00","actor":"maintenance-agent + ui-agent","task":"重写中英文 README 并生成 1920×1080 匿名 Glass 运行截图","changes":["README 首屏改为搜索友好的产品定位、稳定版下载和真实界面截图","正文按目标用户、能力、稳定版/main、三步上手、格式、隐私限制和开发帮助重组","稳定版 v2.4.0 与 main 未发布功能明确分开，两份 README 保留发布工作流版本标记","真实 WebAppWindow 使用临时数据库、虚构书名、程序生成封面和 C:\\DemoLibrary 演示路径输出主图","shared-rules 增加双语同步、事实核验、版本标记和截图隐私规则；规则版本升至 v0.1.1","src_construction 插入 docs/assets/screenshots 当前路径"],"affected_files":["README.md","README.en.md","docs/assets/screenshots/simple-book-library-glass-1920x1080.png","Agent-rule/shared-rules.md","Agent-rule/project-context.md","Agent-rule/logs/worklog.md","Agent-rule/logs/decision-log.md","src_construction.md"],"outputs":["1920×1080 PNG，492557 bytes","Qt WebEngine viewport 1920×1080，无横向溢出或脚本错误","中英文 README 本地链接与版本标记校验通过","git diff --check 通过"],"risks":["README 中 current main 能力在下一次 Release 后需重新归类","GitHub Description 与 Topics 需要仓库管理员在远端手动应用"],"next_actions":["下一次 Release 后同步稳定版表格和版本截图"]}
 ```
 
 ## 2026-09-20 - 三类资源多选与原子批量 Quick Add
