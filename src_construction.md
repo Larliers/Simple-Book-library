@@ -15,7 +15,7 @@
 
 ```text
 docs/assets/screenshots/
-└─ simple-book-library-glass-1920x1080.png  # 双语 README 共用的真实 Glass 日间界面主图；1920×1080，匿名演示数据
+└─ simple-book-library-glass-1920x1080.png  # 双语 README 共用的真实 Glass 日间界面主图；含用户向 TXT Rules 说明，1920×1080，匿名演示数据
 ```
 
 ### 2.2 UI 设计原型（Dev_Document，非运行时）

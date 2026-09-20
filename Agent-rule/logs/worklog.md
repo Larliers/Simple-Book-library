@@ -2,7 +2,7 @@
 
 ## 最新记录
 ```json
-{"log_id":"worklog-20260920-002","timestamp":"2026-09-20T15:20:05+08:00","actor":"maintenance-agent + ui-agent","task":"重写中英文 README 并生成 1920×1080 匿名 Glass 运行截图","changes":["README 首屏改为搜索友好的产品定位、稳定版下载和真实界面截图","正文按目标用户、能力、稳定版/main、三步上手、格式、隐私限制和开发帮助重组","稳定版 v2.4.0 与 main 未发布功能明确分开，两份 README 保留发布工作流版本标记","真实 WebAppWindow 使用临时数据库、虚构书名、程序生成封面和 C:\\DemoLibrary 演示路径输出主图","shared-rules 增加双语同步、事实核验、版本标记和截图隐私规则；规则版本升至 v0.1.1","src_construction 插入 docs/assets/screenshots 当前路径"],"affected_files":["README.md","README.en.md","docs/assets/screenshots/simple-book-library-glass-1920x1080.png","Agent-rule/shared-rules.md","Agent-rule/project-context.md","Agent-rule/logs/worklog.md","Agent-rule/logs/decision-log.md","src_construction.md"],"outputs":["1920×1080 PNG，492557 bytes","Qt WebEngine viewport 1920×1080，无横向溢出或脚本错误","中英文 README 本地链接与版本标记校验通过","git diff --check 通过"],"risks":["README 中 current main 能力在下一次 Release 后需重新归类","GitHub Description 与 Topics 需要仓库管理员在远端手动应用"],"next_actions":["下一次 Release 后同步稳定版表格和版本截图"]}
+{"log_id":"worklog-20260920-003","timestamp":"2026-09-20T16:05:00+08:00","actor":"maintenance-agent","task":"补充 README 的 TXT Rules 目标用户说明及英文翻译","changes":["中文 README 说明 Rules 面向使用自动化下载程序、浏览器插件或油猴脚本收集 TXT 图书后进行分类的用户","英文 README 增加对应的 download automation、browser extensions 和 Tampermonkey/Greasemonkey userscripts 说明","明确 Rules 只负责本地文件识别与分类，不负责下载内容","src_construction 更新公开文档资产说明"],"affected_files":["README.md","README.en.md","src_construction.md","Agent-rule/logs/worklog.md","Agent-rule/logs/history/2026-09-20.md"],"outputs":["中英文新增说明均位于 TXT Rules 小节","英文新增段落保持单段不超过 240 字符","git diff --check 通过"],"risks":["Rules 的实际能力仍限于导入后的本地文件识别与分类，不应被描述为下载器"],"next_actions":[]}
 ```
 
 ## 2026-09-20 - 三类资源多选与原子批量 Quick Add
@@ -726,3 +726,20 @@
 - 截图尺寸为 1920×1080、492557 bytes；真实页面 `scrollWidth == clientWidth == 1920`，脚本错误为空。
 - 截图正文仅出现 `C:\DemoLibrary\...` 演示路径，不含用户目录或工作区路径；人工目检封面、详情、排序与导航清晰可见。
 - 中英文 README 本地链接完整，各有一个 Release workflow 可识别的版本标记；`git diff --check` 通过。
+
+---
+
+## 2026-09-20 - README TXT Rules 目标用户补充
+
+### 任务
+补充文本小说 Rules 面向的实际用户场景，并提供自然的英文翻译。
+
+### 实现内容
+- 中文 README 说明：使用自动化程序、浏览器插件或油猴脚本从网站收集 TXT 图书后，可用 Rules 提取标题、作者和标签并分类，避免逐本手动打 Tag。
+- 英文 README 对应说明 download automation、browser extensions 和 Tampermonkey/Greasemonkey userscripts 用户。
+- 中英文均明确 Rules 只负责本地文件识别与分类，不负责下载内容。
+- 更新 `src_construction.md` 的公开文档资产说明。
+
+### 验证结果
+- 英文新增说明的每个段落均不超过 240 个字符。
+- `git diff --check` 通过。

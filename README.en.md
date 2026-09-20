@@ -71,6 +71,8 @@ The Releases page contains the stable build. Features listed under main remain s
 - PDFs prefer an embedded cover and fall back to a title placeholder when no usable image exists.
 - TXT files can use a same-stem WebP, PNG, JPG, or JPEG cover; manually selected covers remain authoritative.
 - Edit TXT rule chains and preview extracted metadata under **Settings → Paths & Scan → Rules**.
+- If you use download automation, browser extensions, or Tampermonkey/Greasemonkey userscripts to collect TXT books from websites, Rules can turn filename or body text into titles, authors, and tags after import.
+- That saves you from tagging every file by hand. Rules classify local files; they do not download content.
 
 ## Local data and privacy
 
