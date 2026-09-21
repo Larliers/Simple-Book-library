@@ -586,7 +586,7 @@ class UiBridge(QObject):
             "path": row.get("path") or "",
             "type": row.get("resource_type") or "book",
             "cover": self._cover_url(row.get("thumbnail_path")),
-            "coverImage": str(row.get("cover_image_path") or ""),
+            "coverImage": str(row.get("cover_image_path") or "") or None,
             "meta": " · ".join(meta_parts),
             "info": str(row.get("info_text") or "") or "",
             "fileName": row.get("file_name") or "",
@@ -638,7 +638,7 @@ class UiBridge(QObject):
             "path": item.path or "",
             "type": item.resource_type or "book",
             "cover": self._cover_url(item.thumbnail_path),
-            "coverImage": str(item.cover_image_path or ""),
+            "coverImage": str(item.cover_image_path or "") or None,
             "meta": " · ".join(meta_parts),
             "info": item.info_text or "",
             "fileName": item.file_name or "",
@@ -1018,6 +1018,7 @@ class UiBridge(QObject):
         detail = self._detail_for(page, resource_id)
         if not detail:
             return
+        is_image_folder_book = str(detail.get("extension") or "").lower() == IMAGE_FOLDER_BOOK_EXTENSION
         if page in COMIC_PAGES:
             record = {
                 "path": detail.get("path") or "",
@@ -1025,17 +1026,26 @@ class UiBridge(QObject):
             }
             resolved = resolve_comic_open_path(self._repo.preview_dir, record)
             target = str(resolved) if resolved else str(detail.get("path") or "")
-        elif str(detail.get("extension") or "").lower() == IMAGE_FOLDER_BOOK_EXTENSION:
+        elif is_image_folder_book:
             target = str(detail.get("coverImage") or "")
         else:
             target = str(detail.get("path") or "")
+        if is_image_folder_book and (not target.strip() or not Path(target).expanduser().is_file()):
+            self.emit_toast(
+                tr("open.failed_title", "Cannot open"),
+                tr("open.failed_msg", "File or folder not found."),
+                "warning",
+            )
+            return
         if self._external_target_exists(target):
             self._emit_open_external_event(resource_id)
         self._open_external(target)
 
     def _external_target_exists(self, path: str) -> bool:
-        file_path = Path(path).expanduser()
-        return bool(str(file_path).strip()) and file_path.exists()
+        raw_path = str(path or "").strip()
+        if not raw_path:
+            return False
+        return Path(raw_path).expanduser().exists()
 
     def _emit_open_external_event(self, resource_id: str) -> None:
         self.interactionEvent.emit(json.dumps({

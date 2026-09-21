@@ -149,6 +149,15 @@ def regenerate_library_thumbnails(
 
         source = Path(source_path)
         if extension == IMAGE_FOLDER_BOOK_EXTENSION:
+            manual_thumbnail = uri_to_path(record.get("thumbnail_path"))
+            if (
+                str(record.get("cover_source") or "") == "manual"
+                and manual_thumbnail is not None
+                and manual_thumbnail.exists()
+                and manual_thumbnail.is_file()
+            ):
+                result.skipped += 1
+                continue
             cover_path = Path(str(record.get("cover_image_path") or ""))
             if not source.exists() or not source.is_dir() or not cover_path.exists() or not cover_path.is_file():
                 result.skipped += 1

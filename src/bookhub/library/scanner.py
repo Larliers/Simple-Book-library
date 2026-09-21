@@ -230,14 +230,18 @@ def _remove_missing_books_in_scope(
     *,
     resource_type: str | None,
     exclude_text_novel: bool = False,
-) -> int:
+    protected_roots: list[str] | None = None,
+) -> tuple[int, int]:
     records = repository.list_books_in_roots(roots=roots, resource_type=resource_type)
     stale_ids: list[int] = []
+    stale_image_folder_count = 0
     for record in records:
         if exclude_text_novel and str(record.get("resource_type") or "") == "text_novel":
             continue
         path_value = str(record.get("path") or "")
         if not path_value:
+            continue
+        if protected_roots and repository._path_in_roots(path_value, protected_roots):
             continue
         source = Path(path_value)
         extension = str(record.get("extension") or "").lower()
@@ -255,6 +259,8 @@ def _remove_missing_books_in_scope(
         if book_id is None:
             continue
         stale_ids.append(book_id)
+        if extension == IMAGE_FOLDER_BOOK_EXTENSION:
+            stale_image_folder_count += 1
         title = str(record.get("title") or record.get("file_name") or "Unknown")
         _log_missing_entry(
             resource_type=str(record.get("resource_type") or "book"),
@@ -266,7 +272,8 @@ def _remove_missing_books_in_scope(
                 else "source file missing during scan"
             ),
         )
-    return repository.delete_books_by_ids(stale_ids)
+    removed = repository.delete_books_by_ids(stale_ids)
+    return removed, min(stale_image_folder_count, removed)
 
 
 def _remove_missing_comics_in_scope(repository: LibraryRepository, roots: list[str]) -> int:
@@ -923,7 +930,11 @@ def scan_text_roots(
     encoding_preference = normalize_encoding_preference(request.encoding_preference)
     scanned_roots = [repository.normalize_path(item.path) for item in request.roots if str(item.path).strip()]
     total_files = _count_text_scan_files(request.roots)
-    removed_missing = _remove_missing_books_in_scope(repository, scanned_roots, resource_type="text_novel")
+    removed_missing, _removed_image_books = _remove_missing_books_in_scope(
+        repository,
+        scanned_roots,
+        resource_type="text_novel",
+    )
     if removed_missing > 0:
         result.removed_missing_count += removed_missing
         result.removed_missing_book_count += removed_missing
@@ -1143,6 +1154,7 @@ def scan_roots(
     existing_by_path = repository.map_library_books_for_scan(scanned_roots)
     eligible_image_book_paths: set[str] = set()
     successfully_scanned_roots: list[str] = []
+    failed_scanned_roots: list[str] = []
 
     for root_spec in request.roots:
         raw_root = repository.normalize_path(root_spec.path)
@@ -1154,6 +1166,7 @@ def scan_roots(
         root = Path(raw_root)
         if not root.exists() or not root.is_dir():
             result.errors.append(f"Scan root unavailable: {raw_root}")
+            failed_scanned_roots.append(raw_root)
             continue
         root_scan_succeeded = True
         for scan_entry in _iter_library_scan_entries(root, scan_depth):
@@ -1421,6 +1434,8 @@ def scan_roots(
 
         if root_scan_succeeded:
             successfully_scanned_roots.append(raw_root)
+        else:
+            failed_scanned_roots.append(raw_root)
 
     if skipped_pdf_backend_count > 0:
         result.warnings.append(
@@ -1431,21 +1446,25 @@ def scan_roots(
             }
         )
 
-    removed_missing = _remove_missing_books_in_scope(
+    removed_missing, removed_missing_image_books = _remove_missing_books_in_scope(
         repository,
         successfully_scanned_roots,
         resource_type=None,
         exclude_text_novel=True,
+        protected_roots=failed_scanned_roots,
     )
     if removed_missing > 0:
         result.removed_missing_count += removed_missing
         result.removed_missing_book_count += removed_missing
+    result.removed_ineligible_image_book_count += removed_missing_image_books
 
     stale_image_book_ids: list[int] = []
     for path_value, record in existing_by_path.items():
         if str(record.get("extension") or "").lower() != IMAGE_FOLDER_BOOK_EXTENSION:
             continue
         if path_value in eligible_image_book_paths:
+            continue
+        if repository._path_in_roots(path_value, failed_scanned_roots):
             continue
         if not repository._path_in_roots(path_value, successfully_scanned_roots):
             continue

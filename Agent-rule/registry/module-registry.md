@@ -56,7 +56,7 @@
 ```json
 {
   "module_name": "library_image_folder_book_scanner",
-  "owner_agent": "indexer-agent + thumbnail-agent + ui-agent",
+  "owner_agent": "indexer-agent",
   "status": "active",
   "purpose": "在总书库一次遍历中把符合门槛的图片目录作为普通书籍导入，并稳定传递首图、缓存和外部打开目标",
   "input": ["library_roots", "scan_depth", "direct_child_names", "direct_file_size_mtime_ns"],

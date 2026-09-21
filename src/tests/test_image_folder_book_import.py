@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -348,6 +349,33 @@ class ImageFolderBookImportTests(unittest.TestCase):
             self.assertEqual(result.removed_ineligible_image_book_count, 0)
             self.assertEqual(len(result.errors), 1)
 
+    def test_deleted_image_folder_is_removed_and_counted_as_ineligible(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            root = base / "library"
+            book = root / "deleted-book"
+            for index in range(3):
+                _write_image(book / f"{index:04}.jpg", (index, 17, 0))
+
+            repository = LibraryRepository(
+                base / "library.db",
+                base / "scan_report.json",
+                preview_dir=base / "preview",
+            )
+            request = ScanRequest(
+                roots=[LibraryScanRoot(path=str(root))],
+                scan_depth=2,
+                hash_strategy="size_mtime",
+            )
+            scan_roots(repository, request)
+            book.rename(base / "moved-outside-root")
+
+            result = scan_roots(repository, request)
+
+            self.assertEqual(repository.list_books(include_missing=False), [])
+            self.assertEqual(result.removed_missing_book_count, 1)
+            self.assertEqual(result.removed_ineligible_image_book_count, 1)
+
     def test_unreadable_root_does_not_remove_an_existing_image_folder_book(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             base = Path(tmp_dir)
@@ -374,6 +402,85 @@ class ImageFolderBookImportTests(unittest.TestCase):
             self.assertEqual(len(repository.list_books(include_missing=False)), 1)
             self.assertEqual(result.removed_ineligible_image_book_count, 0)
             self.assertTrue(any("access denied" in message for message in result.errors))
+
+    def test_failed_parent_root_does_not_remove_book_that_is_also_a_successful_child_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            root = base / "library"
+            book = root / "overlapping-root-book"
+            for index in range(3):
+                _write_image(book / f"{index:04}.jpg", (index, 19, 0))
+
+            repository = LibraryRepository(
+                base / "library.db",
+                base / "scan_report.json",
+                preview_dir=base / "preview",
+            )
+            scan_roots(
+                repository,
+                ScanRequest(
+                    roots=[LibraryScanRoot(path=str(root))],
+                    scan_depth=2,
+                    hash_strategy="size_mtime",
+                ),
+            )
+            real_walk = os.walk
+
+            def walk_with_failed_parent(top, *args, **kwargs):
+                if Path(top) == root:
+                    raise OSError("parent access denied")
+                return real_walk(top, *args, **kwargs)
+
+            with patch("bookhub.library.scanner.os.walk", side_effect=walk_with_failed_parent):
+                result = scan_roots(
+                    repository,
+                    ScanRequest(
+                        roots=[LibraryScanRoot(path=str(root)), LibraryScanRoot(path=str(book))],
+                        scan_depth=2,
+                        hash_strategy="size_mtime",
+                    ),
+                )
+
+            self.assertEqual(len(repository.list_books(include_missing=False)), 1)
+            self.assertEqual(result.removed_ineligible_image_book_count, 0)
+            self.assertTrue(any("parent access denied" in message for message in result.errors))
+
+    def test_successful_parent_root_does_not_remove_book_under_an_unavailable_child_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            root = base / "library"
+            book = root / "unavailable-child-root"
+            for index in range(3):
+                _write_image(book / f"{index:04}.jpg", (index, 20, 0))
+
+            repository = LibraryRepository(
+                base / "library.db",
+                base / "scan_report.json",
+                preview_dir=base / "preview",
+            )
+            scan_roots(
+                repository,
+                ScanRequest(
+                    roots=[LibraryScanRoot(path=str(root))],
+                    scan_depth=2,
+                    hash_strategy="size_mtime",
+                ),
+            )
+            book.rename(base / "moved-child-root")
+
+            result = scan_roots(
+                repository,
+                ScanRequest(
+                    roots=[LibraryScanRoot(path=str(root)), LibraryScanRoot(path=str(book))],
+                    scan_depth=2,
+                    hash_strategy="size_mtime",
+                ),
+            )
+
+            self.assertEqual(len(repository.list_books(include_missing=False)), 1)
+            self.assertEqual(result.removed_missing_book_count, 0)
+            self.assertEqual(result.removed_ineligible_image_book_count, 0)
+            self.assertTrue(any("Scan root unavailable" in message for message in result.errors))
 
     def test_new_natural_first_image_updates_cover_and_open_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -539,6 +646,47 @@ class ImageFolderBookImportTests(unittest.TestCase):
             self.assertEqual(regenerate.succeeded, 1)
             self.assertEqual(regenerate.skipped, 0)
             self.assertTrue(thumbnail and thumbnail.is_file())
+
+    def test_library_thumbnail_regenerate_preserves_valid_manual_image_folder_cover(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            root = base / "library"
+            book = root / "manual-thumbnail-book"
+            for index in range(3):
+                _write_image(book / f"{index:04}.jpg", (index, 18, 0))
+
+            repository = LibraryRepository(
+                base / "library.db",
+                base / "scan_report.json",
+                preview_dir=base / "preview",
+            )
+            scan_roots(
+                repository,
+                ScanRequest(
+                    roots=[LibraryScanRoot(path=str(root))],
+                    scan_depth=2,
+                    hash_strategy="size_mtime",
+                ),
+            )
+            record = repository.list_books(include_missing=False)[0]
+            book_id = repository.get_book_int_id(record["resource_id"])
+            self.assertIsNotNone(book_id)
+            manual_cover = base / "preview" / "manual-image-folder.webp"
+            _write_image(manual_cover, (200, 80, 40))
+            manual_uri = manual_cover.resolve().as_uri()
+            repository.update_book_thumbnail_state(
+                int(book_id),
+                thumbnail_path=manual_uri,
+                cover_source="manual",
+            )
+
+            regenerate = regenerate_library_thumbnails(repository)
+            updated = repository.list_books(include_missing=False)[0]
+
+            self.assertEqual(regenerate.succeeded, 0)
+            self.assertEqual(regenerate.skipped, 1)
+            self.assertEqual(updated["thumbnail_path"], manual_uri)
+            self.assertEqual(updated["cover_source"], "manual")
 
 
 if __name__ == "__main__":

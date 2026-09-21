@@ -717,8 +717,14 @@
 - Bridge 下发 `coverImage`；双击打开首图，右键打开目录；总书库与书籍合集复用左上角 `.format-badge` 显示 `IMG`。
 - 同步 Indexer/Thumbnail/UI agent 与 contract、module registry、project context、中英文 README 和 `src_construction.md`。
 
+### 影响、兼容性与回滚
+- `books.cover_image_path` 为可空追加列；旧数据库启动时原位迁移，普通书记录保持 `NULL`。旧版本会忽略该列，回滚代码后可安全保留，无需清库。
+- 新资源仍是 `resource_type=book`，搜索、排序、Tag、推荐和书籍合集沿用现有接口；不新增导航、设置或依赖。
+- 扫描只读取用户书库；失踪/失格删除沿用现有数据库关联清理。代码回滚不会删除源图片，已生成的受控缩略图可由现有 Library 清理任务移除。
+- 用户样本仅做只读资格核验；实现和 GUI 验收均使用临时数据库、缓存与虚构图片。
+
 ### 验证结果
-- 新增专项覆盖资格边界、八类图片扩展、自然排序、冲突、增量、手动封面、失效/不可访问根、迁移、重建和 Bridge 交互；Python 全量 309 项通过。
+- 新增专项覆盖资格边界、八类图片扩展、自然排序、冲突、增量、手动封面、失效/不可访问及重叠根、迁移、重建和 Bridge 交互；双轴审查修复后 Python 全量 313 项通过。
 - 五组 Node 行为测试、`app.js` / `text_rules.js` 语法检查和 `git diff --check` 通过。
 - Glass/Vaporwave 的总书库与书籍合集在 1400/760/390px 真实 Qt WebEngine 验收通过，无脚本错误或横向溢出。
 - 用户 `E:/DL book/设定集` 仅只读核验，识别 1 个合格目录（80 JPG、0 其他文件、0 子目录）。

@@ -12,7 +12,7 @@
 - 双击总书库与合集卡片均打开自然序首图 `0001.jpg`；右键菜单“打开文件夹”打开图片书目录。
 - 临时扫描摘要为 `image_book_detected_folders=1`、`image_book_added_count=1`，无 warning/error。
 - 用户样本仅只读核验：深度 2、80 张 JPG、0 个其他文件、0 个子目录，预期识别 1 本图片书；未写入用户书库。
-- Python 全量 `309` 项通过；五组 Node 行为测试、`app.js` / `text_rules.js` 语法检查和 `git diff --check` 通过。
+- 双轴审查修复后 Python 全量 `313` 项通过；五组 Node 行为测试、`app.js` / `text_rules.js` 语法检查和 `git diff --check` 通过。
 
 ## 截图
 

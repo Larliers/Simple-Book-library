@@ -232,7 +232,7 @@ src/
 - `src/bookhub/library/text_rules/rule_examples.py`：默认规则链示例；无自定义 title 时注入的默认标题链先剥 `Title:`/`Title：`/`标题：`/`标题:`，否则完整首行 trim，再文件名 `《》` 与 stem，不再默认 `take_after_text("T")`。
 - `src/bookhub/library/text_rules/rule_catalog.py`：Text Rules Web 元数据目录（fields/sources/step 分类与参数表单、内置模板、常用正则、帮助章节）；行处理含 `loop_lines` 与 `loop_inline`；`describe_step_catalog()` 供 Bridge 下发。
 - `src/bookhub/library/worker.py`：扫描任务线程包装；从 `list_roots_with_strategy` / `list_comic_roots_with_strategy` / `list_text_roots_with_rules` 把各根 `scan_strategy` 注入 `LibraryScanRoot`/`ComicScanRoot`/`TextScanRoot`；漫画请求携带 `get_comic_scan_strategy()` 全局默认；透传 Library/Comic/Text 扫描进度信号；将 Settings `hash_strategy` 传入 Text/Library 请求（非法策略回退 `quick`）、将 `comic_title_conflict_policy` 与 `text_encoding_preference` 传入 Comic/Text 请求；汇总多 scope 统计与 warning。
-- `src/bookhub/library/thumbnail_tasks.py`：Library/Comic/Text Novel 缩略图清理与重建任务实现；`.imgfolder` 首图先消毒为首帧再生成 420×620 边界 WebP，Library 重建只使用数据库 `cover_image_path`；cleanup 仅 `unlink` `preview_dir` 内路径；Text Novel 清空时清除封面来源/指纹，重建时保留有效 manual 并从当前 sidecar 恢复；漫画 `cover_fingerprint` 以 `manual:` 开头时跳过 regenerate；`resolve_comic_open_path()` 解析漫画外部打开路径。
+- `src/bookhub/library/thumbnail_tasks.py`：Library/Comic/Text Novel 缩略图清理与重建任务实现；`.imgfolder` 首图先消毒为首帧再生成 420×620 边界 WebP，Library 重建保留有效 manual，否则只使用数据库 `cover_image_path`；cleanup 仅 `unlink` `preview_dir` 内路径；Text Novel 清空时清除封面来源/指纹，重建时保留有效 manual 并从当前 sidecar 恢复；漫画 `cover_fingerprint` 以 `manual:` 开头时跳过 regenerate；`resolve_comic_open_path()` 解析漫画外部打开路径。
 - `src/bookhub/library/thumbnail_worker.py`：缩略图任务线程包装；构造时可注入 `preview_dir`，按 `library|comic|text_novel` scope 分派 cleanup/regenerate。
 - `src/bookhub/library/error_logs.py`：扫描/冲突日志读写；目录经 `app_paths.default_log_dir()`（dev：`src/Scan_error_logs/`，打包：exe 同级）。
 
@@ -342,7 +342,7 @@ src/
 
 ## 5. 边界与约束
 - 当前导入粒度：目录导入（不支持单文件导入）。
-- 当前支持格式：Library 支持 PDF/EPUB/HTML/Markdown/FB2/DOCX，Comic 支持目录封面提取与 CBZ，Text Novel 支持 TXT（含预览、规则导入、同名 sidecar 封面）。
+- 当前支持格式：Library 支持 PDF/EPUB/HTML/Markdown/FB2/DOCX，以及符合门槛并以 `.imgfolder` 标识的图片文件夹书籍；Comic 支持目录封面提取与 CBZ；Text Novel 支持 TXT（含预览、规则导入、同名 sidecar 封面）。
 - 外部打开：依赖系统默认关联程序。
 
 ## 6. 维护要求

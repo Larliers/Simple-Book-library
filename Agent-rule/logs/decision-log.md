@@ -8,7 +8,7 @@
 ```json
 {
   "decision_id": "decision-20260921-001",
-  "timestamp": "2026-09-21T00:00:00+08:00",
+  "timestamp": "2026-09-21T12:53:18+08:00",
   "owner": "indexer-agent + thumbnail-agent + ui-agent",
   "title": "图片目录作为普通 book 资源并以 .imgfolder 贯通现有能力",
   "context": "部分书籍以逐页图片目录存在，但应参与总书库搜索、排序、Tag、推荐和书籍合集，而不是进入漫画页",

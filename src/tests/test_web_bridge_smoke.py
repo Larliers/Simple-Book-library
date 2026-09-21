@@ -225,6 +225,7 @@ class WebBridgeSmokeTests(unittest.TestCase):
             items = json.loads(bridge.getBootstrap())["pages"]["library"]["items"]
             book = next(item for item in items if item.get("title") == "Sample EPUB")
             self.assertEqual(book.get("extension"), ".epub")
+            self.assertIsNone(book.get("coverImage"))
 
     def test_random_recommendations_empty_sources_keep_three_columns(self) -> None:
         bridge = self._make_bridge()
@@ -1167,6 +1168,34 @@ class WebBridgeSmokeTests(unittest.TestCase):
                 bridge.openResource(PAGE_LIBRARY, str(item["id"]))
             mocked_toast.assert_called_once()
             self.assertEqual(opened, [])
+            self.assertEqual(events, [])
+
+            repo.upsert_book(
+                {
+                    "path": repo.normalize_path(book_dir),
+                    "title": "ImageBook",
+                    "file_name": "ImageBook",
+                    "extension": ".imgfolder",
+                    "resource_type": "book",
+                    "tags_json": "[]",
+                    "cover_image_path": None,
+                }
+            )
+            bridge.reload_data()
+            empty_cover_item = next(
+                row
+                for row in json.loads(bridge.getBootstrap())["pages"][PAGE_LIBRARY]["items"]
+                if row["title"] == "ImageBook"
+            )
+            self.assertIsNone(empty_cover_item["coverImage"])
+            self.assertFalse(bridge._external_target_exists(""))
+            events.clear()
+            with patch.object(bridge, "emit_toast") as mocked_toast, patch.object(
+                bridge, "_open_external"
+            ) as mocked_open:
+                bridge.openResource(PAGE_LIBRARY, str(item["id"]))
+            mocked_toast.assert_called_once()
+            mocked_open.assert_not_called()
             self.assertEqual(events, [])
 
     def test_open_resource_missing_target_does_not_emit_interaction_event(self) -> None:
