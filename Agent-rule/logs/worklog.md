@@ -704,6 +704,27 @@
 
 ---
 
+## 2026-09-21 - 总书库图片文件夹书籍导入
+
+### 任务
+沿用总书库根目录扫描，在单次遍历中把符合门槛的图片目录作为普通书籍导入，并贯通封面、缓存、合集和外部打开。
+
+### 实现内容
+- 候选限定根下第 1～`scan_depth` 层、无子目录、直接图片至少 3 张且严格多于其他文件；支持 JPG/JPEG/PNG/WebP/GIF/BMP/TIF/TIFF，合格目录内部文件不再单独入库。
+- 图片书以 `.imgfolder` / `book` 入库；直接文件名、size、mtime_ns 形成快照，自然序首图持久化到新增的 `books.cover_image_path`，旧数据库自动迁移。
+- 扫描根完整可读后才执行缺失/失格清理；失格删除记录及收藏/合集关联，摘要增加图片书识别、新增、更新与失效移除指标。
+- Library 缩略图任务可从保存的首图重建 `book/compressed` WebP；手动封面有效时保留，损坏首图以结构化 warning 降级。
+- Bridge 下发 `coverImage`；双击打开首图，右键打开目录；总书库与书籍合集复用左上角 `.format-badge` 显示 `IMG`。
+- 同步 Indexer/Thumbnail/UI agent 与 contract、module registry、project context、中英文 README 和 `src_construction.md`。
+
+### 验证结果
+- 新增专项覆盖资格边界、八类图片扩展、自然排序、冲突、增量、手动封面、失效/不可访问根、迁移、重建和 Bridge 交互；Python 全量 309 项通过。
+- 五组 Node 行为测试、`app.js` / `text_rules.js` 语法检查和 `git diff --check` 通过。
+- Glass/Vaporwave 的总书库与书籍合集在 1400/760/390px 真实 Qt WebEngine 验收通过，无脚本错误或横向溢出。
+- 用户 `E:/DL book/设定集` 仅只读核验，识别 1 个合格目录（80 JPG、0 其他文件、0 子目录）。
+
+---
+
 ## 2026-09-20 - 双语 README 用户向重写与公开主截图
 
 ### 任务

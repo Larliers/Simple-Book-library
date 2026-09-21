@@ -15,6 +15,7 @@ from PySide6.QtGui import QDesktopServices
 
 from bookhub.i18n import tr
 from bookhub.version import APP_VERSION
+from bookhub.library.models import IMAGE_FOLDER_BOOK_EXTENSION
 from bookhub.library.repository import (
     COLLECTION_KIND_BOOK,
     COLLECTION_KIND_COMIC,
@@ -515,6 +516,7 @@ class UiBridge(QObject):
             info_text=str(record.get("info_text") or "") or None,
             file_name=record.get("file_name") or "",
             extension=record.get("extension") or "",
+            cover_image_path=str(record.get("cover_image_path") or "") or None,
         )
 
     def _comic_record_to_item(self, record: dict[str, Any]):
@@ -584,6 +586,7 @@ class UiBridge(QObject):
             "path": row.get("path") or "",
             "type": row.get("resource_type") or "book",
             "cover": self._cover_url(row.get("thumbnail_path")),
+            "coverImage": str(row.get("cover_image_path") or ""),
             "meta": " · ".join(meta_parts),
             "info": str(row.get("info_text") or "") or "",
             "fileName": row.get("file_name") or "",
@@ -635,6 +638,7 @@ class UiBridge(QObject):
             "path": item.path or "",
             "type": item.resource_type or "book",
             "cover": self._cover_url(item.thumbnail_path),
+            "coverImage": str(item.cover_image_path or ""),
             "meta": " · ".join(meta_parts),
             "info": item.info_text or "",
             "fileName": item.file_name or "",
@@ -1021,6 +1025,8 @@ class UiBridge(QObject):
             }
             resolved = resolve_comic_open_path(self._repo.preview_dir, record)
             target = str(resolved) if resolved else str(detail.get("path") or "")
+        elif str(detail.get("extension") or "").lower() == IMAGE_FOLDER_BOOK_EXTENSION:
+            target = str(detail.get("coverImage") or "")
         else:
             target = str(detail.get("path") or "")
         if self._external_target_exists(target):

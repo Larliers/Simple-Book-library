@@ -5,7 +5,7 @@
 - 系统目标是统一管理与检索本地书籍与漫画资源，提供稳定索引与快速展示能力。
 
 ## 管理对象
-- PDF / EPUB / HTML / Markdown / FB2 / DOCX 文件（Library）
+- PDF / EPUB / HTML / Markdown / FB2 / DOCX 文件，以及符合门槛的纯图片书籍目录（Library，内部标识 `.imgfolder`）
 - TXT 文件（Text Novel）
 - 漫画文件夹与 CBZ 压缩包（Comic；以目录或归档文件为资源单元）
 

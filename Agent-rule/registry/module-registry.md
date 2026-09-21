@@ -52,6 +52,21 @@
 }
 ```
 
+### library_image_folder_book_scanner
+```json
+{
+  "module_name": "library_image_folder_book_scanner",
+  "owner_agent": "indexer-agent + thumbnail-agent + ui-agent",
+  "status": "active",
+  "purpose": "在总书库一次遍历中把符合门槛的图片目录作为普通书籍导入，并稳定传递首图、缓存和外部打开目标",
+  "input": ["library_roots", "scan_depth", "direct_child_names", "direct_file_size_mtime_ns"],
+  "output": ["book .imgfolder upsert payload", "cover_image_path", "book/compressed thumbnail", "scan_metrics"],
+  "upstream": ["ScanWorker", "scanner.scan_roots"],
+  "downstream": ["LibraryRepository", "thumbnail_tasks", "UiBridge", "resource_list_view"],
+  "notes": "仅根下 1..scan_depth 层；无子目录、图片至少 3 张且严格多于其他文件；复用漫画扩展集合和自然序首图；失去资格删除记录及关联；不可访问根不清理"
+}
+```
+
 ### comic_cbz_scanner
 ```json
 {

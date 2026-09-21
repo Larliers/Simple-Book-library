@@ -33,6 +33,7 @@ SUPPORTED_EXTENSIONS = (
 )
 COMIC_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff")
 COMIC_ARCHIVE_EXTENSIONS = (".cbz",)
+IMAGE_FOLDER_BOOK_EXTENSION = ".imgfolder"
 TEXT_FILE_EXTENSION = ".txt"
 FB2_ZIP_SUFFIX = ".fb2.zip"
 
@@ -156,6 +157,7 @@ class ScanResult:
     removed_missing_count: int = 0
     removed_missing_book_count: int = 0
     removed_missing_comic_count: int = 0
+    removed_ineligible_image_book_count: int = 0
     scanned_files: int = 0
     unsupported_files: list[str] = field(default_factory=list)
     name_conflicts: list[ScanConflict] = field(default_factory=list)
@@ -174,6 +176,9 @@ class ScanResult:
     text_updated_count: int = 0
     text_scanned_files: int = 0
     text_errors: list[str] = field(default_factory=list)
+    image_book_added_count: int = 0
+    image_book_updated_count: int = 0
+    image_book_detected_folders: int = 0
 
     def to_summary(self) -> dict[str, object]:
         return {
@@ -187,6 +192,7 @@ class ScanResult:
             "removed_missing_count": self.removed_missing_count,
             "removed_missing_book_count": self.removed_missing_book_count,
             "removed_missing_comic_count": self.removed_missing_comic_count,
+            "removed_ineligible_image_book_count": self.removed_ineligible_image_book_count,
             "errors": list(self.errors),
             "warnings": list(self.warnings),
             "unsupported_files": list(self.unsupported_files),
@@ -208,6 +214,9 @@ class ScanResult:
             # Frontend alias (historical key name).
             "text_scanned_count": self.text_scanned_files,
             "text_errors": list(self.text_errors),
+            "image_book_added_count": self.image_book_added_count,
+            "image_book_updated_count": self.image_book_updated_count,
+            "image_book_detected_folders": self.image_book_detected_folders,
         }
 
 

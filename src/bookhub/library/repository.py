@@ -390,6 +390,7 @@ class LibraryRepository:
                     resource_type TEXT NOT NULL DEFAULT 'book',
                     path TEXT NOT NULL UNIQUE,
                     thumbnail_path TEXT,
+                    cover_image_path TEXT,
                     cover_source TEXT,
                     cover_fingerprint TEXT,
                     info_text TEXT,
@@ -450,6 +451,7 @@ class LibraryRepository:
             self._ensure_column(conn, "books", "info_text", "ALTER TABLE books ADD COLUMN info_text TEXT")
             self._ensure_column(conn, "books", "cover_source", "ALTER TABLE books ADD COLUMN cover_source TEXT")
             self._ensure_column(conn, "books", "cover_fingerprint", "ALTER TABLE books ADD COLUMN cover_fingerprint TEXT")
+            self._ensure_column(conn, "books", "cover_image_path", "ALTER TABLE books ADD COLUMN cover_image_path TEXT")
             self._ensure_column(conn, "books", "file_mtime", "ALTER TABLE books ADD COLUMN file_mtime INTEGER NOT NULL DEFAULT 0")
             conn.execute(
                 """
@@ -1493,7 +1495,9 @@ class LibraryRepository:
         with self._connection() as conn:
             rows = conn.execute(
                 """
-                SELECT path, thumbnail_path, fingerprint_sha256, fingerprint_size_mtime, fingerprint_quick
+                SELECT resource_id, path, extension, tags_json, status, thumbnail_path, cover_image_path,
+                       cover_source, cover_fingerprint,
+                       fingerprint_sha256, fingerprint_size_mtime, fingerprint_quick
                 FROM books
                 WHERE is_missing = 0
                   AND COALESCE(resource_type, '') != 'text_novel'
@@ -1506,7 +1510,14 @@ class LibraryRepository:
                 continue
             mapped[path_value] = {
                 "path": path_value,
+                "resource_id": row["resource_id"] or "",
+                "extension": row["extension"] or "",
+                "tags_json": row["tags_json"] or "[]",
+                "status": row["status"] or "UNREAD",
                 "thumbnail_path": row["thumbnail_path"],
+                "cover_image_path": row["cover_image_path"] or "",
+                "cover_source": row["cover_source"] or "",
+                "cover_fingerprint": row["cover_fingerprint"] or "",
                 "fingerprint_sha256": row["fingerprint_sha256"] or "",
                 "fingerprint_size_mtime": row["fingerprint_size_mtime"] or "",
                 "fingerprint_quick": row["fingerprint_quick"] or "",
@@ -1606,7 +1617,7 @@ class LibraryRepository:
         )
         with self._connection() as conn:
             existing = conn.execute(
-                "SELECT id, resource_id, cover_source, cover_fingerprint FROM books WHERE path = ?",
+                "SELECT id, resource_id, cover_image_path, cover_source, cover_fingerprint FROM books WHERE path = ?",
                 (path,),
             ).fetchone()
             if existing:
@@ -1616,12 +1627,17 @@ class LibraryRepository:
                     if "cover_fingerprint" in payload
                     else existing["cover_fingerprint"]
                 )
+                cover_image_path = (
+                    payload.get("cover_image_path")
+                    if "cover_image_path" in payload
+                    else existing["cover_image_path"]
+                )
                 conn.execute(
                     """
                     UPDATE books
                     SET file_name = ?, extension = ?, title = ?, author = ?, publisher = ?, language = ?,
                         tags_json = ?, status = ?, resource_type = ?, thumbnail_path = ?,
-                        cover_source = ?, cover_fingerprint = ?, info_text = ?,
+                        cover_image_path = ?, cover_source = ?, cover_fingerprint = ?, info_text = ?,
                         is_missing = 0, missing_reason = NULL,
                         fingerprint_sha256 = COALESCE(?, fingerprint_sha256),
                         fingerprint_size_mtime = COALESCE(?, fingerprint_size_mtime),
@@ -1641,6 +1657,7 @@ class LibraryRepository:
                         payload.get("status", "UNREAD"),
                         payload.get("resource_type", "book"),
                         payload.get("thumbnail_path"),
+                        cover_image_path,
                         cover_source,
                         cover_fingerprint,
                         payload.get("info_text"),
@@ -1660,11 +1677,11 @@ class LibraryRepository:
                 """
                 INSERT INTO books(
                     resource_id, file_name, extension, title, author, publisher, language, tags_json,
-                    status, resource_type, path, thumbnail_path, cover_source, cover_fingerprint,
+                    status, resource_type, path, thumbnail_path, cover_image_path, cover_source, cover_fingerprint,
                     info_text, is_missing, missing_reason,
                     fingerprint_sha256, fingerprint_size_mtime, fingerprint_quick, file_mtime, created_at, updated_at
                 )
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     resource_id,
@@ -1679,6 +1696,7 @@ class LibraryRepository:
                     payload.get("resource_type", "book"),
                     path,
                     payload.get("thumbnail_path"),
+                    payload.get("cover_image_path"),
                     incoming_cover_source,
                     payload.get("cover_fingerprint"),
                     payload.get("info_text"),
@@ -1720,7 +1738,7 @@ class LibraryRepository:
 
         query = f"""
             SELECT resource_id, file_name, extension, title, author, publisher, language, tags_json, status,
-                   resource_type, path, thumbnail_path, cover_source, cover_fingerprint,
+                   resource_type, path, thumbnail_path, cover_image_path, cover_source, cover_fingerprint,
                    info_text, is_missing, missing_reason, file_mtime
             FROM books
             {where_clause}
@@ -1752,6 +1770,7 @@ class LibraryRepository:
                     "resource_type": row["resource_type"],
                     "path": row["path"],
                     "thumbnail_path": row["thumbnail_path"],
+                    "cover_image_path": row["cover_image_path"],
                     "cover_source": row["cover_source"],
                     "cover_fingerprint": row["cover_fingerprint"],
                     "info_text": row["info_text"],
@@ -1841,7 +1860,8 @@ class LibraryRepository:
         with self._connection() as conn:
             rows = conn.execute(
                 """
-                SELECT id, resource_id, file_name, extension, title, path, thumbnail_path
+                SELECT id, resource_id, file_name, extension, title, path, thumbnail_path,
+                       cover_image_path, cover_source, cover_fingerprint
                 FROM books
                 WHERE is_missing = 0
                 AND resource_type != 'text_novel'

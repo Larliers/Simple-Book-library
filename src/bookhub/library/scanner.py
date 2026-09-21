@@ -10,6 +10,7 @@ Indexer contract alignment (Agent-rule/contracts/indexer-contract.md):
 - No last_checkpoint / next_checkpoint API.
 """
 
+import hashlib
 import importlib
 import json
 import os
@@ -40,6 +41,7 @@ from bookhub.library.models import (
     COMIC_TITLE_CONFLICT_SKIP_INCOMING,
     ComicScanRequest,
     HashStrategy,
+    IMAGE_FOLDER_BOOK_EXTENSION,
     ScanConflict,
     ScanRequest,
     ScanResult,
@@ -52,6 +54,7 @@ from bookhub.library.models import (
 from bookhub.library.preview_paths import build_preview_path, is_preview_variant_uri, uri_to_path
 from bookhub.library.preview_cache_migrate import safe_unlink_under_preview
 from bookhub.library.repository import LibraryRepository
+from bookhub.library.thumbnail_tasks import generate_image_folder_thumbnail
 from bookhub.library.text_rules import ImportRule, RuleContext, apply_rule_chain, load_rules_from_json
 from bookhub.library.text_rules.rule_examples import default_text_title_rule_chain
 from bookhub.library.text_cover import (
@@ -68,6 +71,16 @@ from bookhub.library.text_encoding import (
 )
 
 ScanProgressCallback = Callable[[int, int, str, dict[str, object]], None]
+
+
+class _ImageFolderBookCandidate:
+    __slots__ = ("folder_path", "cover_path", "snapshot", "folder_mtime")
+
+    def __init__(self, folder_path: Path, cover_path: Path, snapshot: str, folder_mtime: int) -> None:
+        self.folder_path = folder_path
+        self.cover_path = cover_path
+        self.snapshot = snapshot
+        self.folder_mtime = folder_mtime
 
 
 def _lanczos_resample() -> object:
@@ -88,6 +101,72 @@ def _iter_files_with_depth(root: Path, depth: int):
         dir_names[:] = sorted(dir_names)
         for current_file in sorted(file_names):
             yield current_path / current_file
+
+
+def _image_folder_book_candidate(
+    folder_path: Path,
+    *,
+    relative_depth: int,
+    dir_names: list[str],
+    file_names: list[str],
+) -> _ImageFolderBookCandidate | None:
+    if relative_depth < 1 or dir_names:
+        return None
+    image_names = [name for name in file_names if Path(name).suffix.lower() in COMIC_IMAGE_EXTENSIONS]
+    other_count = len(file_names) - len(image_names)
+    if len(image_names) < 3 or len(image_names) <= other_count:
+        return None
+    sorted_images = sorted(image_names, key=lambda name: _natural_sort_key(Path(name)))
+    snapshot_parts: list[str] = []
+    folder_mtime = 0
+    for name in sorted(file_names, key=str.lower):
+        path = folder_path / name
+        try:
+            stat = path.stat()
+        except OSError:
+            snapshot_parts.append(f"{name}:missing")
+            continue
+        folder_mtime = max(folder_mtime, int(stat.st_mtime))
+        snapshot_parts.append(f"{name}:{int(stat.st_size)}:{int(stat.st_mtime_ns)}")
+    snapshot_parts.append(f"images={len(image_names)}:others={other_count}:cover={sorted_images[0]}")
+    snapshot = hashlib.sha256("\n".join(snapshot_parts).encode("utf-8", errors="replace")).hexdigest()
+    return _ImageFolderBookCandidate(folder_path, folder_path / sorted_images[0], snapshot, folder_mtime)
+
+
+def _iter_library_scan_entries(root: Path, depth: int):
+    root_parts = len(root.parts)
+    walk_errors: list[OSError] = []
+    try:
+        for current_dir, dir_names, file_names in os.walk(root, onerror=walk_errors.append):
+            current_path = Path(current_dir)
+            relative_depth = len(current_path.parts) - root_parts
+            if relative_depth > depth:
+                dir_names[:] = []
+                continue
+            direct_dirs = list(dir_names)
+            dir_names[:] = sorted(dir_names)
+            candidate = _image_folder_book_candidate(
+                current_path,
+                relative_depth=relative_depth,
+                dir_names=direct_dirs,
+                file_names=list(file_names),
+            )
+            if relative_depth >= depth:
+                dir_names[:] = []
+            if candidate is not None:
+                yield candidate
+                continue
+            if relative_depth >= depth:
+                continue
+            for current_file in sorted(file_names):
+                yield current_path / current_file
+    except OSError as exc:
+        walk_errors.append(exc)
+    yield from walk_errors
+
+
+def _generate_image_book_thumbnail(cover_path: Path, output_path: Path) -> str:
+    return generate_image_folder_thumbnail(cover_path, output_path)
 
 
 def _thumbnail_path_for(repo: LibraryRepository, normalized_path: str) -> Path:
@@ -161,7 +240,16 @@ def _remove_missing_books_in_scope(
         if not path_value:
             continue
         source = Path(path_value)
-        if source.exists() and source.is_file():
+        extension = str(record.get("extension") or "").lower()
+        source_is_available = (
+            source.exists()
+            and (
+                source.is_dir()
+                if extension == IMAGE_FOLDER_BOOK_EXTENSION
+                else source.is_file()
+            )
+        )
+        if source_is_available:
             continue
         book_id = repository.get_book_int_id(str(record.get("resource_id") or ""))
         if book_id is None:
@@ -172,7 +260,11 @@ def _remove_missing_books_in_scope(
             resource_type=str(record.get("resource_type") or "book"),
             title=title,
             path_value=path_value,
-            reason="source file missing during scan",
+            reason=(
+                "source folder missing during scan"
+                if extension == IMAGE_FOLDER_BOOK_EXTENSION
+                else "source file missing during scan"
+            ),
         )
     return repository.delete_books_by_ids(stale_ids)
 
@@ -1044,20 +1136,13 @@ def scan_roots(
     scan_depth = min(3, max(1, request.scan_depth))
     per_root_strategy_enabled = repository.get_per_root_scan_strategy_enabled()
     scanned_roots = [repository.normalize_path(root.path) for root in request.roots]
-    removed_missing = _remove_missing_books_in_scope(
-        repository,
-        scanned_roots,
-        resource_type=None,
-        exclude_text_novel=True,
-    )
-    if removed_missing > 0:
-        result.removed_missing_count += removed_missing
-        result.removed_missing_book_count += removed_missing
     pdf_backend_ok, pdf_backend_reason = _probe_pdf_backend()
     skipped_pdf_backend_count = 0
     # Avoid a preliminary full tree walk solely for a progress denominator.
     total_files = 0
     existing_by_path = repository.map_library_books_for_scan(scanned_roots)
+    eligible_image_book_paths: set[str] = set()
+    successfully_scanned_roots: list[str] = []
 
     for root_spec in request.roots:
         raw_root = repository.normalize_path(root_spec.path)
@@ -1070,8 +1155,157 @@ def scan_roots(
         if not root.exists() or not root.is_dir():
             result.errors.append(f"Scan root unavailable: {raw_root}")
             continue
+        root_scan_succeeded = True
+        for scan_entry in _iter_library_scan_entries(root, scan_depth):
+            if isinstance(scan_entry, OSError):
+                root_scan_succeeded = False
+                result.errors.append(f"Scan root unreadable: {raw_root}: {scan_entry}")
+                continue
+            if isinstance(scan_entry, _ImageFolderBookCandidate):
+                result.image_book_detected_folders += 1
+                folder_path = scan_entry.folder_path
+                cover_path = scan_entry.cover_path
+                normalized_folder = repository.normalize_path(folder_path)
+                normalized_cover = repository.normalize_path(cover_path)
+                eligible_image_book_paths.add(normalized_folder)
+                existing = existing_by_path.get(normalized_folder)
+                existing_thumb = str(existing.get("thumbnail_path") or "") if isinstance(existing, dict) else ""
+                existing_cover_source = (
+                    str(existing.get("cover_source") or "") if isinstance(existing, dict) else ""
+                )
+                existing_cover_fingerprint = (
+                    str(existing.get("cover_fingerprint") or "") if isinstance(existing, dict) else ""
+                )
+                existing_snapshot = (
+                    str(existing.get("fingerprint_size_mtime") or "") if isinstance(existing, dict) else ""
+                )
+                thumb_file = uri_to_path(existing_thumb)
+                has_valid_thumb = bool(thumb_file and thumb_file.exists() and thumb_file.is_file())
+                manual_cover = existing_cover_source == "manual" and has_valid_thumb
+                try:
+                    cover_stat = cover_path.stat()
+                    cover_fingerprint = f"{int(cover_stat.st_size)}:{int(cover_stat.st_mtime_ns)}"
+                except OSError as exc:
+                    result.warnings.append(
+                        {
+                            "code": "image_book_cover_stat_failed",
+                            "resource_path": normalized_folder,
+                            "cover_path": normalized_cover,
+                            "message": str(exc),
+                        }
+                    )
+                    cover_fingerprint = ""
 
-        for file_path in _iter_files_with_depth(root, scan_depth):
+                if (
+                    isinstance(existing, dict)
+                    and existing_snapshot == scan_entry.snapshot
+                    and str(existing.get("cover_image_path") or "") == normalized_cover
+                    and has_valid_thumb
+                ):
+                    result.skipped_unchanged_count += 1
+                    _emit_scan_progress(
+                        progress_cb,
+                        result.scanned_files + result.image_book_detected_folders,
+                        total_files,
+                        normalized_folder,
+                        result,
+                    )
+                    continue
+
+                thumbnail_path = existing_thumb or None
+                stored_cover_fingerprint = existing_cover_fingerprint or None
+                cover_source = "manual" if manual_cover else None
+                if not manual_cover and (
+                    not has_valid_thumb
+                    or existing_cover_fingerprint != cover_fingerprint
+                    or str(existing.get("cover_image_path") or "") != normalized_cover
+                ):
+                    try:
+                        thumbnail_path = _generate_image_book_thumbnail(
+                            cover_path,
+                            _thumbnail_path_for(repository, normalized_folder),
+                        )
+                        stored_cover_fingerprint = cover_fingerprint or None
+                    except Exception as exc:  # noqa: BLE001
+                        thumbnail_path = None
+                        stored_cover_fingerprint = cover_fingerprint or None
+                        result.warnings.append(
+                            {
+                                "code": "image_book_cover_generation_failed",
+                                "resource_path": normalized_folder,
+                                "cover_path": normalized_cover,
+                                "message": str(exc),
+                            }
+                        )
+
+                payload = {
+                    "path": normalized_folder,
+                    "file_name": folder_path.name,
+                    "extension": IMAGE_FOLDER_BOOK_EXTENSION,
+                    "title": folder_path.name,
+                    "author": None,
+                    "publisher": None,
+                    "language": None,
+                    "tags_json": str(existing.get("tags_json") or "[]") if isinstance(existing, dict) else "[]",
+                    "status": str(existing.get("status") or "UNREAD") if isinstance(existing, dict) else "UNREAD",
+                    "resource_type": "book",
+                    "thumbnail_path": thumbnail_path,
+                    "cover_image_path": normalized_cover,
+                    "cover_source": cover_source,
+                    "cover_fingerprint": stored_cover_fingerprint,
+                    "info_text": None,
+                    "fingerprint_sha256": "",
+                    "fingerprint_size_mtime": scan_entry.snapshot,
+                    "fingerprint_quick": "",
+                    "file_mtime": scan_entry.folder_mtime,
+                }
+                duplicate = repository.find_duplicate_name(
+                    payload["file_name"],
+                    IMAGE_FOLDER_BOOK_EXTENSION,
+                    normalized_folder,
+                )
+                if _cleanup_stale_duplicate_if_needed(repository, duplicate):
+                    duplicate = None
+                if duplicate:
+                    result.name_conflicts.append(
+                        ScanConflict(
+                            file_name=payload["file_name"],
+                            incoming_path=normalized_folder,
+                            existing_path=str(duplicate["path"]),
+                            existing_title=(duplicate.get("title") or duplicate.get("file_name")),
+                        )
+                    )
+                    _emit_scan_progress(
+                        progress_cb,
+                        result.scanned_files + result.image_book_detected_folders,
+                        total_files,
+                        normalized_folder,
+                        result,
+                    )
+                    continue
+
+                inserted = repository.upsert_book(payload)
+                if inserted:
+                    result.added_count += 1
+                    result.image_book_added_count += 1
+                else:
+                    result.updated_count += 1
+                    result.image_book_updated_count += 1
+                existing_by_path[normalized_folder] = {
+                    **payload,
+                    "thumbnail_path": thumbnail_path or "",
+                    "cover_fingerprint": stored_cover_fingerprint or "",
+                }
+                _emit_scan_progress(
+                    progress_cb,
+                    result.scanned_files + result.image_book_detected_folders,
+                    total_files,
+                    normalized_folder,
+                    result,
+                )
+                continue
+
+            file_path = scan_entry
             result.scanned_files += 1
             extension = extension_lower(file_path)
             if not is_supported_library_file(file_path):
@@ -1185,6 +1419,9 @@ def scan_roots(
             }
             _emit_scan_progress(progress_cb, result.scanned_files, total_files, normalized_path, result)
 
+        if root_scan_succeeded:
+            successfully_scanned_roots.append(raw_root)
+
     if skipped_pdf_backend_count > 0:
         result.warnings.append(
             {
@@ -1193,5 +1430,38 @@ def scan_roots(
                 "reason": pdf_backend_reason or "Unknown fitz import error.",
             }
         )
+
+    removed_missing = _remove_missing_books_in_scope(
+        repository,
+        successfully_scanned_roots,
+        resource_type=None,
+        exclude_text_novel=True,
+    )
+    if removed_missing > 0:
+        result.removed_missing_count += removed_missing
+        result.removed_missing_book_count += removed_missing
+
+    stale_image_book_ids: list[int] = []
+    for path_value, record in existing_by_path.items():
+        if str(record.get("extension") or "").lower() != IMAGE_FOLDER_BOOK_EXTENSION:
+            continue
+        if path_value in eligible_image_book_paths:
+            continue
+        if not repository._path_in_roots(path_value, successfully_scanned_roots):
+            continue
+        resource_id = str(record.get("resource_id") or "")
+        book_id = repository.get_book_int_id(resource_id) if resource_id else None
+        if book_id is None:
+            continue
+        stale_image_book_ids.append(book_id)
+        _log_missing_entry(
+            resource_type="book",
+            title=Path(path_value).name,
+            path_value=path_value,
+            reason="image folder no longer eligible during scan",
+        )
+    if stale_image_book_ids:
+        removed = repository.delete_books_by_ids(stale_image_book_ids)
+        result.removed_ineligible_image_book_count += removed
 
     return result

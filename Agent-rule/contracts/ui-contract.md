@@ -63,6 +63,7 @@
 - 保证 Text Novel 的 `grid` 显示封面和标题，`list` 不渲染封面列；两种模式复用详情、打开和右键交互。
 - 保证 Text Novel 主页与小说合集详情提供十档排序：`file_mtime_asc|desc`、`title_asc|desc`、`author_asc|desc`、`tags_asc|desc`、`path_asc|desc`；主页与合集分键持久化，默认 `file_mtime_desc`。List 的四个字段表头与下拉共享排序状态，活动表头显示方向并提供 `aria-sort`；合集详情按所选 SQL 排序。随机推荐不受影响。
 - 保证 Library 主页提供同样的十档字段排序并默认 `title_asc`；书籍合集详情另支持 `added_asc|added_desc` 并默认 `added_desc`。两页分别用 `library_sort_order_main` / `library_sort_order_fav` 持久化，payload 均提供 `sort`。Library List 保留封面列，标题/作者/标签/路径表头与下拉共享状态。
+- 保证 Library 与书籍合集 payload 为图片文件夹书提供 `extension=.imgfolder` 和 `coverImage`；Grid 复用现有左上角 `.format-badge` 显示 `IMG`。双击始终打开 `coverImage`，手动卡片封面不得改变打开目标；目标失效时提示且不发 `open_external` 成功事件，“打开文件夹”仍打开目录路径。
 - 保证随机推荐按 Library/Text Novel/Comic 三个来源分别返回最多 `recommendationItemsPerCategory` 个不重复且未缺失的资源；允许值为 3/6/9/12，默认 6。
 - 保证每个推荐列携带 `sourcePage`，列内卡片继承该来源上下文；详情与打开动作必须使用该来源上下文。
 - 保证标签目录和详情仅统计当前 `tagManagerScopes` 纳入的未缺失资源；混合卡片携带真实 `sourcePage` 并复用来源动作。

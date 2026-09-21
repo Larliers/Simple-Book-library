@@ -9,7 +9,7 @@ from PIL import Image
 from bookhub.library.media_sanitizer import sanitize_image_for_ui
 from bookhub.library.formats.registry import get_library_format_handler
 from bookhub.library.metadata import regenerate_thumbnail_for_record
-from bookhub.library.models import ThumbnailTaskResult
+from bookhub.library.models import IMAGE_FOLDER_BOOK_EXTENSION, ThumbnailTaskResult
 from bookhub.library.formats.cbz import prepare_cbz_for_external_viewer, read_cbz_cover_bytes
 from bookhub.library.preview_cache_migrate import safe_unlink_under_preview
 from bookhub.library.preview_paths import build_preview_path, is_preview_variant_uri, uri_to_path
@@ -71,6 +71,28 @@ def build_thumbnail_output_path(preview_dir: Path, source_path: str) -> Path:
     )
 
 
+def generate_image_folder_thumbnail(cover_path: Path, output_path: Path) -> str:
+    """Build a safe first-frame thumbnail for an image-folder book."""
+    sanitized_source = output_path.with_suffix(".imgfolder_cover_sanitized.png")
+    try:
+        sanitize_result = sanitize_image_for_ui(cover_path, sanitized_source)
+        if not sanitize_result.ok or not sanitize_result.output_path:
+            raise OSError(sanitize_result.message or f"Unable to decode image: {cover_path}")
+        resampling = getattr(Image, "Resampling", None)
+        lanczos = resampling.LANCZOS if resampling is not None else Image.LANCZOS
+        with Image.open(sanitize_result.output_path) as image:
+            thumbnail = image.convert("RGB")
+            thumbnail.thumbnail((420, 620), lanczos)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            thumbnail.save(output_path, format="WEBP", quality=80, method=4)
+        return output_path.resolve(strict=False).as_uri()
+    finally:
+        try:
+            sanitized_source.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def cleanup_library_thumbnails(
     repository: LibraryRepository,
     *,
@@ -126,6 +148,33 @@ def regenerate_library_thumbnails(
             progress_cb(index, result.total, source_path)
 
         source = Path(source_path)
+        if extension == IMAGE_FOLDER_BOOK_EXTENSION:
+            cover_path = Path(str(record.get("cover_image_path") or ""))
+            if not source.exists() or not source.is_dir() or not cover_path.exists() or not cover_path.is_file():
+                result.skipped += 1
+                continue
+            output_path = build_thumbnail_output_path(repository.preview_dir, source_path)
+            try:
+                thumbnail_path = generate_image_folder_thumbnail(cover_path, output_path)
+                cover_stat = cover_path.stat()
+                repository.update_book_thumbnail_state(
+                    book_id,
+                    thumbnail_path=thumbnail_path,
+                    cover_source=None,
+                    cover_fingerprint=f"{int(cover_stat.st_size)}:{int(cover_stat.st_mtime_ns)}",
+                )
+                result.succeeded += 1
+            except Exception as exc:  # noqa: BLE001
+                result.failed += 1
+                repository.update_book_thumbnail_state(
+                    book_id,
+                    thumbnail_path=None,
+                    cover_source=None,
+                    cover_fingerprint=None,
+                )
+                result.errors.append(f"Regenerate failed: {cover_path} -> {exc}")
+            continue
+
         if not source.exists() or not source.is_file():
             result.skipped += 1
             continue

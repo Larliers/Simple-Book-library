@@ -5,12 +5,13 @@
 
 ## In Scope
 - 扫描目标目录并发现资源。
-- 识别资源类型：`pdf`、`epub`、`txt`（`text_novel`）、`comic_folder`。
+- 识别资源类型：普通书籍文件、Library 图片文件夹书（`.imgfolder`）、`txt`（`text_novel`）、`comic_folder` / CBZ。
 - 建立和更新 SQLite 索引（upsert）。
 - Library：`hash_strategy` 指纹比对跳过未变更文件。
+- Library 图片文件夹书：根目录第 1～`scan_depth` 层、无子目录、直接图片至少 3 张且图片数严格多于其他文件；直接文件快照未变且缓存有效时跳过。
 - Comic：叶子含图目录（最大深度 5）；`folder_size_mtime` 快照跳过。
 - Text：扫描 TXT 同目录同 stem 的 `webp/png/jpg/jpeg` 封面；文件指纹+封面未变时仍用当前 `rules_json` 重抽 title/author/series/tag，经 `update_text_novel_metadata` 窄更新，不重生封面、不改 `status`。
-- 失踪源：写错误日志并删除库记录（不保留「失联待恢复」状态）。
+- 失踪源或已不满足图片书资格的目录：写错误日志并删除库记录及关联；扫描根不可访问时不得清理该根记录。
 
 ## Out of Scope
 - 不负责元数据语义解析细则（Parser / Text rules 负责 TXT 字段抽取）。

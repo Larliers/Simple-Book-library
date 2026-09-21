@@ -1636,6 +1636,7 @@ function renderTable(area, items, page, pageSort) {
 }
 
 const FORMAT_BADGE_LABELS = {
+  ".imgfolder": "IMG",
   ".pdf": "PDF",
   ".epub": "EPUB",
   ".html": "HTML",

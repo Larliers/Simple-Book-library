@@ -5,6 +5,21 @@
 {"decision_id":"decision-20260920-002","timestamp":"2026-09-20T15:20:05+08:00","owner":"maintenance-agent + ui-agent","title":"README 采用稳定版/main 双口径与匿名真实运行截图","context":"稳定版下载能力、main 源码进展和公开截图隐私需要同时准确表达","options":["仅改 README","新增 documentation agent/contract","在 shared-rules 增加最小文档规则"],"decision":"选择最小规则补丁；README 分开稳定版与 main，主图使用真实 Qt WebEngine 和隔离匿名数据","rationale":["避免向下载用户承诺未发布能力","保留 main 进展透明度","真实匿名截图兼顾可信度、隐私和版权边界"],"impact":["规则版本升至 v0.1.1","双语 README 保持事实与版本标记同步","业务接口和 registry 不变"],"followups":["下一次 Release 后同步版本口径和截图"]}
 ```
 
+```json
+{
+  "decision_id": "decision-20260921-001",
+  "timestamp": "2026-09-21T00:00:00+08:00",
+  "owner": "indexer-agent + thumbnail-agent + ui-agent",
+  "title": "图片目录作为普通 book 资源并以 .imgfolder 贯通现有能力",
+  "context": "部分书籍以逐页图片目录存在，但应参与总书库搜索、排序、Tag、推荐和书籍合集，而不是进入漫画页",
+  "options": ["新增第四类资源页面", "复用 Comic 资源类型", "以 .imgfolder 内部扩展作为普通 book 入库"],
+  "decision": "选择普通 book + .imgfolder；扫描复用总书库根与深度，封面复用漫画图片集合和自然序首图，UI 只增加 IMG 格式映射",
+  "rationale": ["不增加入口和设置，符合现有总书库工作流", "资源继续复用 Library 搜索、排序、Tag、推荐和合集", "持久化 cover_image_path 可让缩略图重建和外部打开不依赖 UI 临时扫描", "失格删除与根不可访问保护避免悬空关联或误删"],
+  "impact": ["books 增加可空 cover_image_path 并自动迁移", "ScanResult 增加四个图片书指标", "Bridge payload 增加 coverImage", "v2.4.0 稳定版不包含该能力，README 仅列入 current main"],
+  "followups": []
+}
+```
+
 ## 决策记录规则
 - 每个关键架构决策必须在日志文件中突出注释，该记录存放到logs文件夹下的history文件夹中，文件名以年-月-日进行命名，若有同名文件，直接追加进去，**保存为md文档**，本文件下方的内容仅为模板和实际参考
 - 决策记录必须包含原因、备选方案与影响评估。

@@ -9,6 +9,7 @@
 - 管理缩略图缓存键、过期与重建。
 - 执行延迟生成与后台补全。
 - 对 `comic_folder` 执行自然序首图封面选择（`jpg/png/webp/jpeg`）。
+- 对 Library `.imgfolder` 使用漫画图片扩展集合按自然序选择首图，写入 `book/compressed` WebP；损坏首图允许资源继续入库并回退占位图。
 - 对 `text_novel` 将同目录同 stem 封面压缩为最长边不超过 360×540 的 WebP 缓存。
 - 在 Settings 中按 `text_novel` scope 清空受控缩略图缓存，或从当前同名 sidecar 重建缓存。
 
@@ -79,5 +80,6 @@
 - 缩略图路径必须是可访问的本地路径。
 - 失败项必须进入 `errors` 并给出 `retryable` 语义。
 - `comic_folder` 必须返回用于双击外部打开的 `cover_image_path`。
+- `.imgfolder` 的有效手动封面仅覆盖卡片缩略图，不改 `cover_image_path`；Library 清理/重建必须从已保存首图路径恢复，禁止 UI 临时扫描目录。
 - Text Novel 手动封面优先于扫描得到的 `sidecar` 封面；自动封面删除后清理受控缓存并回退标题占位。
 - Text Novel 清空任务删除受控缓存并清除封面状态；重建任务保留仍有效的 `manual` 封面，仅重建当前可用的 `sidecar`。

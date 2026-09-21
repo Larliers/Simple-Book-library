@@ -45,7 +45,7 @@ _Captured from the real Qt WebEngine interface with anonymous demo records and p
 | Status | Included capabilities |
 |--------|-----------------------|
 | **Stable v2.4.0** | Three resource scanners and collection types, covers and thumbnails, search, TXT import rules, random recommendations, configurable shortcuts, Text Novel grid/list sorting, and Glass/Vaporwave skins |
-| **Current main** | Adds a standalone tag manager, in-place Quick Add for all three resource types, persistent Library/book-collection sorting, multi-selection and batch collection actions, plus later fixes |
+| **Current main** | Adds a standalone tag manager, in-place Quick Add for all three resource types, persistent Library/book-collection sorting, multi-selection and batch collection actions, Library image-folder books, plus later fixes |
 
 The Releases page contains the stable build. Features listed under main remain source-only until a later Release completes validation; choose the stable package if you simply want to use the app.
 
@@ -64,6 +64,8 @@ The Releases page contains the stable build. Features listed under main remain s
 | **Ebooks and documents** | PDF, EPUB, HTML/HTM, Markdown, FB2/FB2.ZIP, DOCX | Grid/list views, details, tags, search, book collections |
 | **Text novels** | TXT | Encoding detection, text preview, same-stem sidecar covers, import rules, novel collections |
 | **Comics** | Leaf folders containing JPG/JPEG/PNG/WebP/GIF/BMP/TIFF images, plus CBZ | Waterfall/pagination, covers, comic collections, external opening |
+
+> **Current main only:** Library can also import a folder as one regular book when it is within levels 1 through the configured scan depth, has no subfolders, contains at least three supported images, and has more images than other files. The card shows an `IMG` badge, and the first naturally sorted image supplies both the automatic cover and double-click target. This is not part of stable v2.4.0.
 
 ### Search, covers, and TXT rules
 

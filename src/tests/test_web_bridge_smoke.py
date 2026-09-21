@@ -1112,6 +1112,63 @@ class WebBridgeSmokeTests(unittest.TestCase):
             self.assertEqual(opened, [str(cover)])
             self._assert_open_external_event(events, resource_id)
 
+    def test_image_folder_book_payload_and_open_use_natural_first_image(self) -> None:
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            book_dir = base / "ImageBook"
+            book_dir.mkdir()
+            cover = book_dir / "0001.jpg"
+            Image.new("RGB", (80, 120), color=(80, 120, 160)).save(cover, format="JPEG")
+            repo = LibraryRepository(db_path=str(base / "library.db"), preview_dir=base / "preview")
+            repo.upsert_book(
+                {
+                    "path": repo.normalize_path(book_dir),
+                    "title": "ImageBook",
+                    "file_name": "ImageBook",
+                    "extension": ".imgfolder",
+                    "resource_type": "book",
+                    "tags_json": "[]",
+                    "cover_image_path": repo.normalize_path(cover),
+                }
+            )
+            record = repo.list_books(include_missing=False)[0]
+            book_id = repo.get_book_int_id(str(record["resource_id"]))
+            self.assertIsNotNone(book_id)
+            collection_id = repo.create_collection("Image Books")
+            repo.add_book_to_collection(int(book_id), collection_id)
+            bridge = UiBridge(repo, set())
+            payload = json.loads(bridge.getBootstrap())["pages"][PAGE_LIBRARY]
+            item = next(row for row in payload["items"] if row["title"] == "ImageBook")
+            self.assertEqual(item["extension"], ".imgfolder")
+            self.assertEqual(item["coverImage"], repo.normalize_path(cover))
+            collection_payload = json.loads(bridge.openCollection(PAGE_COLLECTIONS, collection_id))
+            self.assertEqual(collection_payload["items"][0]["coverImage"], repo.normalize_path(cover))
+
+            opened: list[str] = []
+            events: list[dict[str, object]] = []
+            bridge.interactionEvent.connect(lambda raw: events.append(json.loads(raw)))
+            with patch.object(bridge, "_open_external", side_effect=opened.append):
+                bridge.openResource(PAGE_LIBRARY, str(item["id"]))
+
+            self.assertEqual(opened, [repo.normalize_path(cover)])
+            self._assert_open_external_event(events, str(item["id"]))
+
+            opened.clear()
+            with patch.object(bridge, "_open_external", side_effect=opened.append):
+                bridge.openFolder(str(item["id"]))
+            self.assertEqual(opened, [repo.normalize_path(book_dir)])
+
+            cover.unlink()
+            opened.clear()
+            events.clear()
+            with patch.object(bridge, "emit_toast") as mocked_toast:
+                bridge.openResource(PAGE_LIBRARY, str(item["id"]))
+            mocked_toast.assert_called_once()
+            self.assertEqual(opened, [])
+            self.assertEqual(events, [])
+
     def test_open_resource_missing_target_does_not_emit_interaction_event(self) -> None:
         bridge = self._make_bridge()
         events: list[dict[str, object]] = []
@@ -1143,6 +1200,23 @@ class WebBridgeSmokeTests(unittest.TestCase):
 
 
 class SettingsUiStructureTests(unittest.TestCase):
+    def test_image_folder_book_reuses_the_top_left_format_badge(self) -> None:
+        app_js = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+        glass_css = (
+            PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "css" / "skins" / "glass" / "components.css"
+        ).read_text(encoding="utf-8")
+        vaporwave_css = (
+            PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "css" / "skins" / "vaporwave" / "components.css"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('".imgfolder": "IMG"', app_js)
+        for css in (glass_css, vaporwave_css):
+            badge_rule = re.search(r"\.format-badge\s*\{(?P<body>.*?)\}", css, re.DOTALL)
+            self.assertIsNotNone(badge_rule)
+            body = badge_rule.group("body") if badge_rule else ""
+            self.assertIn("top: 6px", body)
+            self.assertIn("left: 6px", body)
+
     def test_shortcut_settings_ui_and_both_skins_are_wired(self) -> None:
         app_js = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
         strings = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web_bridge.py").read_text(encoding="utf-8")
