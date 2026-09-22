@@ -1,6 +1,6 @@
 ﻿# src 结构说明书（精简且完整）
 
-更新时间：2026-09-20
+更新时间：2026-09-22
 
 ## 1. 文档目标
 - 保留字符串式文件路径结构。
@@ -21,6 +21,9 @@ docs/assets/screenshots/
 ### 2.2 UI 设计原型（Dev_Document，非运行时）
 
 ```text
+项目根目录/
+└─ collection-rules-prototype.html   # 集合规则用户审核原型；单文件内联 CSS/JS、虚构数据、Glass/Vaporwave 与桌面/740/600px 切换，不接运行时或数据库
+
 Simple-Book-library-Dev_Document/UI/
 ├─ 新UI/
 │  └─ glassmorphism-ui.html          # Glassmorphism 交互画板（单文件内联 CSS/JS）

@@ -2,6 +2,10 @@
 
 ## 最新决策
 ```json
+{"decision_id":"decision-20260922-001","timestamp":"2026-09-22T21:53:44+08:00","owner":"ui-agent + maintenance-agent","title":"集合规则先交付独立单文件原型，正式实现继续搁置","context":"集合规则涉及合集右键、设置统一管理、规则编辑、预览和自动成员处置，用户要求先检查交互再决定是否进入运行时实现","options":["直接修改正式 Web UI 和数据库","在 Dev_Document 内追加静态稿","在项目根目录提供可双击、可交互、无依赖的单文件原型"],"decision":"选择根目录独立 HTML 原型；使用虚构三类合集和内存状态模拟完整交互，不连接 Bridge、数据库或真实书库","rationale":["用户可不经命令行直接检查关键路径","隔离原型避免在交互未批准前引入 schema 和运行时返工","双皮肤与三档宽度能提前暴露响应式问题"],"impact":["新增 collection-rules-prototype.html 与必要日志/结构说明","正式 UI、Repository、Bridge、扫描、contracts、README 不变","原型状态刷新即重置，不能视为产品能力"],"followups":["用户审核原型后，再单独确认正式实现范围和计划"]}
+```
+
+```json
 {"decision_id":"decision-20260920-002","timestamp":"2026-09-20T15:20:05+08:00","owner":"maintenance-agent + ui-agent","title":"README 采用稳定版/main 双口径与匿名真实运行截图","context":"稳定版下载能力、main 源码进展和公开截图隐私需要同时准确表达","options":["仅改 README","新增 documentation agent/contract","在 shared-rules 增加最小文档规则"],"decision":"选择最小规则补丁；README 分开稳定版与 main，主图使用真实 Qt WebEngine 和隔离匿名数据","rationale":["避免向下载用户承诺未发布能力","保留 main 进展透明度","真实匿名截图兼顾可信度、隐私和版权边界"],"impact":["规则版本升至 v0.1.1","双语 README 保持事实与版本标记同步","业务接口和 registry 不变"],"followups":["下一次 Release 后同步版本口径和截图"]}
 ```
 

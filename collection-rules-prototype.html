@@ -1,0 +1,1174 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>集合规则交互原型 · Simple Book Library</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --font: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+      --mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+      --bg: #eaf2f9;
+      --bg-strong: #dce9f5;
+      --surface: rgba(255,255,255,.72);
+      --surface-strong: rgba(255,255,255,.93);
+      --surface-soft: rgba(244,249,253,.72);
+      --line: rgba(102,129,156,.22);
+      --line-strong: rgba(88,119,148,.38);
+      --text: #203041;
+      --muted: #6a7d90;
+      --accent: #3f82d8;
+      --accent-strong: #2168c5;
+      --accent-soft: rgba(63,130,216,.13);
+      --success: #238761;
+      --success-soft: rgba(35,135,97,.12);
+      --warning: #bc7a21;
+      --warning-soft: rgba(188,122,33,.12);
+      --danger: #d64c57;
+      --danger-soft: rgba(214,76,87,.12);
+      --shadow: 0 22px 55px rgba(60,88,116,.16);
+      --shadow-soft: 0 10px 28px rgba(60,88,116,.12);
+      --radius-xl: 28px;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+      --radius-sm: 10px;
+    }
+
+    body[data-skin="vaporwave"] {
+      color-scheme: dark;
+      --bg: #120c2b;
+      --bg-strong: #251250;
+      --surface: rgba(32,20,70,.78);
+      --surface-strong: rgba(39,24,82,.96);
+      --surface-soft: rgba(51,29,96,.72);
+      --line: rgba(111,231,255,.22);
+      --line-strong: rgba(232,101,255,.42);
+      --text: #fbf3ff;
+      --muted: #c2aed9;
+      --accent: #42d9ff;
+      --accent-strong: #f366ff;
+      --accent-soft: rgba(66,217,255,.13);
+      --success: #63f0bd;
+      --success-soft: rgba(99,240,189,.12);
+      --warning: #ffd166;
+      --warning-soft: rgba(255,209,102,.12);
+      --danger: #ff6e9f;
+      --danger-soft: rgba(255,110,159,.12);
+      --shadow: 0 24px 70px rgba(4,2,21,.48), 0 0 28px rgba(243,102,255,.08);
+      --shadow-soft: 0 14px 32px rgba(4,2,21,.4);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      overflow-x: hidden;
+      font-family: var(--font);
+      color: var(--text);
+      background:
+        radial-gradient(circle at 12% 12%, rgba(119,178,232,.28), transparent 30%),
+        radial-gradient(circle at 88% 16%, rgba(152,199,238,.22), transparent 30%),
+        linear-gradient(145deg, var(--bg), var(--bg-strong));
+      transition: background .25s ease, color .25s ease;
+    }
+    body[data-skin="vaporwave"] {
+      background:
+        radial-gradient(circle at 18% 13%, rgba(243,102,255,.22), transparent 29%),
+        radial-gradient(circle at 84% 18%, rgba(66,217,255,.18), transparent 31%),
+        linear-gradient(155deg, var(--bg), var(--bg-strong));
+    }
+    body.modal-open { overflow: hidden; }
+    button, input, select { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .52; }
+    :focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 2px; }
+    .hidden { display: none !important; }
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+    }
+
+    .prototype-toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 80;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 10px 18px;
+      background: color-mix(in srgb, var(--surface-strong) 88%, transparent);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(20px);
+    }
+    .prototype-label { min-width: 0; }
+    .prototype-label strong { display: block; font-size: 14px; }
+    .prototype-label span { display: block; color: var(--muted); font-size: 12px; }
+    .prototype-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+    .segmented {
+      display: inline-flex;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--surface-soft);
+    }
+    .segmented button {
+      min-height: 32px;
+      padding: 5px 10px;
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .segmented button.active { color: var(--text); background: var(--surface-strong); box-shadow: var(--shadow-soft); }
+
+    .preview-wrap { padding: 22px; }
+    .preview-stage {
+      width: min(1480px, 100%);
+      min-height: 780px;
+      margin: 0 auto;
+      border: 1px solid var(--line-strong);
+      border-radius: 30px;
+      overflow: hidden;
+      background: color-mix(in srgb, var(--surface) 52%, transparent);
+      box-shadow: var(--shadow);
+      transition: width .25s ease;
+    }
+    .preview-stage[data-viewport="740"] { width: min(740px, 100%); }
+    .preview-stage[data-viewport="600"] { width: min(600px, 100%); }
+
+    .app-shell {
+      min-height: 780px;
+      display: grid;
+      grid-template-columns: 238px minmax(0, 1fr);
+      background:
+        linear-gradient(140deg, color-mix(in srgb, var(--surface) 88%, transparent), color-mix(in srgb, var(--surface-soft) 62%, transparent));
+    }
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      padding: 24px 16px 18px;
+      border-right: 1px solid var(--line);
+      background: color-mix(in srgb, var(--surface-soft) 74%, transparent);
+    }
+    .brand { display: flex; align-items: center; gap: 11px; padding: 0 8px 24px; }
+    .brand-mark {
+      width: 42px; height: 42px; flex: 0 0 42px; border-radius: 14px;
+      display: grid; place-items: center; color: white; font-weight: 800;
+      background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+      box-shadow: 0 10px 24px color-mix(in srgb, var(--accent) 28%, transparent);
+    }
+    .brand-copy { min-width: 0; }
+    .brand-copy strong { display: block; font-size: 16px; }
+    .brand-copy span { color: var(--muted); font-size: 11px; }
+    .nav-stack { display: grid; gap: 7px; }
+    .nav-button {
+      width: 100%; min-height: 45px; display: flex; align-items: center; gap: 11px;
+      padding: 9px 12px; border: 1px solid transparent; border-radius: 13px;
+      background: transparent; color: var(--muted); text-align: left;
+    }
+    .nav-button:hover { background: var(--surface); color: var(--text); }
+    .nav-button.active { color: var(--text); background: var(--surface-strong); border-color: var(--line); box-shadow: var(--shadow-soft); }
+    .nav-icon { width: 25px; text-align: center; font-size: 17px; }
+    .sidebar-spacer { flex: 1; }
+    .prototype-note {
+      padding: 12px; border-radius: 13px; background: var(--accent-soft); color: var(--muted);
+      font-size: 11px; line-height: 1.55;
+    }
+
+    .workspace { min-width: 0; padding: 30px clamp(18px, 3vw, 42px) 42px; }
+    .page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 24px; }
+    .page-heading h1 { margin: 0; font-size: clamp(28px, 3.6vw, 46px); letter-spacing: -.035em; }
+    .page-heading p { margin: 6px 0 0; color: var(--muted); }
+    .header-badge {
+      padding: 8px 11px; border: 1px solid var(--line); border-radius: 999px;
+      color: var(--muted); background: var(--surface);
+      font-size: 12px; white-space: nowrap;
+    }
+    .page { display: none; }
+    .page.active { display: block; animation: fade-in .18s ease; }
+    @keyframes fade-in { from { opacity: .2; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+    .collection-toolbar { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+    .filter-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+    .chip {
+      border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted);
+      min-height: 34px; padding: 6px 12px;
+    }
+    .chip.active { color: var(--accent-strong); border-color: color-mix(in srgb, var(--accent) 48%, var(--line)); background: var(--accent-soft); }
+    .collection-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 18px; }
+    .collection-card {
+      position: relative; min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 20px;
+      background: var(--surface); box-shadow: var(--shadow-soft); user-select: none;
+      transition: transform .16s ease, border-color .16s ease;
+    }
+    .collection-card:hover { transform: translateY(-3px); border-color: var(--line-strong); }
+    .collection-cover {
+      aspect-ratio: 1 / 1.12; border-radius: 15px; overflow: hidden; position: relative;
+      display: grid; place-items: center; color: rgba(255,255,255,.94); font-size: 38px;
+      background: linear-gradient(145deg, var(--cover-a), var(--cover-b));
+    }
+    .collection-cover::before {
+      content: ""; position: absolute; width: 110px; height: 110px; border-radius: 50%;
+      border: 18px solid rgba(255,255,255,.18); transform: translate(36px,-40px);
+    }
+    .collection-cover::after {
+      content: ""; position: absolute; inset: auto 15px 15px; height: 9px; border-radius: 999px;
+      background: rgba(255,255,255,.32); box-shadow: 0 -17px rgba(255,255,255,.18);
+    }
+    .rule-card-badge {
+      position: absolute; top: 12px; left: 12px; z-index: 2; padding: 5px 8px; border-radius: 999px;
+      background: rgba(17,31,45,.72); color: white; font-size: 10px; backdrop-filter: blur(10px);
+    }
+    .rule-card-badge.off { background: rgba(76,83,93,.62); }
+    .collection-open {
+      width: 100%; border: 0; background: transparent; text-align: left; padding: 11px 2px 2px;
+    }
+    .collection-open strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .collection-open span { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+    .collection-hint { margin: 18px 0 0; color: var(--muted); font-size: 12px; }
+
+    .settings-grid { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 24px; align-items: start; }
+    .settings-nav {
+      display: grid; gap: 5px; padding: 10px; border: 1px solid var(--line); border-radius: 18px;
+      background: var(--surface); position: sticky; top: 70px;
+    }
+    .settings-nav button {
+      min-height: 43px; padding: 8px 12px; border: 0; border-radius: 11px;
+      background: transparent; color: var(--muted); text-align: left;
+    }
+    .settings-nav button:hover { background: var(--surface-soft); color: var(--text); }
+    .settings-nav button.active { color: var(--accent-strong); background: var(--accent-soft); box-shadow: inset 3px 0 var(--accent); }
+    .settings-content { min-width: 0; }
+    .placeholder-card, .panel {
+      min-width: 0; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
+      box-shadow: var(--shadow-soft);
+    }
+    .placeholder-card { padding: 24px; }
+    .placeholder-card h2 { margin: 0 0 7px; }
+    .placeholder-card p { color: var(--muted); line-height: 1.7; }
+
+    .rules-manager { display: grid; grid-template-columns: minmax(210px, .72fr) minmax(430px, 1.8fr); gap: 18px; align-items: start; }
+    .collection-panel { padding: 15px; max-height: 650px; overflow: auto; }
+    .panel-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 12px; }
+    .panel-title h2 { margin: 0; font-size: 16px; }
+    .count-pill { padding: 3px 8px; border-radius: 999px; color: var(--muted); background: var(--surface-soft); font-size: 11px; }
+    .search-field { position: relative; margin-bottom: 14px; }
+    .search-field input {
+      width: 100%; min-width: 0; height: 40px; border: 1px solid var(--line); border-radius: 12px;
+      background: var(--surface-soft); padding: 8px 12px 8px 34px;
+    }
+    .search-field span { position: absolute; left: 11px; top: 10px; color: var(--muted); }
+    .kind-group + .kind-group { margin-top: 15px; }
+    .kind-label { margin: 0 0 6px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .collection-list { display: grid; gap: 5px; }
+    .collection-list button {
+      width: 100%; min-width: 0; display: grid; grid-template-columns: auto minmax(0,1fr) auto;
+      align-items: center; gap: 8px; padding: 9px; border: 1px solid transparent; border-radius: 11px;
+      background: transparent; text-align: left;
+    }
+    .collection-list button:hover { background: var(--surface-soft); }
+    .collection-list button.active { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 28%, transparent); }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 3px color-mix(in srgb, var(--muted) 12%, transparent); }
+    .status-dot.enabled { background: var(--success); box-shadow: 0 0 0 3px var(--success-soft); }
+    .collection-list-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .collection-list-meta { color: var(--muted); font-size: 10px; white-space: nowrap; }
+
+    .rule-editor { padding: 20px; }
+    .editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 17px; border-bottom: 1px solid var(--line); }
+    .editor-kicker { color: var(--accent-strong); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .editor-head h2 { margin: 4px 0 5px; font-size: 22px; }
+    .editor-head p { margin: 0; color: var(--muted); font-size: 12px; }
+    .switch { position: relative; display: inline-flex; align-items: center; gap: 9px; white-space: nowrap; }
+    .switch input { position: absolute; opacity: 0; pointer-events: none; }
+    .switch-track {
+      width: 45px; height: 25px; border-radius: 999px; padding: 3px; background: color-mix(in srgb, var(--muted) 45%, transparent);
+      transition: .18s ease;
+    }
+    .switch-track::after { content: ""; display: block; width: 19px; height: 19px; border-radius: 50%; background: white; box-shadow: 0 2px 8px rgba(0,0,0,.18); transition: .18s ease; }
+    .switch input:checked + .switch-track { background: var(--success); }
+    .switch input:checked + .switch-track::after { transform: translateX(20px); }
+    .switch.small { font-size: 11px; color: var(--muted); }
+    .switch.small .switch-track { width: 35px; height: 20px; padding: 2px; }
+    .switch.small .switch-track::after { width: 16px; height: 16px; }
+    .switch.small input:checked + .switch-track::after { transform: translateX(15px); }
+
+    .editor-section { padding: 18px 0; border-bottom: 1px solid var(--line); }
+    .editor-section:last-of-type { border-bottom: 0; }
+    .section-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .section-row h3 { margin: 0; font-size: 14px; }
+    .section-row p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
+    .select, .text-input {
+      min-width: 0; height: 38px; border: 1px solid var(--line); border-radius: 10px;
+      background: var(--surface-soft); padding: 7px 10px;
+    }
+    .condition-list { display: grid; gap: 9px; }
+    .condition-row {
+      min-width: 0; display: grid; grid-template-columns: 126px minmax(120px,1fr) auto auto; gap: 8px; align-items: center;
+      padding: 9px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-soft);
+    }
+    .condition-row .select, .condition-row .text-input { width: 100%; }
+    .icon-button {
+      width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 10px;
+      background: var(--surface); color: var(--muted);
+    }
+    .icon-button:hover { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 38%, transparent); }
+    .ghost-button, .primary-button, .danger-button {
+      min-height: 39px; border-radius: 11px; padding: 8px 14px; font-weight: 650;
+    }
+    .ghost-button { border: 1px solid var(--line); background: var(--surface); }
+    .ghost-button:hover { border-color: var(--line-strong); background: var(--surface-soft); }
+    .primary-button { border: 1px solid transparent; color: white; background: linear-gradient(135deg, var(--accent), var(--accent-strong)); box-shadow: 0 9px 22px color-mix(in srgb, var(--accent) 22%, transparent); }
+    .danger-button { border: 1px solid color-mix(in srgb, var(--danger) 38%, transparent); color: var(--danger); background: var(--danger-soft); }
+    .add-condition { margin-top: 10px; }
+    .validation-message { min-height: 20px; margin: 8px 0 0; color: var(--danger); font-size: 11px; }
+    .exclusion-list { display: grid; gap: 7px; }
+    .exclusion-item {
+      min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 9px 11px; border: 1px solid var(--line); border-radius: 11px; background: var(--warning-soft);
+    }
+    .exclusion-copy { min-width: 0; }
+    .exclusion-copy strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+    .exclusion-copy span { color: var(--muted); font-size: 10px; }
+    .empty-state { padding: 15px; border: 1px dashed var(--line-strong); border-radius: 12px; color: var(--muted); text-align: center; font-size: 12px; }
+    .editor-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 18px; }
+    .dirty-state { color: var(--muted); font-size: 11px; }
+    .dirty-state.changed { color: var(--warning); }
+    .action-group { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+    .context-menu {
+      position: fixed; z-index: 160; min-width: 188px; padding: 7px; border: 1px solid var(--line-strong);
+      border-radius: 13px; background: var(--surface-strong); box-shadow: var(--shadow); backdrop-filter: blur(20px);
+    }
+    .context-menu button { width: 100%; min-height: 36px; padding: 7px 10px; border: 0; border-radius: 8px; background: transparent; text-align: left; }
+    .context-menu button:hover { background: var(--accent-soft); }
+    .context-menu button.danger { color: var(--danger); }
+    .context-menu hr { border: 0; border-top: 1px solid var(--line); margin: 5px 0; }
+
+    .modal-layer {
+      position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 18px;
+      background: rgba(10,20,32,.4); backdrop-filter: blur(12px);
+    }
+    .modal-layer[aria-hidden="true"] { display: none; }
+    .modal {
+      width: min(880px, 100%); max-height: min(800px, calc(100vh - 36px)); overflow: auto;
+      border: 1px solid var(--line-strong); border-radius: 24px; background: var(--surface-strong); box-shadow: var(--shadow);
+    }
+    .modal.compact { width: min(560px, 100%); }
+    .modal-header { position: sticky; top: 0; z-index: 2; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--line); background: var(--surface-strong); }
+    .modal-header h2 { margin: 0; font-size: 20px; }
+    .modal-header p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+    .modal-body { padding: 20px; }
+    .modal-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 15px 20px; border-top: 1px solid var(--line); }
+    .modal .rule-editor { padding: 0; border: 0; box-shadow: none; background: transparent; }
+    .modal .editor-head { display: none; }
+    .close-button { width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); font-size: 18px; }
+    .choice-grid { display: grid; gap: 10px; }
+    .choice-card {
+      display: grid; grid-template-columns: auto 1fr; gap: 11px; padding: 14px;
+      border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft); cursor: pointer;
+    }
+    .choice-card:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+    .choice-card strong { display: block; }
+    .choice-card span { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+    .stats-grid { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 9px; }
+    .stat-card { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-soft); }
+    .stat-card span { display: block; color: var(--muted); font-size: 10px; }
+    .stat-card strong { display: block; margin-top: 4px; font-size: 22px; }
+    .stat-card.add strong { color: var(--success); }
+    .stat-card.remove strong { color: var(--danger); }
+    .preview-groups { display: grid; gap: 12px; margin-top: 16px; }
+    details.preview-group { border: 1px solid var(--line); border-radius: 13px; background: var(--surface-soft); overflow: hidden; }
+    details.preview-group summary { padding: 11px 13px; cursor: pointer; font-weight: 650; }
+    .preview-items { display: grid; gap: 1px; border-top: 1px solid var(--line); }
+    .preview-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 13px; background: var(--surface); }
+    .preview-item code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11px var(--mono); color: var(--muted); }
+    .preview-item span { white-space: nowrap; font-size: 10px; color: var(--muted); }
+    .preview-note { margin: 14px 0 0; padding: 11px 13px; border-radius: 12px; background: var(--accent-soft); color: var(--muted); font-size: 12px; line-height: 1.6; }
+
+    .toast-region { position: fixed; right: 18px; bottom: 18px; z-index: 300; display: grid; gap: 9px; width: min(360px, calc(100vw - 36px)); }
+    .toast { padding: 13px 15px; border: 1px solid var(--line-strong); border-radius: 13px; background: var(--surface-strong); box-shadow: var(--shadow); animation: toast-in .2s ease; }
+    .toast strong { display: block; font-size: 13px; }
+    .toast span { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+    @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+
+    .preview-stage[data-viewport="740"] .app-shell { grid-template-columns: 84px minmax(0,1fr); }
+    .preview-stage[data-viewport="740"] .sidebar { padding-inline: 10px; }
+    .preview-stage[data-viewport="740"] .brand { justify-content: center; padding-inline: 0; }
+    .preview-stage[data-viewport="740"] .brand-copy,
+    .preview-stage[data-viewport="740"] .nav-label,
+    .preview-stage[data-viewport="740"] .prototype-note { display: none; }
+    .preview-stage[data-viewport="740"] .nav-button { justify-content: center; padding-inline: 7px; }
+    .preview-stage[data-viewport="740"] .settings-grid { grid-template-columns: 145px minmax(0,1fr); gap: 14px; }
+    .preview-stage[data-viewport="740"] .rules-manager { grid-template-columns: 1fr; }
+    .preview-stage[data-viewport="740"] .collection-panel { max-height: 250px; }
+    .preview-stage[data-viewport="740"] .condition-row { grid-template-columns: 112px minmax(0,1fr) auto; }
+    .preview-stage[data-viewport="740"] .condition-row .switch { grid-column: 2 / 3; justify-self: start; }
+    .preview-stage[data-viewport="740"] .stats-grid { grid-template-columns: repeat(3, minmax(0,1fr)); }
+
+    .preview-stage[data-viewport="600"] .app-shell { display: block; }
+    .preview-stage[data-viewport="600"] .sidebar { flex-direction: row; align-items: center; gap: 8px; padding: 10px 12px; border-right: 0; border-bottom: 1px solid var(--line); }
+    .preview-stage[data-viewport="600"] .brand { padding: 0; }
+    .preview-stage[data-viewport="600"] .brand-copy,
+    .preview-stage[data-viewport="600"] .prototype-note,
+    .preview-stage[data-viewport="600"] .nav-label { display: none; }
+    .preview-stage[data-viewport="600"] .nav-stack { display: flex; flex: 1; justify-content: flex-end; }
+    .preview-stage[data-viewport="600"] .nav-button { width: auto; min-height: 40px; }
+    .preview-stage[data-viewport="600"] .workspace { padding: 22px 14px 32px; }
+    .preview-stage[data-viewport="600"] .page-header { align-items: flex-start; }
+    .preview-stage[data-viewport="600"] .header-badge { display: none; }
+    .preview-stage[data-viewport="600"] .settings-grid { display: block; }
+    .preview-stage[data-viewport="600"] .settings-nav { position: static; display: flex; overflow-x: auto; margin-bottom: 14px; padding: 6px; }
+    .preview-stage[data-viewport="600"] .settings-nav button { flex: 0 0 auto; white-space: nowrap; }
+    .preview-stage[data-viewport="600"] .settings-nav button.active { box-shadow: inset 0 -3px var(--accent); }
+    .preview-stage[data-viewport="600"] .rules-manager { grid-template-columns: 1fr; }
+    .preview-stage[data-viewport="600"] .collection-panel { max-height: 230px; }
+    .preview-stage[data-viewport="600"] .rule-editor { padding: 15px; }
+    .preview-stage[data-viewport="600"] .editor-head { display: grid; }
+    .preview-stage[data-viewport="600"] .condition-row { grid-template-columns: minmax(0,1fr) auto; }
+    .preview-stage[data-viewport="600"] .condition-row .select,
+    .preview-stage[data-viewport="600"] .condition-row .text-input { grid-column: 1 / -1; }
+    .preview-stage[data-viewport="600"] .condition-row .switch { grid-column: 1; }
+    .preview-stage[data-viewport="600"] .condition-row .icon-button { grid-column: 2; grid-row: 3; }
+    .preview-stage[data-viewport="600"] .section-row { align-items: flex-start; flex-direction: column; }
+    .preview-stage[data-viewport="600"] .section-row .select { width: 100%; }
+    .preview-stage[data-viewport="600"] .editor-actions { align-items: flex-start; flex-direction: column; }
+    .preview-stage[data-viewport="600"] .action-group { width: 100%; }
+    .preview-stage[data-viewport="600"] .action-group button { flex: 1; }
+    .preview-stage[data-viewport="600"] .stats-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+
+    @media (max-width: 760px) {
+      .prototype-toolbar { align-items: flex-start; }
+      .prototype-label span { display: none; }
+      .preview-wrap { padding: 10px; }
+      .preview-stage { border-radius: 20px; }
+      .app-shell { display: block; }
+      .sidebar { flex-direction: row; align-items: center; padding: 10px 12px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .brand { padding: 0; }
+      .brand-copy, .prototype-note { display: none; }
+      .nav-stack { display: flex; flex: 1; justify-content: flex-end; }
+      .nav-button { width: auto; }
+      .workspace { padding: 22px 14px 32px; }
+      .settings-grid, .rules-manager { display: block; }
+      .settings-nav { position: static; display: flex; overflow-x: auto; margin-bottom: 14px; }
+      .settings-nav button { flex: 0 0 auto; white-space: nowrap; }
+      .collection-panel { max-height: 230px; margin-bottom: 14px; }
+      .condition-row { grid-template-columns: minmax(0,1fr) auto; }
+      .condition-row .select, .condition-row .text-input { grid-column: 1 / -1; }
+      .condition-row .switch { grid-column: 1; }
+      .condition-row .icon-button { grid-column: 2; grid-row: 3; }
+      .stats-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    }
+  </style>
+</head>
+<body data-skin="glass">
+  <header class="prototype-toolbar" aria-label="原型检查工具栏">
+    <div class="prototype-label">
+      <strong>集合规则 · 交互原型</strong>
+      <span>仅使用虚构数据，刷新页面即可重置</span>
+    </div>
+    <div class="prototype-controls">
+      <div class="segmented" aria-label="界面皮肤">
+        <button type="button" class="active" data-skin-choice="glass">Glass</button>
+        <button type="button" data-skin-choice="vaporwave">Vaporwave</button>
+      </div>
+      <div class="segmented" aria-label="预览宽度">
+        <button type="button" class="active" data-viewport-choice="desktop">桌面</button>
+        <button type="button" data-viewport-choice="740">740px</button>
+        <button type="button" data-viewport-choice="600">600px</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="preview-wrap">
+    <div class="preview-stage" id="previewStage" data-viewport="desktop">
+      <div class="app-shell">
+        <aside class="sidebar">
+          <div class="brand">
+            <div class="brand-mark" aria-hidden="true">B</div>
+            <div class="brand-copy"><strong>BookHub</strong><span>LOCAL LIBRARY</span></div>
+          </div>
+          <nav class="nav-stack" aria-label="主导航">
+            <button type="button" class="nav-button" data-nav="library"><span class="nav-icon">▤</span><span class="nav-label">总书库</span></button>
+            <button type="button" class="nav-button active" data-nav="collections"><span class="nav-icon">▦</span><span class="nav-label">书籍合集</span></button>
+            <button type="button" class="nav-button" data-nav="novels"><span class="nav-icon">T</span><span class="nav-label">文本小说</span></button>
+            <button type="button" class="nav-button" data-nav="comics"><span class="nav-icon">▧</span><span class="nav-label">漫画</span></button>
+            <button type="button" class="nav-button" data-nav="settings"><span class="nav-icon">⚙</span><span class="nav-label">设置</span></button>
+          </nav>
+          <div class="sidebar-spacer"></div>
+          <div class="prototype-note">原型不会访问本地书库，也不会把更改写入磁盘。</div>
+        </aside>
+
+        <main class="workspace">
+          <section class="page active" data-page="collections" id="collectionsPage">
+            <header class="page-header">
+              <div class="page-heading"><h1>书籍合集</h1><p>右键任意合集卡片，快速编辑其自动归档规则。</p></div>
+              <div class="header-badge">虚构演示数据</div>
+            </header>
+            <div class="collection-toolbar">
+              <div class="filter-chips" aria-label="合集类型筛选">
+                <button type="button" class="chip active" data-kind-filter="all">全部</button>
+                <button type="button" class="chip" data-kind-filter="book">书籍</button>
+                <button type="button" class="chip" data-kind-filter="text_novel">小说</button>
+                <button type="button" class="chip" data-kind-filter="comic">漫画</button>
+              </div>
+            </div>
+            <div class="collection-grid" id="collectionGrid"></div>
+            <p class="collection-hint">提示：鼠标右键或键盘 Shift + F10 可打开合集菜单。</p>
+          </section>
+
+          <section class="page" data-page="settings" id="settingsPage">
+            <header class="page-header">
+              <div class="page-heading"><h1>设置</h1><p>统一管理应用偏好与每个合集的自动归档规则。</p></div>
+              <div class="header-badge">原型模式</div>
+            </header>
+            <div class="settings-grid">
+              <nav class="settings-nav" aria-label="设置分类">
+                <button type="button" data-settings-section="general">常规</button>
+                <button type="button" data-settings-section="appearance">外观与主题</button>
+                <button type="button" data-settings-section="shortcuts">快捷键</button>
+                <button type="button" data-settings-section="paths">路径与扫描</button>
+                <button type="button" data-settings-section="errors">错误日志</button>
+                <button type="button" class="active" data-settings-section="collection-rules">集合规则</button>
+              </nav>
+              <div class="settings-content" id="settingsContent">
+                <div class="rules-manager" id="ruleManager">
+                  <aside class="collection-panel panel">
+                    <div class="panel-title"><h2>全部合集</h2><span class="count-pill" id="collectionCount">0</span></div>
+                    <label class="search-field">
+                      <span aria-hidden="true">⌕</span>
+                      <span class="sr-only">搜索合集</span>
+                      <input id="collectionSearch" type="search" placeholder="搜索合集…" autocomplete="off">
+                    </label>
+                    <div id="collectionRuleList"></div>
+                  </aside>
+                  <section class="rule-editor panel" id="ruleEditor" aria-label="集合规则编辑器"></section>
+                </div>
+                <div class="placeholder-card hidden" id="settingsPlaceholder"></div>
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+  </div>
+
+  <div class="context-menu hidden" id="contextMenu" role="menu" aria-label="合集菜单">
+    <button type="button" role="menuitem" data-menu-action="open">打开</button>
+    <button type="button" role="menuitem" data-menu-action="edit-rule">编辑集合规则…</button>
+    <hr>
+    <button type="button" role="menuitem" data-menu-action="rename">重命名</button>
+    <button type="button" role="menuitem" class="danger" data-menu-action="delete">删除</button>
+  </div>
+
+  <div class="modal-layer" id="ruleModal" aria-hidden="true">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="ruleModalTitle">
+      <header class="modal-header">
+        <div><h2 id="ruleModalTitle">编辑集合规则</h2><p id="ruleModalSubtitle"></p></div>
+        <button type="button" class="close-button" data-close-layer="ruleModal" aria-label="关闭">×</button>
+      </header>
+      <div class="modal-body"><section class="rule-editor" id="modalRuleEditor"></section></div>
+    </section>
+  </div>
+
+  <div class="modal-layer" id="disableModal" aria-hidden="true">
+    <section class="modal compact" role="dialog" aria-modal="true" aria-labelledby="disableTitle">
+      <header class="modal-header">
+        <div><h2 id="disableTitle">关闭集合规则</h2><p>请选择已有自动成员的处理方式。</p></div>
+        <button type="button" class="close-button" data-close-layer="disableModal" aria-label="关闭">×</button>
+      </header>
+      <div class="modal-body">
+        <div class="choice-grid">
+          <label class="choice-card"><input type="radio" name="disableMode" value="remove"><span><strong>撤销自动成员</strong><span>删除仅由规则加入的成员，手动加入的成员继续保留。</span></span></label>
+          <label class="choice-card"><input type="radio" name="disableMode" value="convert"><span><strong>保留并转为手动</strong><span>当前自动成员全部保留，并转换成普通手动成员。</span></span></label>
+        </div>
+      </div>
+      <footer class="modal-footer">
+        <button type="button" class="ghost-button" data-close-layer="disableModal">取消</button>
+        <button type="button" class="primary-button" id="confirmDisableMode" disabled>继续预览</button>
+      </footer>
+    </section>
+  </div>
+
+  <div class="modal-layer" id="previewModal" aria-hidden="true">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="previewTitle">
+      <header class="modal-header">
+        <div><h2 id="previewTitle">规则影响预览</h2><p id="previewSubtitle">确认前不会修改任何演示状态。</p></div>
+        <button type="button" class="close-button" data-close-layer="previewModal" aria-label="关闭">×</button>
+      </header>
+      <div class="modal-body" id="previewBody"></div>
+      <footer class="modal-footer">
+        <button type="button" class="ghost-button" data-close-layer="previewModal">返回修改</button>
+        <button type="button" class="primary-button" id="confirmSaveRule">确认并保存</button>
+      </footer>
+    </section>
+  </div>
+
+  <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="false"></div>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const KIND_META = {
+        book: { label: "书籍", icon: "▤" },
+        text_novel: { label: "Text Novel", icon: "T" },
+        comic: { label: "Comic", icon: "▧" },
+      };
+      const OPERATORS = [
+        ["contains", "包含"], ["not_contains", "不包含"], ["starts_with", "开头为"],
+        ["ends_with", "结尾为"], ["equals", "完全等于"],
+      ];
+      const CATALOG = [
+        { id: "b-1", kind: "book", name: "[山田太郎]-人体绘画基础-视觉出版社.pdf" },
+        { id: "b-2", kind: "book", name: "Python自动化实战-O'Reilly.epub" },
+        { id: "b-3", kind: "book", name: "设计系统-视觉出版社.fb2.zip" },
+        { id: "b-4", kind: "book", name: "[试读版]-色彩构成-艺术工业出版社.pdf" },
+        { id: "b-5", kind: "book", name: "O'Reilly-Learning SQL.epub" },
+        { id: "b-6", kind: "book", name: "摄影构图与视觉语言.docx" },
+        { id: "b-7", kind: "book", name: "[陈墨]-现代建筑图鉴-城建出版社.pdf" },
+        { id: "b-8", kind: "book", name: "Python 数据处理手册.md" },
+        { id: "n-1", kind: "text_novel", name: "[刘慈欣]-流浪地球-科幻世界.txt" },
+        { id: "n-2", kind: "text_novel", name: "银河边缘-科幻世界.txt" },
+        { id: "n-3", kind: "text_novel", name: "[试读]-星海旅人-未来出版社.txt" },
+        { id: "n-4", kind: "text_novel", name: "城市漫游者-文艺出版社.txt" },
+        { id: "n-5", kind: "text_novel", name: "未来简史-科幻世界.txt" },
+        { id: "c-1", kind: "comic", name: "人体彩绘练习册" },
+        { id: "c-2", kind: "comic", name: "短篇漫画-[山田]-第一季.cbz" },
+        { id: "c-3", kind: "comic", name: "城市夜行-短篇集" },
+        { id: "c-4", kind: "comic", name: "[试阅]-机械纪元.cbz" },
+        { id: "c-5", kind: "comic", name: "科幻短篇-月面来客.cbz" },
+      ];
+      const DEMO_COLLECTIONS = [
+        {
+          id: "book-art", kind: "book", name: "人体绘画", enabled: true, matchMode: "any",
+          conditions: [{ operator: "contains", value: "人体", caseSensitive: false }, { operator: "contains", value: "绘画", caseSensitive: false }],
+          autoMemberIds: ["b-1", "b-6"], manualMemberIds: ["b-1", "b-4"], exclusions: ["b-4"],
+          cover: ["#ef83b6", "#7d8de8"],
+        },
+        {
+          id: "book-tech", kind: "book", name: "技术与编程", enabled: true, matchMode: "any",
+          conditions: [{ operator: "contains", value: "Python", caseSensitive: true }, { operator: "starts_with", value: "O'Reilly", caseSensitive: false }],
+          autoMemberIds: ["b-2", "b-5", "b-8"], manualMemberIds: ["b-3"], exclusions: [],
+          cover: ["#4e9bd8", "#3564bd"],
+        },
+        {
+          id: "book-publisher", kind: "book", name: "视觉出版社", enabled: false, matchMode: "all",
+          conditions: [{ operator: "contains", value: "视觉出版社", caseSensitive: false }],
+          autoMemberIds: [], manualMemberIds: ["b-3"], exclusions: [],
+          cover: ["#66bfa0", "#328674"],
+        },
+        {
+          id: "novel-scifi", kind: "text_novel", name: "科幻小说", enabled: true, matchMode: "all",
+          conditions: [{ operator: "contains", value: "科幻", caseSensitive: false }, { operator: "not_contains", value: "试读", caseSensitive: false }],
+          autoMemberIds: ["n-1", "n-2", "n-5"], manualMemberIds: ["n-4"], exclusions: ["n-3"],
+          cover: ["#855bd5", "#4942a5"],
+        },
+        {
+          id: "novel-pending", kind: "text_novel", name: "待读小说", enabled: false, matchMode: "any",
+          conditions: [{ operator: "contains", value: "出版社", caseSensitive: false }],
+          autoMemberIds: [], manualMemberIds: ["n-1", "n-4"], exclusions: [],
+          cover: ["#e69262", "#c65a55"],
+        },
+        {
+          id: "comic-short", kind: "comic", name: "短篇漫画", enabled: true, matchMode: "any",
+          conditions: [{ operator: "contains", value: "短篇", caseSensitive: false }, { operator: "ends_with", value: "短篇集", caseSensitive: false }],
+          autoMemberIds: ["c-2", "c-3", "c-5"], manualMemberIds: ["c-1"], exclusions: [],
+          cover: ["#f07891", "#9e3e8b"],
+        },
+        {
+          id: "comic-archive", kind: "comic", name: "典藏漫画", enabled: false, matchMode: "all",
+          conditions: [], autoMemberIds: [], manualMemberIds: ["c-1", "c-2"], exclusions: [],
+          cover: ["#deaa42", "#967126"],
+        },
+      ];
+
+      const clone = (value) => JSON.parse(JSON.stringify(value));
+      let collections = clone(DEMO_COLLECTIONS);
+      let currentId = "book-tech";
+      let draft = null;
+      let draftOrigin = "settings";
+      let contextId = null;
+      let activeLayer = null;
+      let previousFocus = null;
+      let pendingDisableMode = "";
+      let pendingPreview = null;
+
+      const $ = (id) => document.getElementById(id);
+      const qsa = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+      const collectionById = (id) => collections.find((item) => item.id === id);
+      const catalogById = (id) => CATALOG.find((item) => item.id === id);
+      const namesForIds = (ids) => ids.map(catalogById).filter(Boolean);
+
+      function sourceName(resource) {
+        if (!resource) return "";
+        if (resource.kind === "comic") return resource.name.replace(/\.cbz$/i, "");
+        return resource.name.replace(/\.(fb2\.zip|pdf|epub|html?|md|markdown|fb2|docx|txt)$/i, "");
+      }
+
+      function matchesCondition(name, condition) {
+        const left = condition.caseSensitive ? name : name.toLocaleLowerCase();
+        const rawValue = String(condition.value || "").trim();
+        const right = condition.caseSensitive ? rawValue : rawValue.toLocaleLowerCase();
+        if (!right) return false;
+        if (condition.operator === "contains") return left.includes(right);
+        if (condition.operator === "not_contains") return !left.includes(right);
+        if (condition.operator === "starts_with") return left.startsWith(right);
+        if (condition.operator === "ends_with") return left.endsWith(right);
+        if (condition.operator === "equals") return left === right;
+        return false;
+      }
+
+      function matchesRule(resource, rule) {
+        const valid = rule.conditions.filter((condition) => String(condition.value || "").trim());
+        if (!rule.enabled || !valid.length) return false;
+        const name = sourceName(resource);
+        return rule.matchMode === "all"
+          ? valid.every((condition) => matchesCondition(name, condition))
+          : valid.some((condition) => matchesCondition(name, condition));
+      }
+
+      function calculatePreview(rule, disableMode = "") {
+        const original = collectionById(rule.id);
+        const kindItems = CATALOG.filter((item) => item.kind === rule.kind);
+        const manual = new Set(original.manualMemberIds);
+        const oldAuto = new Set(original.autoMemberIds);
+        const excluded = new Set(rule.exclusions);
+        let matched = [];
+        let effective = [];
+        if (rule.enabled) {
+          matched = kindItems.filter((item) => matchesRule(item, rule));
+          effective = matched.filter((item) => !excluded.has(item.id));
+        }
+        const effectiveIds = new Set(effective.map((item) => item.id));
+        const add = rule.enabled ? effective.filter((item) => !oldAuto.has(item.id)) : [];
+        const remove = rule.enabled
+          ? namesForIds([...oldAuto].filter((id) => !effectiveIds.has(id) && !manual.has(id)))
+          : (disableMode === "convert" ? [] : namesForIds([...oldAuto].filter((id) => !manual.has(id))));
+        const manualKeptIds = new Set([...manual]);
+        if (!rule.enabled && disableMode === "convert") [...oldAuto].forEach((id) => manualKeptIds.add(id));
+        const manualKept = namesForIds([...manualKeptIds]);
+        const excludedItems = rule.enabled ? matched.filter((item) => excluded.has(item.id)) : [];
+        return {
+          rule: clone(rule), disableMode, matched, effective, add, remove, manualKept, excludedItems,
+          summary: {
+            matched: matched.length,
+            add: add.length,
+            remove: remove.length,
+            manualKept: manualKept.length,
+            excluded: excludedItems.length,
+          },
+        };
+      }
+
+      function currentCollection() { return collectionById(currentId) || collections[0]; }
+      function startDraft(id, origin = "settings") {
+        currentId = id;
+        draft = clone(collectionById(id));
+        draftOrigin = origin;
+        pendingPreview = null;
+      }
+
+      function isValidDraft() {
+        if (!draft) return false;
+        if (!draft.enabled) return true;
+        return draft.conditions.some((condition) => String(condition.value || "").trim());
+      }
+
+      function isDraftChanged() {
+        const original = collectionById(draft.id);
+        return JSON.stringify(draft) !== JSON.stringify(original);
+      }
+
+      function invalidatePreview() { pendingPreview = null; }
+
+      function toast(title, message) {
+        const item = document.createElement("div");
+        item.className = "toast";
+        item.innerHTML = `<strong>${escapeHtml(title)}</strong><span>${escapeHtml(message)}</span>`;
+        $("toastRegion").appendChild(item);
+        window.setTimeout(() => item.remove(), 3300);
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
+      }
+
+      function showPage(page) {
+        qsa(".page").forEach((node) => node.classList.toggle("active", node.dataset.page === page));
+        qsa("[data-nav]").forEach((node) => node.classList.toggle("active", node.dataset.nav === page));
+        if (page === "settings") {
+          showSettingsSection("collection-rules");
+          renderSettingsManager();
+        }
+      }
+
+      function renderCollectionGrid(filter = "all") {
+        const grid = $("collectionGrid");
+        grid.textContent = "";
+        collections.filter((item) => filter === "all" || item.kind === filter).forEach((item) => {
+          const card = document.createElement("article");
+          card.className = "collection-card";
+          card.tabIndex = 0;
+          card.dataset.collectionId = item.id;
+          card.setAttribute("aria-label", `${item.name}，${item.enabled ? "规则已启用" : "规则未启用"}`);
+          card.innerHTML = `
+            <div class="collection-cover" style="--cover-a:${item.cover[0]};--cover-b:${item.cover[1]}">
+              <span class="rule-card-badge ${item.enabled ? "" : "off"}">${item.enabled ? `规则 · ${item.autoMemberIds.length}` : "规则关闭"}</span>
+              <span aria-hidden="true">${KIND_META[item.kind].icon}</span>
+            </div>
+            <button type="button" class="collection-open"><strong>${escapeHtml(item.name)}</strong><span>${item.manualMemberIds.length + item.autoMemberIds.length} 本 · ${KIND_META[item.kind].label}</span></button>`;
+          card.querySelector(".collection-open").addEventListener("click", () => toast("打开合集", `原型模拟打开“${item.name}”`));
+          card.addEventListener("contextmenu", (event) => openContextMenu(event, item.id));
+          card.addEventListener("keydown", (event) => {
+            if (event.key === "F10" && event.shiftKey) {
+              event.preventDefault();
+              const rect = card.getBoundingClientRect();
+              openContextMenu({ preventDefault() {}, clientX: rect.left + 24, clientY: rect.top + 24 }, item.id);
+            }
+          });
+          grid.appendChild(card);
+        });
+      }
+
+      function openContextMenu(event, id) {
+        event.preventDefault();
+        contextId = id;
+        const menu = $("contextMenu");
+        menu.classList.remove("hidden");
+        const left = Math.min(event.clientX, window.innerWidth - 205);
+        const top = Math.min(event.clientY, window.innerHeight - 190);
+        menu.style.left = `${Math.max(8, left)}px`;
+        menu.style.top = `${Math.max(8, top)}px`;
+        menu.querySelector("button").focus();
+      }
+
+      function closeContextMenu() { $("contextMenu").classList.add("hidden"); }
+
+      function renderSettingsManager() {
+        renderCollectionRuleList();
+        if (!draft || draft.id !== currentId || draftOrigin !== "settings") startDraft(currentId, "settings");
+        renderRuleEditor($("ruleEditor"));
+      }
+
+      function renderCollectionRuleList() {
+        const host = $("collectionRuleList");
+        const query = $("collectionSearch").value.trim().toLocaleLowerCase();
+        const filtered = collections.filter((item) => item.name.toLocaleLowerCase().includes(query));
+        $("collectionCount").textContent = String(filtered.length);
+        host.textContent = "";
+        Object.entries(KIND_META).forEach(([kind, meta]) => {
+          const items = filtered.filter((item) => item.kind === kind);
+          if (!items.length) return;
+          const group = document.createElement("section");
+          group.className = "kind-group";
+          group.innerHTML = `<h3 class="kind-label">${escapeHtml(meta.label)}</h3><div class="collection-list"></div>`;
+          const list = group.querySelector(".collection-list");
+          items.forEach((item) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = item.id === currentId ? "active" : "";
+            button.innerHTML = `<span class="status-dot ${item.enabled ? "enabled" : ""}"></span><span class="collection-list-name">${escapeHtml(item.name)}</span><span class="collection-list-meta">自动 ${item.autoMemberIds.length} · 排除 ${item.exclusions.length}</span>`;
+            button.addEventListener("click", () => {
+              startDraft(item.id, "settings");
+              renderSettingsManager();
+            });
+            list.appendChild(button);
+          });
+          host.appendChild(group);
+        });
+        if (!filtered.length) host.innerHTML = '<div class="empty-state">没有匹配的合集</div>';
+      }
+
+      function renderRuleEditor(host) {
+        if (!draft) return;
+        const meta = KIND_META[draft.kind];
+        const valid = isValidDraft();
+        const changed = isDraftChanged();
+        host.innerHTML = `
+          <div class="editor-head">
+            <div><span class="editor-kicker">${escapeHtml(meta.label)} COLLECTION</span><h2>${escapeHtml(draft.name)}</h2><p>匹配来源文件或文件夹的原名，不使用应用内显示标题。</p></div>
+            <label class="switch"><span>启用自动归档</span><input type="checkbox" data-field="enabled" ${draft.enabled ? "checked" : ""}><span class="switch-track" aria-hidden="true"></span></label>
+          </div>
+          <div class="editor-section">
+            <div class="section-row">
+              <div><h3>匹配条件</h3><p>同一本资源可以同时命中多个合集规则。</p></div>
+              <label><span class="sr-only">条件组合方式</span><select class="select" data-field="matchMode"><option value="all" ${draft.matchMode === "all" ? "selected" : ""}>满足全部条件</option><option value="any" ${draft.matchMode === "any" ? "selected" : ""}>满足任一条件</option></select></label>
+            </div>
+            <div class="condition-list" data-role="conditions"></div>
+            <button type="button" class="ghost-button add-condition" data-action="add-condition">＋ 添加条件</button>
+            <p class="validation-message" role="alert">${valid ? "" : "启用规则时至少需要一条非空条件。"}</p>
+          </div>
+          <div class="editor-section">
+            <div class="section-row"><div><h3>手动排除 <span class="count-pill">${draft.exclusions.length}</span></h3><p>规则仍命中时不会自动加回；取消排除后将在保存时重新判断。</p></div></div>
+            <div class="exclusion-list" data-role="exclusions"></div>
+          </div>
+          <div class="editor-actions">
+            <span class="dirty-state ${changed ? "changed" : ""}">${changed ? "有尚未预览的修改" : "当前规则未修改"}</span>
+            <div class="action-group"><button type="button" class="ghost-button" data-action="reset" ${changed ? "" : "disabled"}>重置</button><button type="button" class="primary-button" data-action="preview" ${valid ? "" : "disabled"}>预览变更</button></div>
+          </div>`;
+
+        renderConditionRows(host.querySelector('[data-role="conditions"]'));
+        renderExclusions(host.querySelector('[data-role="exclusions"]'));
+        wireEditor(host);
+      }
+
+      function renderConditionRows(host) {
+        host.textContent = "";
+        if (!draft.conditions.length) host.innerHTML = '<div class="empty-state">尚未添加条件。规则保持关闭时可以留空。</div>';
+        draft.conditions.forEach((condition, index) => {
+          const row = document.createElement("div");
+          row.className = "condition-row";
+          row.innerHTML = `
+            <label><span class="sr-only">匹配方式</span><select class="select" data-condition-field="operator" data-index="${index}">${OPERATORS.map(([value,label]) => `<option value="${value}" ${condition.operator === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+            <label><span class="sr-only">关键词</span><input class="text-input" data-condition-field="value" data-index="${index}" value="${escapeHtml(condition.value)}" placeholder="输入关键词"></label>
+            <label class="switch small"><span>区分大小写</span><input type="checkbox" data-condition-field="caseSensitive" data-index="${index}" ${condition.caseSensitive ? "checked" : ""}><span class="switch-track" aria-hidden="true"></span></label>
+            <button type="button" class="icon-button" data-action="remove-condition" data-index="${index}" aria-label="删除条件">×</button>`;
+          host.appendChild(row);
+        });
+      }
+
+      function renderExclusions(host) {
+        host.textContent = "";
+        if (!draft.exclusions.length) {
+          host.innerHTML = '<div class="empty-state">当前没有手动排除项</div>';
+          return;
+        }
+        namesForIds(draft.exclusions).forEach((item) => {
+          const row = document.createElement("div");
+          row.className = "exclusion-item";
+          row.innerHTML = `<div class="exclusion-copy"><strong>${escapeHtml(sourceName(item))}</strong><span>${escapeHtml(KIND_META[item.kind].label)} · 仍由保存时重新判断</span></div><button type="button" class="ghost-button" data-action="clear-exclusion" data-resource-id="${item.id}">取消排除</button>`;
+          host.appendChild(row);
+        });
+      }
+
+      function wireEditor(host) {
+        host.querySelector('[data-field="enabled"]').addEventListener("change", (event) => {
+          draft.enabled = event.target.checked;
+          invalidatePreview();
+          renderRuleEditor(host);
+        });
+        host.querySelector('[data-field="matchMode"]').addEventListener("change", (event) => {
+          draft.matchMode = event.target.value;
+          invalidatePreview();
+          renderRuleEditor(host);
+        });
+        qsa("[data-condition-field]", host).forEach((control) => control.addEventListener("change", (event) => {
+          const index = Number(event.target.dataset.index);
+          const field = event.target.dataset.conditionField;
+          draft.conditions[index][field] = field === "caseSensitive" ? event.target.checked : event.target.value;
+          invalidatePreview();
+          renderRuleEditor(host);
+        }));
+        const add = host.querySelector('[data-action="add-condition"]');
+        add.addEventListener("click", () => {
+          draft.conditions.push({ operator: "contains", value: "", caseSensitive: false });
+          invalidatePreview();
+          renderRuleEditor(host);
+          const inputs = qsa('[data-condition-field="value"]', host);
+          inputs[inputs.length - 1]?.focus();
+        });
+        qsa('[data-action="remove-condition"]', host).forEach((button) => button.addEventListener("click", () => {
+          draft.conditions.splice(Number(button.dataset.index), 1);
+          invalidatePreview();
+          renderRuleEditor(host);
+        }));
+        qsa('[data-action="clear-exclusion"]', host).forEach((button) => button.addEventListener("click", () => {
+          draft.exclusions = draft.exclusions.filter((id) => id !== button.dataset.resourceId);
+          invalidatePreview();
+          renderRuleEditor(host);
+          toast("已取消排除", "保存规则后将重新判断该资源。 ");
+        }));
+        host.querySelector('[data-action="reset"]').addEventListener("click", () => {
+          draft = clone(collectionById(draft.id));
+          invalidatePreview();
+          renderRuleEditor(host);
+        });
+        host.querySelector('[data-action="preview"]').addEventListener("click", beginPreview);
+      }
+
+      function beginPreview() {
+        const original = collectionById(draft.id);
+        if (original.enabled && !draft.enabled && original.autoMemberIds.length) {
+          pendingDisableMode = "";
+          qsa('input[name="disableMode"]').forEach((input) => { input.checked = false; });
+          $("confirmDisableMode").disabled = true;
+          openLayer("disableModal");
+          return;
+        }
+        openPreview("");
+      }
+
+      function openPreview(disableMode) {
+        pendingPreview = calculatePreview(draft, disableMode);
+        const p = pendingPreview;
+        $("previewSubtitle").textContent = `${draft.name} · ${draft.enabled ? (draft.matchMode === "all" ? "满足全部条件" : "满足任一条件") : "规则将关闭"}`;
+        $("previewBody").innerHTML = `
+          <div class="stats-grid">
+            ${statCard("当前命中", p.summary.matched, "")}
+            ${statCard("新增自动", p.summary.add, "add")}
+            ${statCard("移除自动", p.summary.remove, "remove")}
+            ${statCard("手动保留", p.summary.manualKept, "")}
+            ${statCard("保持排除", p.summary.excluded, "")}
+          </div>
+          <div class="preview-groups">
+            ${previewGroup("将自动加入", p.add, true)}
+            ${previewGroup("将自动移除", p.remove, false)}
+            ${previewGroup("手动成员保留", p.manualKept, false)}
+            ${previewGroup("命中但保持排除", p.excludedItems, false)}
+          </div>
+          <p class="preview-note">这是纯前端模拟预览。点击“确认并保存”只更新当前页面内存，刷新页面即可恢复初始演示数据。</p>`;
+        closeLayer("disableModal", false);
+        openLayer("previewModal");
+      }
+
+      function statCard(label, value, className) { return `<div class="stat-card ${className}"><span>${label}</span><strong>${value}</strong></div>`; }
+      function previewGroup(title, items, open) {
+        const body = items.length
+          ? items.map((item) => `<div class="preview-item"><code>${escapeHtml(sourceName(item))}</code><span>${escapeHtml(KIND_META[item.kind].label)}</span></div>`).join("")
+          : '<div class="preview-item"><code>无变化</code><span>—</span></div>';
+        return `<details class="preview-group" ${open ? "open" : ""}><summary>${escapeHtml(title)} · ${items.length}</summary><div class="preview-items">${body}</div></details>`;
+      }
+
+      function savePendingPreview() {
+        if (!pendingPreview) return;
+        const index = collections.findIndex((item) => item.id === pendingPreview.rule.id);
+        const next = clone(pendingPreview.rule);
+        if (next.enabled) {
+          next.autoMemberIds = pendingPreview.effective.map((item) => item.id);
+        } else {
+          if (pendingPreview.disableMode === "convert") {
+            next.manualMemberIds = [...new Set([...next.manualMemberIds, ...collections[index].autoMemberIds])];
+          }
+          next.autoMemberIds = [];
+          next.exclusions = [];
+        }
+        collections[index] = next;
+        currentId = next.id;
+        const savedName = next.name;
+        pendingPreview = null;
+        closeLayer("previewModal");
+        if (draftOrigin === "modal") closeLayer("ruleModal");
+        startDraft(currentId, draftOrigin === "modal" ? "settings" : draftOrigin);
+        renderCollectionGrid(document.querySelector("[data-kind-filter].active")?.dataset.kindFilter || "all");
+        renderSettingsManager();
+        toast("规则已保存", `“${savedName}”的演示状态已更新。刷新页面可重置。`);
+      }
+
+      function openRuleModal(id) {
+        startDraft(id, "modal");
+        $("ruleModalTitle").textContent = `编辑集合规则：${draft.name}`;
+        $("ruleModalSubtitle").textContent = `${KIND_META[draft.kind].label} · 右键快捷入口`;
+        renderRuleEditor($("modalRuleEditor"));
+        openLayer("ruleModal");
+      }
+
+      function openLayer(id) {
+        if (activeLayer && activeLayer !== id) $(activeLayer)?.setAttribute("aria-hidden", "true");
+        previousFocus = document.activeElement;
+        activeLayer = id;
+        const layer = $(id);
+        layer.setAttribute("aria-hidden", "false");
+        document.body.classList.add("modal-open");
+        window.setTimeout(() => layer.querySelector("button:not(:disabled), input:not(:disabled), select:not(:disabled)")?.focus(), 0);
+      }
+
+      function closeLayer(id, restore = true) {
+        const layer = $(id);
+        if (!layer || layer.getAttribute("aria-hidden") === "true") return;
+        layer.setAttribute("aria-hidden", "true");
+        if (activeLayer === id) activeLayer = null;
+        if (!qsa('.modal-layer[aria-hidden="false"]').length) document.body.classList.remove("modal-open");
+        if (restore && previousFocus && previousFocus.focus) previousFocus.focus();
+      }
+
+      function trapModalFocus(event) {
+        if (!activeLayer || event.key !== "Tab") return;
+        const layer = $(activeLayer);
+        const focusable = qsa('button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex="0"]', layer).filter((node) => node.offsetParent !== null);
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+
+      function showSettingsSection(section) {
+        qsa("[data-settings-section]").forEach((button) => button.classList.toggle("active", button.dataset.settingsSection === section));
+        const manager = $("ruleManager");
+        const placeholder = $("settingsPlaceholder");
+        if (section === "collection-rules") {
+          manager.classList.remove("hidden");
+          placeholder.classList.add("hidden");
+          return;
+        }
+        manager.classList.add("hidden");
+        placeholder.classList.remove("hidden");
+        const label = document.querySelector(`[data-settings-section="${section}"]`)?.textContent || "设置";
+        placeholder.innerHTML = `<h2>${escapeHtml(label)}</h2><p>此区域仅作为设置导航的视觉上下文。本次原型只实现“集合规则”的完整交互。</p><button type="button" class="primary-button" data-open-rules>前往集合规则</button>`;
+        placeholder.querySelector("[data-open-rules]").addEventListener("click", () => { showSettingsSection("collection-rules"); renderSettingsManager(); });
+      }
+
+      qsa("[data-nav]").forEach((button) => button.addEventListener("click", () => {
+        if (["collections", "settings"].includes(button.dataset.nav)) showPage(button.dataset.nav);
+        else toast("原型范围", "本次仅实现合集总览与设置中的集合规则。 ");
+      }));
+      qsa("[data-settings-section]").forEach((button) => button.addEventListener("click", () => {
+        showSettingsSection(button.dataset.settingsSection);
+        if (button.dataset.settingsSection === "collection-rules") renderSettingsManager();
+      }));
+      qsa("[data-kind-filter]").forEach((button) => button.addEventListener("click", () => {
+        qsa("[data-kind-filter]").forEach((node) => node.classList.toggle("active", node === button));
+        renderCollectionGrid(button.dataset.kindFilter);
+      }));
+      qsa("[data-skin-choice]").forEach((button) => button.addEventListener("click", () => {
+        document.body.dataset.skin = button.dataset.skinChoice;
+        qsa("[data-skin-choice]").forEach((node) => node.classList.toggle("active", node === button));
+      }));
+      qsa("[data-viewport-choice]").forEach((button) => button.addEventListener("click", () => {
+        $("previewStage").dataset.viewport = button.dataset.viewportChoice;
+        qsa("[data-viewport-choice]").forEach((node) => node.classList.toggle("active", node === button));
+      }));
+      $("collectionSearch").addEventListener("input", renderCollectionRuleList);
+      $("contextMenu").addEventListener("click", (event) => {
+        const action = event.target.dataset.menuAction;
+        if (!action || !contextId) return;
+        const item = collectionById(contextId);
+        closeContextMenu();
+        if (action === "edit-rule") openRuleModal(item.id);
+        else if (action === "open") toast("打开合集", `原型模拟打开“${item.name}”`);
+        else if (action === "rename") toast("重命名", "正式功能沿用现有重命名流程，本原型不写入名称。 ");
+        else if (action === "delete") toast("删除已阻止", "原型不会删除演示合集。 ");
+      });
+      qsa("[data-close-layer]").forEach((button) => button.addEventListener("click", () => closeLayer(button.dataset.closeLayer)));
+      qsa('input[name="disableMode"]').forEach((input) => input.addEventListener("change", () => {
+        pendingDisableMode = input.value;
+        $("confirmDisableMode").disabled = false;
+      }));
+      $("confirmDisableMode").addEventListener("click", () => { if (pendingDisableMode) openPreview(pendingDisableMode); });
+      $("confirmSaveRule").addEventListener("click", savePendingPreview);
+      document.addEventListener("pointerdown", (event) => {
+        if (!$("contextMenu").classList.contains("hidden") && !$("contextMenu").contains(event.target)) closeContextMenu();
+      });
+      document.addEventListener("keydown", (event) => {
+        trapModalFocus(event);
+        if (event.key === "Escape") {
+          if (!$("contextMenu").classList.contains("hidden")) closeContextMenu();
+          else if (activeLayer) closeLayer(activeLayer);
+        }
+      });
+      qsa(".modal-layer").forEach((layer) => layer.addEventListener("pointerdown", (event) => {
+        if (event.target === layer) closeLayer(layer.id);
+      }));
+
+      startDraft(currentId, "settings");
+      renderCollectionGrid();
+      renderSettingsManager();
+    })();
+  </script>
+</body>
+</html>
