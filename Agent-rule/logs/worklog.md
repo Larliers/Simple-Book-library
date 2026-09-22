@@ -723,8 +723,9 @@
 
 ### 验证结果
 - 内嵌 JavaScript 语法与 DOM 行为契约通过。
-- 离屏 Qt WebEngine 验证 7 个合集、三类规则列表、右键菜单、共享编辑器、条件增删、影响预览和关闭规则分支。
-- Glass desktop、Glass 740px、Vaporwave 600px 均无 body/stage 横向溢出；人工截图检查后修正 600px 主导航文字竖排。
+- 离屏 Qt WebEngine 验证 7 个合集、三类规则列表、右键菜单键盘焦点、共享编辑器、条件增删、命中列表、弹窗返回和关闭规则分支。
+- Glass desktop、Glass 740px、Vaporwave 600px 均无 body/stage 横向溢出，窄屏弹窗限制在模拟视口内；人工截图检查后修正 600px 主导航文字竖排。
+- 全量 313 个 Python 测试和 5 组既有 Node 行为测试通过；双轨审查发现的弹窗栈、焦点恢复、ARIA 状态和预览明细问题已修正并复验。
 
 ---
 

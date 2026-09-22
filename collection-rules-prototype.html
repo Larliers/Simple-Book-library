@@ -388,6 +388,28 @@
     .preview-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 13px; background: var(--surface); }
     .preview-item code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11px var(--mono); color: var(--muted); }
     .preview-item span { white-space: nowrap; font-size: 10px; color: var(--muted); }
+
+    body[data-preview-viewport="740"] .modal-layer,
+    body[data-preview-viewport="600"] .modal-layer {
+      left: 50%; right: auto; transform: translateX(-50%);
+    }
+    body[data-preview-viewport="740"] .modal-layer { width: min(740px, 100vw); padding: 14px; }
+    body[data-preview-viewport="740"] .modal-layer .stats-grid { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    body[data-preview-viewport="740"] .modal-layer .condition-row { grid-template-columns: 112px minmax(0,1fr) auto; }
+    body[data-preview-viewport="740"] .modal-layer .condition-row .switch { grid-column: 2 / 3; justify-self: start; }
+    body[data-preview-viewport="600"] .modal-layer { width: min(600px, 100vw); padding: 10px; }
+    body[data-preview-viewport="600"] .modal-layer .modal { border-radius: 18px; max-height: calc(100vh - 20px); }
+    body[data-preview-viewport="600"] .modal-layer .modal-header,
+    body[data-preview-viewport="600"] .modal-layer .modal-body,
+    body[data-preview-viewport="600"] .modal-layer .modal-footer { padding: 13px; }
+    body[data-preview-viewport="600"] .modal-layer .condition-row { grid-template-columns: minmax(0,1fr) auto; }
+    body[data-preview-viewport="600"] .modal-layer .condition-row .select,
+    body[data-preview-viewport="600"] .modal-layer .condition-row .text-input { grid-column: 1 / -1; }
+    body[data-preview-viewport="600"] .modal-layer .condition-row .switch { grid-column: 1; }
+    body[data-preview-viewport="600"] .modal-layer .condition-row .icon-button { grid-column: 2; grid-row: 3; }
+    body[data-preview-viewport="600"] .modal-layer .section-row { align-items: flex-start; flex-direction: column; }
+    body[data-preview-viewport="600"] .modal-layer .section-row .select { width: 100%; }
+    body[data-preview-viewport="600"] .modal-layer .stats-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
     .preview-note { margin: 14px 0 0; padding: 11px 13px; border-radius: 12px; background: var(--accent-soft); color: var(--muted); font-size: 12px; line-height: 1.6; }
 
     .toast-region { position: fixed; right: 18px; bottom: 18px; z-index: 300; display: grid; gap: 9px; width: min(360px, calc(100vw - 36px)); }
@@ -465,7 +487,7 @@
     }
   </style>
 </head>
-<body data-skin="glass">
+<body data-skin="glass" data-preview-viewport="desktop">
   <header class="prototype-toolbar" aria-label="原型检查工具栏">
     <div class="prototype-label">
       <strong>集合规则 · 交互原型</strong>
@@ -473,13 +495,13 @@
     </div>
     <div class="prototype-controls">
       <div class="segmented" aria-label="界面皮肤">
-        <button type="button" class="active" data-skin-choice="glass">Glass</button>
-        <button type="button" data-skin-choice="vaporwave">Vaporwave</button>
+        <button type="button" class="active" data-skin-choice="glass" aria-pressed="true">Glass</button>
+        <button type="button" data-skin-choice="vaporwave" aria-pressed="false">Vaporwave</button>
       </div>
       <div class="segmented" aria-label="预览宽度">
-        <button type="button" class="active" data-viewport-choice="desktop">桌面</button>
-        <button type="button" data-viewport-choice="740">740px</button>
-        <button type="button" data-viewport-choice="600">600px</button>
+        <button type="button" class="active" data-viewport-choice="desktop" aria-pressed="true">桌面</button>
+        <button type="button" data-viewport-choice="740" aria-pressed="false">740px</button>
+        <button type="button" data-viewport-choice="600" aria-pressed="false">600px</button>
       </div>
     </div>
   </header>
@@ -511,10 +533,10 @@
             </header>
             <div class="collection-toolbar">
               <div class="filter-chips" aria-label="合集类型筛选">
-                <button type="button" class="chip active" data-kind-filter="all">全部</button>
-                <button type="button" class="chip" data-kind-filter="book">书籍</button>
-                <button type="button" class="chip" data-kind-filter="text_novel">小说</button>
-                <button type="button" class="chip" data-kind-filter="comic">漫画</button>
+                <button type="button" class="chip active" data-kind-filter="all" aria-pressed="true">全部</button>
+                <button type="button" class="chip" data-kind-filter="book" aria-pressed="false">书籍</button>
+                <button type="button" class="chip" data-kind-filter="text_novel" aria-pressed="false">小说</button>
+                <button type="button" class="chip" data-kind-filter="comic" aria-pressed="false">漫画</button>
               </div>
             </div>
             <div class="collection-grid" id="collectionGrid"></div>
@@ -693,8 +715,10 @@
       let draft = null;
       let draftOrigin = "settings";
       let contextId = null;
+      let contextTrigger = null;
       let activeLayer = null;
-      let previousFocus = null;
+      const layerStack = [];
+      const layerFocus = new Map();
       let pendingDisableMode = "";
       let pendingPreview = null;
 
@@ -823,21 +847,22 @@
             </div>
             <button type="button" class="collection-open"><strong>${escapeHtml(item.name)}</strong><span>${item.manualMemberIds.length + item.autoMemberIds.length} 本 · ${KIND_META[item.kind].label}</span></button>`;
           card.querySelector(".collection-open").addEventListener("click", () => toast("打开合集", `原型模拟打开“${item.name}”`));
-          card.addEventListener("contextmenu", (event) => openContextMenu(event, item.id));
+          card.addEventListener("contextmenu", (event) => openContextMenu(event, item.id, card));
           card.addEventListener("keydown", (event) => {
             if (event.key === "F10" && event.shiftKey) {
               event.preventDefault();
               const rect = card.getBoundingClientRect();
-              openContextMenu({ preventDefault() {}, clientX: rect.left + 24, clientY: rect.top + 24 }, item.id);
+              openContextMenu({ preventDefault() {}, clientX: rect.left + 24, clientY: rect.top + 24 }, item.id, card);
             }
           });
           grid.appendChild(card);
         });
       }
 
-      function openContextMenu(event, id) {
+      function openContextMenu(event, id, trigger) {
         event.preventDefault();
         contextId = id;
+        contextTrigger = trigger;
         const menu = $("contextMenu");
         menu.classList.remove("hidden");
         const left = Math.min(event.clientX, window.innerWidth - 205);
@@ -847,7 +872,13 @@
         menu.querySelector("button").focus();
       }
 
-      function closeContextMenu() { $("contextMenu").classList.add("hidden"); }
+      function closeContextMenu(restoreFocus = true) {
+        const menu = $("contextMenu");
+        menu.classList.add("hidden");
+        contextId = null;
+        if (restoreFocus && contextTrigger?.isConnected) contextTrigger.focus();
+        contextTrigger = null;
+      }
 
       function renderSettingsManager() {
         renderCollectionRuleList();
@@ -1016,13 +1047,14 @@
             ${statCard("保持排除", p.summary.excluded, "")}
           </div>
           <div class="preview-groups">
+            ${previewGroup("当前命中资源", p.matched, false)}
             ${previewGroup("将自动加入", p.add, true)}
             ${previewGroup("将自动移除", p.remove, false)}
             ${previewGroup("手动成员保留", p.manualKept, false)}
             ${previewGroup("命中但保持排除", p.excludedItems, false)}
           </div>
           <p class="preview-note">这是纯前端模拟预览。点击“确认并保存”只更新当前页面内存，刷新页面即可恢复初始演示数据。</p>`;
-        closeLayer("disableModal", false);
+        closeLayer("disableModal");
         openLayer("previewModal");
       }
 
@@ -1050,12 +1082,14 @@
         collections[index] = next;
         currentId = next.id;
         const savedName = next.name;
+        const savedFromModal = draftOrigin === "modal";
         pendingPreview = null;
         closeLayer("previewModal");
-        if (draftOrigin === "modal") closeLayer("ruleModal");
-        startDraft(currentId, draftOrigin === "modal" ? "settings" : draftOrigin);
+        if (savedFromModal) closeLayer("ruleModal");
+        startDraft(currentId, savedFromModal ? "settings" : draftOrigin);
         renderCollectionGrid(document.querySelector("[data-kind-filter].active")?.dataset.kindFilter || "all");
         renderSettingsManager();
+        if (savedFromModal) document.querySelector(`.collection-card[data-collection-id="${currentId}"]`)?.focus();
         toast("规则已保存", `“${savedName}”的演示状态已更新。刷新页面可重置。`);
       }
 
@@ -1069,7 +1103,10 @@
 
       function openLayer(id) {
         if (activeLayer && activeLayer !== id) $(activeLayer)?.setAttribute("aria-hidden", "true");
-        previousFocus = document.activeElement;
+        const existingIndex = layerStack.lastIndexOf(id);
+        if (existingIndex >= 0) layerStack.splice(existingIndex, 1);
+        layerFocus.set(id, document.activeElement);
+        layerStack.push(id);
         activeLayer = id;
         const layer = $(id);
         layer.setAttribute("aria-hidden", "false");
@@ -1081,9 +1118,17 @@
         const layer = $(id);
         if (!layer || layer.getAttribute("aria-hidden") === "true") return;
         layer.setAttribute("aria-hidden", "true");
-        if (activeLayer === id) activeLayer = null;
-        if (!qsa('.modal-layer[aria-hidden="false"]').length) document.body.classList.remove("modal-open");
-        if (restore && previousFocus && previousFocus.focus) previousFocus.focus();
+        const index = layerStack.lastIndexOf(id);
+        if (index >= 0) layerStack.splice(index, 1);
+        activeLayer = layerStack.at(-1) || null;
+        if (activeLayer) $(activeLayer)?.setAttribute("aria-hidden", "false");
+        else document.body.classList.remove("modal-open");
+        const focusTarget = layerFocus.get(id);
+        layerFocus.delete(id);
+        if (restore) {
+          if (focusTarget?.isConnected && focusTarget.offsetParent !== null) focusTarget.focus();
+          else if (activeLayer) $(activeLayer)?.querySelector("button:not(:disabled), input:not(:disabled), select:not(:disabled)")?.focus();
+        }
       }
 
       function trapModalFocus(event) {
@@ -1122,16 +1167,26 @@
         if (button.dataset.settingsSection === "collection-rules") renderSettingsManager();
       }));
       qsa("[data-kind-filter]").forEach((button) => button.addEventListener("click", () => {
-        qsa("[data-kind-filter]").forEach((node) => node.classList.toggle("active", node === button));
+        qsa("[data-kind-filter]").forEach((node) => {
+          node.classList.toggle("active", node === button);
+          node.setAttribute("aria-pressed", String(node === button));
+        });
         renderCollectionGrid(button.dataset.kindFilter);
       }));
       qsa("[data-skin-choice]").forEach((button) => button.addEventListener("click", () => {
         document.body.dataset.skin = button.dataset.skinChoice;
-        qsa("[data-skin-choice]").forEach((node) => node.classList.toggle("active", node === button));
+        qsa("[data-skin-choice]").forEach((node) => {
+          node.classList.toggle("active", node === button);
+          node.setAttribute("aria-pressed", String(node === button));
+        });
       }));
       qsa("[data-viewport-choice]").forEach((button) => button.addEventListener("click", () => {
         $("previewStage").dataset.viewport = button.dataset.viewportChoice;
-        qsa("[data-viewport-choice]").forEach((node) => node.classList.toggle("active", node === button));
+        document.body.dataset.previewViewport = button.dataset.viewportChoice;
+        qsa("[data-viewport-choice]").forEach((node) => {
+          node.classList.toggle("active", node === button);
+          node.setAttribute("aria-pressed", String(node === button));
+        });
       }));
       $("collectionSearch").addEventListener("input", renderCollectionRuleList);
       $("contextMenu").addEventListener("click", (event) => {
@@ -1160,6 +1215,15 @@
           if (!$("contextMenu").classList.contains("hidden")) closeContextMenu();
           else if (activeLayer) closeLayer(activeLayer);
         }
+      });
+      $("contextMenu").addEventListener("keydown", (event) => {
+        const items = qsa('[role="menuitem"]', $("contextMenu"));
+        const current = items.indexOf(document.activeElement);
+        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        if (event.key === "Home") items[0]?.focus();
+        else if (event.key === "End") items.at(-1)?.focus();
+        else items[(current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
       });
       qsa(".modal-layer").forEach((layer) => layer.addEventListener("pointerdown", (event) => {
         if (event.target === layer) closeLayer(layer.id);
