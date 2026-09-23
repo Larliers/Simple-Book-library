@@ -368,6 +368,14 @@
 .settings-section.active { display: block; animation: fadeSlideDown 200ms ease; }
 .settings-card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--card-bg); padding: 14px; margin-bottom: 12px; }
 .settings-card h3 { margin: 0 0 10px; font-size: 15px; }
+.collection-rule-settings-editor {
+  padding: 12px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.2);
+}
+.collection-rule-list-item:hover { background: var(--hover-bg); }
+.collection-rule-choice { backdrop-filter: blur(22px) saturate(125%); }
+body[data-theme="day"] .collection-rule-modal { background: rgba(245, 250, 255, 0.97); }
+body[data-theme="night"] .collection-rule-modal { background: rgba(24, 34, 48, 0.97); }
 .kicker { color: var(--muted); font-size: 12px; font-weight: 760; text-transform: uppercase; margin-bottom: 8px; }
 .small-note { color: var(--muted); font-size: 12px; line-height: 1.5; }
 .shortcut-list { display: grid; gap: 8px; }

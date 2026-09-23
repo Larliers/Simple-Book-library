@@ -22,6 +22,21 @@
 
 ## 格式模块（2026-07-18）
 
+### collection_rules
+```json
+{
+  "module_name": "collection_rules",
+  "owner_agent": "parser-agent + indexer-agent + ui-agent",
+  "status": "active",
+  "purpose": "按来源原名为书籍、Text Novel、Comic 的独立合集执行可预览、可排除、可回滚的自动归档",
+  "input": ["collection kind", "source original name", "versioned rule JSON", "manual/rule member source", "exclusions"],
+  "output": ["match result", "impact preview", "atomic member delta", "scan summary", "targeted collection page data"],
+  "upstream": ["LibraryRepository", "ScanWorker", "UiBridge"],
+  "downstream": ["collection_rule_editor", "collection pages", "scan_report.json"],
+  "notes": "独立于 Text Rules；规则默认关闭；同资源可命中多个合集；手动来源与规则来源可重叠；排除只在持续命中时有效；保存和成员变更同一 SQLite 事务"
+}
+```
+
 ### text_novel_sidecar_cover
 ```json
 {

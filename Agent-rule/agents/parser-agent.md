@@ -6,6 +6,7 @@
 ## In Scope
 - 解析资源名称中的标题、卷号、作者、语言、版本等元信息。
 - 根据可配置规则执行标准化与结构化。
+- 维护独立的 `collection_rules` 名称匹配器：按来源原名执行 all/any 与五种字符串条件；不复用 Text Rules 元数据提取链。
 - Text 规则步骤含 `loop_lines`（每行一次 search）与 `loop_inline`（每行 `finditer` 全部捕获，适合 `#tag1#tag2`）。
 - 无自定义 title 时默认链先剥 `Title:` / `Title：` / `标题：` / `标题:`，否则用完整首行；内置模板 `title_t_marker` 仍给 `T 书名`。
 - 输出可被索引与 UI 复用的统一元数据对象。
@@ -19,6 +20,7 @@
 - `filename_parser`
 - `metadata_normalizer`
 - `parse_ruleset_manager`
+- `src/bookhub/library/collection_rules.py`
 
 ## Accepted Input Format
 ```json

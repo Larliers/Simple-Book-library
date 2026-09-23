@@ -12,6 +12,7 @@
 - Comic：叶子含图目录（最大深度 5）；`folder_size_mtime` 快照跳过。
 - Text：扫描 TXT 同目录同 stem 的 `webp/png/jpg/jpeg` 封面；文件指纹+封面未变时仍用当前 `rules_json` 重抽 title/author/series/tag，经 `update_text_novel_metadata` 窄更新，不重生封面、不改 `status`。
 - 失踪源或已不满足图片书资格的目录：写错误日志并删除库记录及关联；扫描根不可访问时不得清理该根记录。
+- 扫描写报告前按 `library|text|comic|all` 重算对应类型的已启用集合规则；规则批次原子失败时保留扫描结果并写 warning、摘要和错误日志。
 
 ## Out of Scope
 - 不负责元数据语义解析细则（Parser / Text rules 负责 TXT 字段抽取）。

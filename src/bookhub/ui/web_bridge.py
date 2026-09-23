@@ -9,12 +9,14 @@ import sys
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
+from uuid import uuid4
 
 from PySide6.QtCore import QObject, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices
 
 from bookhub.i18n import tr
 from bookhub.version import APP_VERSION
+from bookhub.library.collection_rules import normalize_collection_rule
 from bookhub.library.models import IMAGE_FOLDER_BOOK_EXTENSION
 from bookhub.library.repository import (
     COLLECTION_KIND_BOOK,
@@ -139,6 +141,7 @@ def _web_strings() -> dict[str, str]:
         ("menu.comic_fav_remove", "Remove from Comic Fav"),
         ("menu.collection_remove", "Remove from Collection"),
         ("menu.collection_open", "Open"),
+        ("menu.collection_rule_edit", "Edit collection rule…"),
         ("menu.collection_rename", "Rename"),
         ("menu.collection_delete", "Delete"),
         ("menu.open_folder", "Open Folder"),
@@ -218,6 +221,58 @@ def _web_strings() -> dict[str, str]:
         ("settings.nav.shortcuts", "Shortcuts"),
         ("settings.nav.tasks", "Scan & Tasks"),
         ("settings.nav.errors", "Error logs"),
+        ("settings.nav.collection_rules", "Collection Rules"),
+        ("collection_rules.edit_title", "Edit collection rule"),
+        ("collection_rules.enabled", "Enable rule"),
+        ("collection_rules.on", "On"),
+        ("collection_rules.off", "Off"),
+        ("collection_rules.kind.book", "Books"),
+        ("collection_rules.kind.text_novel", "Text Novel"),
+        ("collection_rules.kind.comic", "Comic"),
+        ("collection_rules.card_badge", "Auto {count}"),
+        ("collection_rules.search", "Search collections…"),
+        ("collection_rules.search_empty", "No matching collections."),
+        ("collection_rules.list_meta", "Auto {auto} · Excluded {excluded}"),
+        ("collection_rules.match_mode", "Match"),
+        ("collection_rules.match_all", "All conditions"),
+        ("collection_rules.match_any", "Any condition"),
+        ("collection_rules.conditions", "Conditions"),
+        ("collection_rules.add_condition", "Add condition"),
+        ("collection_rules.remove_condition", "Remove condition"),
+        ("collection_rules.no_conditions", "Add at least one condition to enable this rule."),
+        ("collection_rules.operator_label", "Operator"),
+        ("collection_rules.operator.contains", "Contains"),
+        ("collection_rules.operator.not_contains", "Does not contain"),
+        ("collection_rules.operator.starts_with", "Starts with"),
+        ("collection_rules.operator.ends_with", "Ends with"),
+        ("collection_rules.operator.equals", "Exactly equals"),
+        ("collection_rules.keyword", "Keyword"),
+        ("collection_rules.case_sensitive", "Case sensitive"),
+        ("collection_rules.exclusions", "Manual exclusions ({count})"),
+        ("collection_rules.no_exclusions", "No manual exclusions."),
+        ("collection_rules.clear_exclusion", "Restore"),
+        ("collection_rules.preview", "Impact preview"),
+        ("collection_rules.run_preview", "Preview"),
+        ("collection_rules.preview_empty", "Run a preview to review changes before saving."),
+        ("collection_rules.preview_stale", "Changes made. Preview again before saving."),
+        ("collection_rules.preview_ready", "Preview is ready. You can save this configuration."),
+        ("collection_rules.preview.matched", "Matched"),
+        ("collection_rules.preview.add", "Add"),
+        ("collection_rules.preview.remove", "Remove"),
+        ("collection_rules.preview.manual_kept", "Manual kept"),
+        ("collection_rules.preview.excluded", "Excluded"),
+        ("collection_rules.disable_title", "Turn off collection rule"),
+        ("collection_rules.disable_help", "Choose how to handle members previously added by this rule."),
+        ("collection_rules.disable_remove", "Remove automatic members"),
+        ("collection_rules.disable_convert", "Keep and convert to manual"),
+        ("collection_rules.saved", "Collection rule saved."),
+        ("collection_rules.error.conditions_required", "At least one non-empty condition is required."),
+        ("collection_rules.error.invalid_payload", "The rule request is invalid."),
+        ("collection_rules.error.preview_required", "Preview this configuration before saving."),
+        ("collection_rules.error.stale_preview", "The preview is outdated. Preview again."),
+        ("collection_rules.error.disable_mode_required", "Choose how to handle automatic members."),
+        ("collection_rules.error.storage_error", "The rule could not be saved. Try again."),
+        ("settings.collection_rules.scan_summary", "\nCollection Rules - status:{status} collections:{collections} matched:{matched} added:{added} removed:{removed} excluded:{excluded}"),
         ("shortcut.section.navigation", "Navigation"),
         ("shortcut.section.resource", "Current selected resource"),
         ("shortcut.action.exit_collection", "Exit current series or tag"),
@@ -455,6 +510,7 @@ class UiBridge(QObject):
             PAGE_NOVEL_COLLECTIONS: None,
             PAGE_COMIC_COLLECTIONS: None,
         }
+        self._collection_rule_previews: dict[int, dict[str, str]] = {}
         self.reload_data()
 
     def set_host(self, host) -> None:
@@ -692,6 +748,11 @@ class UiBridge(QObject):
 
     def _collections_payload(self, page: str) -> dict[str, Any]:
         kind = _kind_for_page(page)
+        rule_summaries = {
+            int(item["id"]): item
+            for item in self._repo.get_collection_rule_summaries()
+            if str(item.get("kind")) == kind
+        }
         cid = self._open_collection_by_page.get(page)
         if cid is not None:
             collection = self._repo.get_collection(int(cid))
@@ -730,6 +791,7 @@ class UiBridge(QObject):
         items = []
         for collection in collections:
             item_cid = int(collection.get("id"))
+            rule_summary = rule_summaries.get(item_cid, {})
             cover = None
             member_count = self._repo.get_collection_item_count(item_cid)
             if kind == COLLECTION_KIND_COMIC:
@@ -752,6 +814,9 @@ class UiBridge(QObject):
                 "cover": cover,
                 "type": "collection",
                 "kind": kind,
+                "ruleEnabled": bool(rule_summary.get("enabled", False)),
+                "ruleAutoMemberCount": int(rule_summary.get("autoMemberCount", 0)),
+                "ruleExcludedCount": int(rule_summary.get("excludedCount", 0)),
                 "tags": [],
                 "path": "",
             })
@@ -1178,6 +1243,175 @@ class UiBridge(QObject):
                 }
                 for c in collections
             ],
+            ensure_ascii=False,
+        )
+
+    @staticmethod
+    def _collection_rule_request(payload: dict[str, Any]) -> tuple[bool, dict[str, Any], str, int, int]:
+        allowed = {"enabled", "rule", "disableMode", "page", "pageSize", "previewToken"}
+        if any(key not in allowed for key in payload):
+            raise ValueError("invalid_payload")
+        enabled = payload.get("enabled")
+        rule = payload.get("rule")
+        if not isinstance(enabled, bool) or not isinstance(rule, dict):
+            raise ValueError("invalid_payload")
+        disable_mode = payload.get("disableMode", "")
+        if not isinstance(disable_mode, str):
+            raise ValueError("invalid_payload")
+        try:
+            page = int(payload.get("page", 1))
+            page_size = int(payload.get("pageSize", 50))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("invalid_payload") from exc
+        if isinstance(payload.get("page"), bool) or isinstance(payload.get("pageSize"), bool):
+            raise ValueError("invalid_payload")
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError("invalid_payload")
+        return enabled, rule, disable_mode.strip().lower(), page, page_size
+
+    @staticmethod
+    def _collection_rule_canonical(enabled: bool, rule: dict[str, Any], disable_mode: str) -> str:
+        return json.dumps(
+            {"enabled": enabled, "rule": normalize_collection_rule(rule), "disableMode": disable_mode},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+    @staticmethod
+    def _paginate_collection_rule_preview(preview: dict[str, Any], page: int, page_size: int) -> dict[str, Any]:
+        result = dict(preview)
+        for key in ("matched", "add", "remove", "manualKept", "excluded"):
+            items = list(preview.get(key, []))
+            start = (page - 1) * page_size
+            result[key] = {
+                "total": len(items),
+                "page": page,
+                "pageSize": page_size,
+                "items": items[start : start + page_size],
+            }
+        return result
+
+    @Slot(result=str)
+    def getCollectionRules(self) -> str:
+        return json.dumps(self._repo.get_collection_rule_summaries(), ensure_ascii=False)
+
+    @Slot(int, result=str)
+    def getCollectionRule(self, collection_id: int) -> str:
+        try:
+            detail = self._repo.get_collection_rule(int(collection_id))
+        except ValueError as exc:
+            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+        return json.dumps(detail, ensure_ascii=False)
+
+    @Slot(int, str, result=str)
+    def previewCollectionRule(self, collection_id: int, payload_json: str) -> str:
+        try:
+            payload = json.loads(payload_json or "{}")
+            if not isinstance(payload, dict):
+                raise ValueError("invalid_payload")
+            enabled, rule, disable_mode, page, page_size = self._collection_rule_request(payload)
+            preview = self._repo.preview_collection_rule(
+                int(collection_id),
+                enabled=enabled,
+                rule=rule,
+                disable_mode=disable_mode,
+            )
+        except (json.JSONDecodeError, TypeError):
+            return json.dumps({"ok": False, "error": "invalid_payload"}, ensure_ascii=False)
+        except ValueError as exc:
+            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+        token = uuid4().hex
+        canonical = self._collection_rule_canonical(enabled, preview["rule"], disable_mode)
+        self._collection_rule_previews[int(collection_id)] = {"token": token, "canonical": canonical}
+        return json.dumps(
+            {
+                "ok": True,
+                "error": "",
+                "previewToken": token,
+                "preview": self._paginate_collection_rule_preview(preview, page, page_size),
+            },
+            ensure_ascii=False,
+        )
+
+    @Slot(int, str, result=str)
+    def saveCollectionRule(self, collection_id: int, payload_json: str) -> str:
+        try:
+            payload = json.loads(payload_json or "{}")
+            if not isinstance(payload, dict):
+                raise ValueError("invalid_payload")
+            enabled, rule, disable_mode, page, page_size = self._collection_rule_request(payload)
+        except (json.JSONDecodeError, TypeError):
+            return json.dumps({"ok": False, "error": "invalid_payload"}, ensure_ascii=False)
+        except ValueError as exc:
+            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+        token = payload.get("previewToken")
+        preview_state = self._collection_rule_previews.get(int(collection_id))
+        if not isinstance(token, str) or not token or preview_state is None:
+            return json.dumps({"ok": False, "error": "preview_required"}, ensure_ascii=False)
+        try:
+            canonical = self._collection_rule_canonical(enabled, rule, disable_mode)
+        except ValueError as exc:
+            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+        if token != preview_state["token"] or canonical != preview_state["canonical"]:
+            return json.dumps({"ok": False, "error": "stale_preview"}, ensure_ascii=False)
+        try:
+            preview = self._repo.save_collection_rule(
+                int(collection_id),
+                enabled=enabled,
+                rule=rule,
+                disable_mode=disable_mode,
+            )
+        except ValueError as exc:
+            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+        except sqlite3.Error:
+            return json.dumps({"ok": False, "error": "storage_error"}, ensure_ascii=False)
+        self._collection_rule_previews.pop(int(collection_id), None)
+        kind = str(preview["collection"]["kind"])
+        collection_page = COLLECTION_KIND_PAGES[kind]
+        if kind == COLLECTION_KIND_COMIC:
+            self._refresh_comic_collection_vm()
+        return json.dumps(
+            {
+                "ok": True,
+                "error": "",
+                "preview": self._paginate_collection_rule_preview(preview, page, page_size),
+                "rule": self._repo.get_collection_rule(int(collection_id)),
+                "collectionPage": collection_page,
+                "collectionPageData": self._page_resources(collection_page),
+            },
+            ensure_ascii=False,
+        )
+
+    @Slot(int, str, result=str)
+    def clearCollectionRuleExclusion(self, collection_id: int, resource_id: str) -> str:
+        try:
+            detail = self._repo.get_collection_rule(int(collection_id))
+            kind = str(detail["kind"])
+            if kind == COLLECTION_KIND_COMIC:
+                resource_db_id = self._repo.get_comic_int_id(str(resource_id))
+            else:
+                resource_db_id = self._repo.get_book_int_id(str(resource_id))
+            if resource_db_id is None:
+                raise ValueError("resource_not_found")
+            result = self._repo.clear_collection_rule_exclusion(int(collection_id), int(resource_db_id))
+        except ValueError as exc:
+            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+        except sqlite3.Error:
+            return json.dumps({"ok": False, "error": "storage_error"}, ensure_ascii=False)
+        self._collection_rule_previews.pop(int(collection_id), None)
+        collection_page = COLLECTION_KIND_PAGES[kind]
+        if kind == COLLECTION_KIND_COMIC:
+            self._refresh_comic_collection_vm()
+        return json.dumps(
+            {
+                "ok": True,
+                "error": "",
+                **result,
+                "rule": self._repo.get_collection_rule(int(collection_id)),
+                "collectionPage": collection_page,
+                "collectionPageData": self._page_resources(collection_page),
+            },
             ensure_ascii=False,
         )
 

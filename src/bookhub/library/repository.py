@@ -13,6 +13,11 @@ from uuid import uuid4
 from pypinyin import Style, lazy_pinyin
 
 from bookhub.app_paths import default_db_path, default_scan_report_path
+from bookhub.library.collection_rules import (
+    matches_collection_rule,
+    source_name_for_record,
+    validate_collection_rule,
+)
 from bookhub.library.data_paths import DEFAULT_PREVIEW_DIR, resolve_preview_dir
 from bookhub.library.error_logs import append_scan_log
 from bookhub.library.models import (
@@ -319,6 +324,7 @@ class LibraryRepository:
         placeholders = ",".join(["?"] * len(ids))
         conn.execute(f"DELETE FROM favorite_books WHERE book_id IN ({placeholders})", tuple(ids))  # noqa: S608
         conn.execute(f"DELETE FROM collection_books WHERE book_id IN ({placeholders})", tuple(ids))  # noqa: S608
+        conn.execute(f"DELETE FROM collection_rule_book_exclusions WHERE book_id IN ({placeholders})", tuple(ids))  # noqa: S608
 
     @staticmethod
     def _purge_comic_links(conn: sqlite3.Connection, comic_ids: list[int]) -> None:
@@ -328,6 +334,7 @@ class LibraryRepository:
         placeholders = ",".join(["?"] * len(ids))
         conn.execute(f"DELETE FROM favorite_comics WHERE comic_id IN ({placeholders})", tuple(ids))  # noqa: S608
         conn.execute(f"DELETE FROM collection_comics WHERE comic_id IN ({placeholders})", tuple(ids))  # noqa: S608
+        conn.execute(f"DELETE FROM collection_rule_comic_exclusions WHERE comic_id IN ({placeholders})", tuple(ids))  # noqa: S608
 
     def _cleanup_orphan_links(self, conn: sqlite3.Connection) -> None:
         tables = {
@@ -345,6 +352,14 @@ class LibraryRepository:
         if "collection_comics" in tables and "collections" in tables:
             conn.execute(
                 "DELETE FROM collection_comics WHERE collection_id NOT IN (SELECT id FROM collections)"
+            )
+        if "collection_rule_book_exclusions" in tables and "books" in tables:
+            conn.execute(
+                "DELETE FROM collection_rule_book_exclusions WHERE book_id NOT IN (SELECT id FROM books)"
+            )
+        if "collection_rule_comic_exclusions" in tables and "comics" in tables:
+            conn.execute(
+                "DELETE FROM collection_rule_comic_exclusions WHERE comic_id NOT IN (SELECT id FROM comics)"
             )
 
     def _init_db(self) -> None:
@@ -2229,12 +2244,17 @@ class LibraryRepository:
                     name        TEXT    NOT NULL,
                     description TEXT    NOT NULL DEFAULT '',
                     kind        TEXT    NOT NULL DEFAULT 'book',
-                    created_at  TEXT    NOT NULL DEFAULT ''
+                    created_at  TEXT    NOT NULL DEFAULT '',
+                    rule_enabled INTEGER NOT NULL DEFAULT 0,
+                    rule_json TEXT NOT NULL DEFAULT '{"version":1,"matchMode":"all","conditions":[]}',
+                    rule_updated_at TEXT
                 );
                 CREATE TABLE IF NOT EXISTS collection_books (
                     collection_id INTEGER NOT NULL,
                     book_id       INTEGER NOT NULL,
                     added_at      TEXT    NOT NULL DEFAULT '',
+                    manual_source INTEGER NOT NULL DEFAULT 1,
+                    rule_source   INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (collection_id, book_id),
                     FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
                 );
@@ -2242,12 +2262,30 @@ class LibraryRepository:
                     collection_id INTEGER NOT NULL,
                     comic_id      INTEGER NOT NULL,
                     added_at      TEXT    NOT NULL DEFAULT '',
+                    manual_source INTEGER NOT NULL DEFAULT 1,
+                    rule_source   INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (collection_id, comic_id),
                     FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
                 );
                 CREATE TABLE IF NOT EXISTS favorite_books (
                     book_id  INTEGER PRIMARY KEY,
                     added_at TEXT    NOT NULL DEFAULT ''
+                );
+                CREATE TABLE IF NOT EXISTS collection_rule_book_exclusions (
+                    collection_id INTEGER NOT NULL,
+                    book_id INTEGER NOT NULL,
+                    excluded_at TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY (collection_id, book_id),
+                    FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+                    FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+                );
+                CREATE TABLE IF NOT EXISTS collection_rule_comic_exclusions (
+                    collection_id INTEGER NOT NULL,
+                    comic_id INTEGER NOT NULL,
+                    excluded_at TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY (collection_id, comic_id),
+                    FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+                    FOREIGN KEY (comic_id) REFERENCES comics(id) ON DELETE CASCADE
                 );
             """)
             self._ensure_column(
@@ -2256,6 +2294,37 @@ class LibraryRepository:
                 "kind",
                 "ALTER TABLE collections ADD COLUMN kind TEXT NOT NULL DEFAULT 'book'",
             )
+            self._ensure_column(
+                conn,
+                "collections",
+                "rule_enabled",
+                "ALTER TABLE collections ADD COLUMN rule_enabled INTEGER NOT NULL DEFAULT 0",
+            )
+            self._ensure_column(
+                conn,
+                "collections",
+                "rule_json",
+                "ALTER TABLE collections ADD COLUMN rule_json TEXT NOT NULL DEFAULT '{\"version\":1,\"matchMode\":\"all\",\"conditions\":[]}'",
+            )
+            self._ensure_column(
+                conn,
+                "collections",
+                "rule_updated_at",
+                "ALTER TABLE collections ADD COLUMN rule_updated_at TEXT",
+            )
+            for table_name in ("collection_books", "collection_comics"):
+                self._ensure_column(
+                    conn,
+                    table_name,
+                    "manual_source",
+                    f"ALTER TABLE {table_name} ADD COLUMN manual_source INTEGER NOT NULL DEFAULT 1",
+                )
+                self._ensure_column(
+                    conn,
+                    table_name,
+                    "rule_source",
+                    f"ALTER TABLE {table_name} ADD COLUMN rule_source INTEGER NOT NULL DEFAULT 0",
+                )
 
     def _migrate_typed_collections(self) -> None:
         """Split mixed collections by kind and fold favorites into default named lists."""
@@ -2361,6 +2430,429 @@ class LibraryRepository:
             )
             return cur.lastrowid
 
+    @staticmethod
+    def _collection_rule_storage(kind: str) -> tuple[str, str, str, str]:
+        if kind == COLLECTION_KIND_COMIC:
+            return "comics", "collection_comics", "comic_id", "collection_rule_comic_exclusions"
+        return "books", "collection_books", "book_id", "collection_rule_book_exclusions"
+
+    @staticmethod
+    def _collection_rule_resource_payload(record: dict[str, Any], kind: str) -> dict[str, Any]:
+        return {
+            "id": int(record["id"]),
+            "resourceId": str(record.get("resource_id") or ""),
+            "kind": kind,
+            "title": str(record.get("title") or record.get("file_name") or ""),
+            "sourceName": source_name_for_record(record, kind),
+            "path": str(record.get("path") or ""),
+        }
+
+    def _collection_rule_resources(
+        self,
+        conn: sqlite3.Connection,
+        kind: str,
+    ) -> list[dict[str, Any]]:
+        if kind == COLLECTION_KIND_COMIC:
+            rows = conn.execute(
+                "SELECT id, resource_id, title, path FROM comics WHERE is_missing = 0 ORDER BY id"
+            ).fetchall()
+        elif kind == COLLECTION_KIND_TEXT_NOVEL:
+            rows = conn.execute(
+                "SELECT id, resource_id, file_name, extension, title, path FROM books "
+                "WHERE is_missing = 0 AND COALESCE(resource_type, '') = ? ORDER BY id",
+                (COLLECTION_KIND_TEXT_NOVEL,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, resource_id, file_name, extension, title, path FROM books "
+                "WHERE is_missing = 0 AND COALESCE(resource_type, '') != ? ORDER BY id",
+                (COLLECTION_KIND_TEXT_NOVEL,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def _collection_rule_preview_in_connection(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        collection: dict[str, Any],
+        enabled: bool,
+        rule: dict[str, Any],
+        disable_mode: str = "",
+    ) -> dict[str, Any]:
+        collection_id = int(collection["id"])
+        kind = normalize_collection_kind(collection.get("kind"))
+        _resource_table, link_table, resource_column, exclusion_table = self._collection_rule_storage(kind)
+        resources = self._collection_rule_resources(conn, kind)
+        resource_by_id = {int(item["id"]): item for item in resources}
+        link_rows = conn.execute(
+            f"SELECT {resource_column} AS resource_id, manual_source, rule_source, added_at "  # noqa: S608
+            f"FROM {link_table} WHERE collection_id = ?",  # noqa: S608
+            (collection_id,),
+        ).fetchall()
+        links = {int(row["resource_id"]): dict(row) for row in link_rows}
+        exclusion_rows = conn.execute(
+            f"SELECT {resource_column} AS resource_id FROM {exclusion_table} WHERE collection_id = ?",  # noqa: S608
+            (collection_id,),
+        ).fetchall()
+        exclusion_ids = {int(row["resource_id"]) for row in exclusion_rows}
+
+        matched = (
+            [
+                item
+                for item in resources
+                if matches_collection_rule(source_name_for_record(item, kind), rule)
+            ]
+            if enabled
+            else []
+        )
+        matched_ids = {int(item["id"]) for item in matched}
+        excluded = [item for item in matched if int(item["id"]) in exclusion_ids]
+        effective = [item for item in matched if int(item["id"]) not in exclusion_ids]
+        effective_ids = {int(item["id"]) for item in effective}
+        add = [item for item in effective if int(item["id"]) not in links]
+        manual_kept = [
+            resource_by_id[resource_id]
+            for resource_id, link in links.items()
+            if int(link.get("manual_source") or 0) and resource_id in resource_by_id
+        ]
+        if not enabled and disable_mode == "convert":
+            existing_manual_ids = {int(item["id"]) for item in manual_kept}
+            manual_kept.extend(
+                resource_by_id[resource_id]
+                for resource_id, link in links.items()
+                if int(link.get("rule_source") or 0)
+                and resource_id in resource_by_id
+                and resource_id not in existing_manual_ids
+            )
+        remove = [
+            resource_by_id[resource_id]
+            for resource_id, link in links.items()
+            if int(link.get("rule_source") or 0)
+            and resource_id not in effective_ids
+            and not int(link.get("manual_source") or 0)
+            and resource_id in resource_by_id
+            and not (not enabled and disable_mode == "convert")
+        ]
+
+        def payloads(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            return [self._collection_rule_resource_payload(item, kind) for item in items]
+
+        return {
+            "collection": {
+                "id": collection_id,
+                "name": str(collection.get("name") or ""),
+                "kind": kind,
+            },
+            "enabled": bool(enabled),
+            "rule": rule,
+            "disableMode": disable_mode,
+            "summary": {
+                "matched": len(matched),
+                "add": len(add),
+                "remove": len(remove),
+                "manual_kept": len(manual_kept),
+                "excluded": len(excluded),
+            },
+            "matched": payloads(matched),
+            "add": payloads(add),
+            "remove": payloads(remove),
+            "manualKept": payloads(manual_kept),
+            "excluded": payloads(excluded),
+            "_effective_ids": effective_ids,
+            "_matched_ids": matched_ids,
+            "_links": links,
+            "_exclusion_ids": exclusion_ids,
+        }
+
+    @staticmethod
+    def _public_collection_rule_preview(preview: dict[str, Any]) -> dict[str, Any]:
+        return {key: value for key, value in preview.items() if not key.startswith("_")}
+
+    def preview_collection_rule(
+        self,
+        collection_id: int,
+        *,
+        enabled: bool,
+        rule: dict[str, Any],
+        disable_mode: str = "",
+    ) -> dict[str, Any]:
+        normalized_rule = validate_collection_rule(rule, enabled=bool(enabled))
+        normalized_disable_mode = str(disable_mode or "").strip().lower()
+        if normalized_disable_mode not in {"", "remove", "convert"}:
+            raise ValueError("invalid_disable_mode")
+        with self._connection() as conn:
+            row = conn.execute("SELECT * FROM collections WHERE id = ?", (int(collection_id),)).fetchone()
+            if not row:
+                raise ValueError("collection_not_found")
+            preview = self._collection_rule_preview_in_connection(
+                conn,
+                collection=dict(row),
+                enabled=bool(enabled),
+                rule=normalized_rule,
+                disable_mode=normalized_disable_mode,
+            )
+        return self._public_collection_rule_preview(preview)
+
+    def _reconcile_enabled_collection_rule(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        collection: dict[str, Any],
+        rule: dict[str, Any],
+    ) -> dict[str, Any]:
+        collection_id = int(collection["id"])
+        kind = normalize_collection_kind(collection.get("kind"))
+        _resource_table, link_table, resource_column, exclusion_table = self._collection_rule_storage(kind)
+        preview = self._collection_rule_preview_in_connection(
+            conn,
+            collection=collection,
+            enabled=True,
+            rule=rule,
+        )
+        matched_ids = set(preview["_matched_ids"])
+        effective_ids = set(preview["_effective_ids"])
+        links = dict(preview["_links"])
+        stale_exclusions = set(preview["_exclusion_ids"]) - matched_ids
+        for resource_id in stale_exclusions:
+            conn.execute(
+                f"DELETE FROM {exclusion_table} WHERE collection_id = ? AND {resource_column} = ?",  # noqa: S608
+                (collection_id, int(resource_id)),
+            )
+        for resource_id in effective_ids:
+            if resource_id in links:
+                conn.execute(
+                    f"UPDATE {link_table} SET rule_source = 1 WHERE collection_id = ? AND {resource_column} = ?",  # noqa: S608
+                    (collection_id, int(resource_id)),
+                )
+            else:
+                conn.execute(
+                    f"INSERT INTO {link_table} "  # noqa: S608
+                    f"(collection_id, {resource_column}, added_at, manual_source, rule_source) "
+                    "VALUES (?, ?, ?, 0, 1)",
+                    (collection_id, int(resource_id), now_utc_iso()),
+                )
+        for resource_id, link in links.items():
+            if not int(link.get("rule_source") or 0) or resource_id in effective_ids:
+                continue
+            if int(link.get("manual_source") or 0):
+                conn.execute(
+                    f"UPDATE {link_table} SET rule_source = 0 WHERE collection_id = ? AND {resource_column} = ?",  # noqa: S608
+                    (collection_id, int(resource_id)),
+                )
+            else:
+                conn.execute(
+                    f"DELETE FROM {link_table} WHERE collection_id = ? AND {resource_column} = ?",  # noqa: S608
+                    (collection_id, int(resource_id)),
+                )
+        return preview
+
+    def save_collection_rule(
+        self,
+        collection_id: int,
+        *,
+        enabled: bool,
+        rule: dict[str, Any],
+        disable_mode: str = "",
+    ) -> dict[str, Any]:
+        normalized_rule = validate_collection_rule(rule, enabled=bool(enabled))
+        normalized_disable_mode = str(disable_mode or "").strip().lower()
+        if normalized_disable_mode not in {"", "remove", "convert"}:
+            raise ValueError("invalid_disable_mode")
+        with self._connection() as conn:
+            row = conn.execute("SELECT * FROM collections WHERE id = ?", (int(collection_id),)).fetchone()
+            if not row:
+                raise ValueError("collection_not_found")
+            collection = dict(row)
+            kind = normalize_collection_kind(collection.get("kind"))
+            _resource_table, link_table, resource_column, exclusion_table = self._collection_rule_storage(kind)
+            has_rule_members = conn.execute(
+                f"SELECT 1 FROM {link_table} WHERE collection_id = ? AND rule_source = 1 LIMIT 1",  # noqa: S608
+                (int(collection_id),),
+            ).fetchone()
+            if bool(collection.get("rule_enabled")) and not enabled and has_rule_members and not normalized_disable_mode:
+                raise ValueError("disable_mode_required")
+            now = now_utc_iso()
+            if not enabled:
+                preview = self._collection_rule_preview_in_connection(
+                    conn,
+                    collection=collection,
+                    enabled=False,
+                    rule=normalized_rule,
+                    disable_mode=normalized_disable_mode,
+                )
+                if normalized_disable_mode == "convert":
+                    conn.execute(
+                        f"UPDATE {link_table} SET manual_source = 1, rule_source = 0 "  # noqa: S608
+                        "WHERE collection_id = ? AND rule_source = 1",
+                        (int(collection_id),),
+                    )
+                else:
+                    conn.execute(
+                        f"UPDATE {link_table} SET rule_source = 0 WHERE collection_id = ? AND rule_source = 1",  # noqa: S608
+                        (int(collection_id),),
+                    )
+                    conn.execute(
+                        f"DELETE FROM {link_table} WHERE collection_id = ? AND manual_source = 0 AND rule_source = 0",  # noqa: S608
+                        (int(collection_id),),
+                    )
+                conn.execute(f"DELETE FROM {exclusion_table} WHERE collection_id = ?", (int(collection_id),))  # noqa: S608
+            else:
+                preview = self._reconcile_enabled_collection_rule(
+                    conn,
+                    collection=collection,
+                    rule=normalized_rule,
+                )
+            conn.execute(
+                "UPDATE collections SET rule_enabled = ?, rule_json = ?, rule_updated_at = ? WHERE id = ?",
+                (
+                    1 if enabled else 0,
+                    json.dumps(normalized_rule, ensure_ascii=False, separators=(",", ":")),
+                    now,
+                    int(collection_id),
+                ),
+            )
+        return self._public_collection_rule_preview(preview)
+
+    def apply_enabled_collection_rules(self, kinds: set[str] | list[str] | tuple[str, ...]) -> dict[str, int]:
+        kind_values = {normalize_collection_kind(kind) for kind in kinds}
+        if not kind_values:
+            return {
+                "collectionsEvaluated": 0,
+                "matched": 0,
+                "added": 0,
+                "removed": 0,
+                "manualKept": 0,
+                "excluded": 0,
+            }
+        summary = {
+            "collectionsEvaluated": 0,
+            "matched": 0,
+            "added": 0,
+            "removed": 0,
+            "manualKept": 0,
+            "excluded": 0,
+        }
+        placeholders = ",".join("?" for _ in kind_values)
+        with self._connection() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM collections WHERE rule_enabled = 1 AND kind IN ({placeholders}) ORDER BY id",  # noqa: S608
+                tuple(sorted(kind_values)),
+            ).fetchall()
+            for row in rows:
+                collection = dict(row)
+                rule = validate_collection_rule(
+                    json.loads(str(collection.get("rule_json") or "{}")),
+                    enabled=True,
+                )
+                preview = self._reconcile_enabled_collection_rule(
+                    conn,
+                    collection=collection,
+                    rule=rule,
+                )
+                current = preview["summary"]
+                summary["collectionsEvaluated"] += 1
+                summary["matched"] += int(current["matched"])
+                summary["added"] += int(current["add"])
+                summary["removed"] += int(current["remove"])
+                summary["manualKept"] += int(current["manual_kept"])
+                summary["excluded"] += int(current["excluded"])
+        return summary
+
+    def get_collection_rule(self, collection_id: int) -> dict[str, Any]:
+        self._init_collections_tables()
+        with self._connection() as conn:
+            row = conn.execute("SELECT * FROM collections WHERE id = ?", (int(collection_id),)).fetchone()
+            if not row:
+                raise ValueError("collection_not_found")
+            collection = dict(row)
+            kind = normalize_collection_kind(collection.get("kind"))
+            resource_table, link_table, resource_column, exclusion_table = self._collection_rule_storage(kind)
+            try:
+                raw_rule = json.loads(str(collection.get("rule_json") or "{}"))
+                rule = validate_collection_rule(raw_rule, enabled=bool(collection.get("rule_enabled")))
+            except (json.JSONDecodeError, ValueError):
+                rule = {"version": 1, "matchMode": "all", "conditions": []}
+            if kind == COLLECTION_KIND_COMIC:
+                rows = conn.execute(
+                    f"SELECT r.id, r.resource_id, r.title, r.path FROM {exclusion_table} e "  # noqa: S608
+                    f"INNER JOIN {resource_table} r ON r.id = e.{resource_column} "
+                    "WHERE e.collection_id = ? ORDER BY e.excluded_at, r.id",
+                    (int(collection_id),),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    f"SELECT r.id, r.resource_id, r.file_name, r.extension, r.title, r.path "  # noqa: S608
+                    f"FROM {exclusion_table} e INNER JOIN {resource_table} r ON r.id = e.{resource_column} "
+                    "WHERE e.collection_id = ? ORDER BY e.excluded_at, r.id",
+                    (int(collection_id),),
+                ).fetchall()
+            auto_row = conn.execute(
+                f"SELECT COUNT(*) AS count FROM {link_table} WHERE collection_id = ? AND rule_source = 1",  # noqa: S608
+                (int(collection_id),),
+            ).fetchone()
+            exclusions = [self._collection_rule_resource_payload(dict(item), kind) for item in rows]
+        return {
+            "id": int(collection["id"]),
+            "name": str(collection.get("name") or ""),
+            "kind": kind,
+            "enabled": bool(collection.get("rule_enabled")),
+            "rule": rule,
+            "updatedAt": collection.get("rule_updated_at"),
+            "autoMemberCount": int(auto_row["count"] if auto_row else 0),
+            "excludedCount": len(exclusions),
+            "exclusions": exclusions,
+        }
+
+    def get_collection_rule_summaries(self) -> list[dict[str, Any]]:
+        return [
+            {
+                key: detail[key]
+                for key in ("id", "name", "kind", "enabled", "updatedAt", "autoMemberCount", "excludedCount")
+            }
+            for detail in (self.get_collection_rule(int(row["id"])) for row in self.get_all_collections())
+        ]
+
+    def clear_collection_rule_exclusion(self, collection_id: int, resource_db_id: int) -> dict[str, Any]:
+        self._init_collections_tables()
+        restored = False
+        with self._connection() as conn:
+            row = conn.execute("SELECT * FROM collections WHERE id = ?", (int(collection_id),)).fetchone()
+            if not row:
+                raise ValueError("collection_not_found")
+            collection = dict(row)
+            kind = normalize_collection_kind(collection.get("kind"))
+            resource_table, link_table, resource_column, exclusion_table = self._collection_rule_storage(kind)
+            resource = conn.execute(
+                f"SELECT * FROM {resource_table} WHERE id = ?",  # noqa: S608
+                (int(resource_db_id),),
+            ).fetchone()
+            if not resource:
+                raise ValueError("resource_not_found")
+            if kind != COLLECTION_KIND_COMIC and book_collection_kind(resource["resource_type"]) != kind:
+                raise ValueError("resource_kind_mismatch")
+            conn.execute(
+                f"DELETE FROM {exclusion_table} WHERE collection_id = ? AND {resource_column} = ?",  # noqa: S608
+                (int(collection_id), int(resource_db_id)),
+            )
+            if bool(collection.get("rule_enabled")):
+                try:
+                    rule = validate_collection_rule(
+                        json.loads(str(collection.get("rule_json") or "{}")),
+                        enabled=True,
+                    )
+                except (json.JSONDecodeError, ValueError):
+                    rule = None
+                if rule and matches_collection_rule(source_name_for_record(dict(resource), kind), rule):
+                    conn.execute(
+                        f"INSERT INTO {link_table} "  # noqa: S608
+                        f"(collection_id, {resource_column}, added_at, manual_source, rule_source) "
+                        "VALUES (?, ?, ?, 0, 1) "
+                        f"ON CONFLICT(collection_id, {resource_column}) DO UPDATE SET rule_source = 1",
+                        (int(collection_id), int(resource_db_id), now_utc_iso()),
+                    )
+                    restored = True
+        return {"ok": True, "memberRestored": restored, "collectionId": int(collection_id), "resourceId": int(resource_db_id)}
+
     def apply_collection_membership_changes(
         self,
         *,
@@ -2412,7 +2904,7 @@ class LibraryRepository:
                 raise ValueError("resource_not_found")
 
             collection_rows = conn.execute(
-                "SELECT id, name FROM collections WHERE kind = ? ORDER BY id ASC",
+                "SELECT id, name, rule_enabled FROM collections WHERE kind = ? ORDER BY id ASC",
                 (kind_value,),
             ).fetchall()
             collection_by_id = {int(row["id"]): row for row in collection_rows}
@@ -2443,14 +2935,43 @@ class LibraryRepository:
                 add_ids.add(created_id)
 
             for collection_id in sorted(remove_ids):
+                existing_link = conn.execute(
+                    f"SELECT rule_source FROM {link_table} WHERE collection_id = ? AND {resource_column} = ?",  # noqa: S608
+                    (collection_id, int(resource_db_id)),
+                ).fetchone()
                 conn.execute(
                     f"DELETE FROM {link_table} WHERE collection_id = ? AND {resource_column} = ?",  # noqa: S608
                     (collection_id, int(resource_db_id)),
                 )
+                collection_row = collection_by_id[collection_id]
+                if existing_link and int(existing_link["rule_source"] or 0) and int(collection_row["rule_enabled"] or 0):
+                    exclusion_table = (
+                        "collection_rule_comic_exclusions"
+                        if kind_value == COLLECTION_KIND_COMIC
+                        else "collection_rule_book_exclusions"
+                    )
+                    conn.execute(
+                        f"INSERT OR REPLACE INTO {exclusion_table}(collection_id, {resource_column}, excluded_at) VALUES (?, ?, ?)",  # noqa: S608
+                        (collection_id, int(resource_db_id), now_utc_iso()),
+                    )
             for collection_id in sorted(add_ids):
                 conn.execute(
-                    f"INSERT OR IGNORE INTO {link_table} (collection_id, {resource_column}, added_at) VALUES (?, ?, ?)",  # noqa: S608
+                    f"INSERT OR IGNORE INTO {link_table} "  # noqa: S608
+                    f"(collection_id, {resource_column}, added_at, manual_source, rule_source) VALUES (?, ?, ?, 1, 0)",
                     (collection_id, int(resource_db_id), now_utc_iso()),
+                )
+                conn.execute(
+                    f"UPDATE {link_table} SET manual_source = 1 WHERE collection_id = ? AND {resource_column} = ?",  # noqa: S608
+                    (collection_id, int(resource_db_id)),
+                )
+                exclusion_table = (
+                    "collection_rule_comic_exclusions"
+                    if kind_value == COLLECTION_KIND_COMIC
+                    else "collection_rule_book_exclusions"
+                )
+                conn.execute(
+                    f"DELETE FROM {exclusion_table} WHERE collection_id = ? AND {resource_column} = ?",  # noqa: S608
+                    (collection_id, int(resource_db_id)),
                 )
 
             member_rows = conn.execute(
@@ -2633,10 +3154,24 @@ class LibraryRepository:
                     resource_column = "book_id"
                 for collection_id in sorted(collection_ids_by_kind.get(kind, set())):
                     cursor = conn.execute(
-                        f"INSERT OR IGNORE INTO {link_table} (collection_id, {resource_column}, added_at) VALUES (?, ?, ?)",  # noqa: S608
+                        f"INSERT OR IGNORE INTO {link_table} "  # noqa: S608
+                        f"(collection_id, {resource_column}, added_at, manual_source, rule_source) VALUES (?, ?, ?, 1, 0)",
                         (collection_id, db_id, now_utc_iso()),
                     )
                     collection_links_added += max(0, int(cursor.rowcount))
+                    conn.execute(
+                        f"UPDATE {link_table} SET manual_source = 1 WHERE collection_id = ? AND {resource_column} = ?",  # noqa: S608
+                        (collection_id, db_id),
+                    )
+                    exclusion_table = (
+                        "collection_rule_comic_exclusions"
+                        if kind == COLLECTION_KIND_COMIC
+                        else "collection_rule_book_exclusions"
+                    )
+                    conn.execute(
+                        f"DELETE FROM {exclusion_table} WHERE collection_id = ? AND {resource_column} = ?",  # noqa: S608
+                        (collection_id, db_id),
+                    )
 
                 final_tags = list(resource["tags"])
                 before_count = len(final_tags)
@@ -2741,19 +3276,37 @@ class LibraryRepository:
             if book_collection_kind(row["resource_type"]) != kind:
                 return
             conn.execute(
-                "INSERT OR IGNORE INTO collection_books (collection_id, book_id, added_at)"
-                " VALUES (?, ?, ?)",
+                "INSERT INTO collection_books (collection_id, book_id, added_at, manual_source, rule_source)"
+                " VALUES (?, ?, ?, 1, 0)"
+                " ON CONFLICT(collection_id, book_id) DO UPDATE SET manual_source = 1",
                 (collection_id, book_id, now_utc_iso()),
+            )
+            conn.execute(
+                "DELETE FROM collection_rule_book_exclusions WHERE collection_id = ? AND book_id = ?",
+                (int(collection_id), int(book_id)),
             )
 
     def remove_book_from_collection(self, book_id: int, collection_id: int) -> None:
         """Remove a book from a collection."""
         self._init_collections_tables()
         with self._connection() as conn:
+            link = conn.execute(
+                "SELECT rule_source FROM collection_books WHERE collection_id = ? AND book_id = ?",
+                (int(collection_id), int(book_id)),
+            ).fetchone()
             conn.execute(
                 "DELETE FROM collection_books WHERE collection_id = ? AND book_id = ?",
                 (collection_id, book_id),
             )
+            enabled = conn.execute(
+                "SELECT rule_enabled FROM collections WHERE id = ?",
+                (int(collection_id),),
+            ).fetchone()
+            if link and int(link["rule_source"] or 0) and enabled and int(enabled["rule_enabled"] or 0):
+                conn.execute(
+                    "INSERT OR REPLACE INTO collection_rule_book_exclusions(collection_id, book_id, excluded_at) VALUES (?, ?, ?)",
+                    (int(collection_id), int(book_id), now_utc_iso()),
+                )
 
     def get_books_in_collection(self, collection_id: int, order_by: str | None = None) -> list[dict]:
         """Return book/novel rows for a collection, filtered by collection kind."""
@@ -2853,18 +3406,36 @@ class LibraryRepository:
             if not exists:
                 return
             conn.execute(
-                "INSERT OR IGNORE INTO collection_comics (collection_id, comic_id, added_at)"
-                " VALUES (?, ?, ?)",
+                "INSERT INTO collection_comics (collection_id, comic_id, added_at, manual_source, rule_source)"
+                " VALUES (?, ?, ?, 1, 0)"
+                " ON CONFLICT(collection_id, comic_id) DO UPDATE SET manual_source = 1",
                 (int(collection_id), int(comic_id), now_utc_iso()),
+            )
+            conn.execute(
+                "DELETE FROM collection_rule_comic_exclusions WHERE collection_id = ? AND comic_id = ?",
+                (int(collection_id), int(comic_id)),
             )
 
     def remove_comic_from_collection(self, comic_id: int, collection_id: int) -> None:
         self._init_collections_tables()
         with self._connection() as conn:
+            link = conn.execute(
+                "SELECT rule_source FROM collection_comics WHERE collection_id = ? AND comic_id = ?",
+                (int(collection_id), int(comic_id)),
+            ).fetchone()
             conn.execute(
                 "DELETE FROM collection_comics WHERE collection_id = ? AND comic_id = ?",
                 (int(collection_id), int(comic_id)),
             )
+            enabled = conn.execute(
+                "SELECT rule_enabled FROM collections WHERE id = ?",
+                (int(collection_id),),
+            ).fetchone()
+            if link and int(link["rule_source"] or 0) and enabled and int(enabled["rule_enabled"] or 0):
+                conn.execute(
+                    "INSERT OR REPLACE INTO collection_rule_comic_exclusions(collection_id, comic_id, excluded_at) VALUES (?, ?, ?)",
+                    (int(collection_id), int(comic_id), now_utc_iso()),
+                )
 
     def get_comics_in_collection(self, collection_id: int) -> list[dict]:
         self._init_collections_tables()

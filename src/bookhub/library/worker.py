@@ -24,6 +24,7 @@ from bookhub.library.models import (
     TextScanRequest,
     TextScanRoot,
 )
+from bookhub.library.error_logs import append_scan_log
 from bookhub.library.repository import LibraryRepository
 from bookhub.library.scanner import scan_comic_roots, scan_roots, scan_text_roots
 
@@ -196,6 +197,31 @@ class ScanWorker(QThread):
             summary["removed_missing_comic_count"] = int(comic_summary.get("removed_missing_comic_count", 0) or 0)
             summary["trigger"] = self._trigger
             summary["scope"] = self._scope
+            scope_kinds = {
+                "library": {"book"},
+                "text": {"text_novel"},
+                "comic": {"comic"},
+                "all": {"book", "text_novel", "comic"},
+            }.get(self._scope, set())
+            try:
+                rule_summary = repository.apply_enabled_collection_rules(scope_kinds)
+                summary["collection_rules"] = {"status": "success", **rule_summary}
+            except Exception as exc:  # noqa: BLE001
+                message = f"Collection rule reconciliation failed: {exc}"
+                summary["collection_rules"] = {
+                    "status": "failed",
+                    "error": str(exc),
+                    "collectionsEvaluated": 0,
+                    "matched": 0,
+                    "added": 0,
+                    "removed": 0,
+                    "manualKept": 0,
+                    "excluded": 0,
+                }
+                summary.setdefault("warnings", []).append(
+                    {"code": "collection_rules_failed", "message": message}
+                )
+                append_scan_log(f"collection_rules_failed | scope={self._scope} | error={exc}")
             repository.write_scan_report(summary)
             repository.record_scan_event(self._trigger, summary)
             self.scan_completed.emit(summary)

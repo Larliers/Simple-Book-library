@@ -41,6 +41,9 @@ const State = {
   shortcutCaptureAction: "",
   _scanRunning: false,
   _taskKind: "scan",
+  collectionRules: { summaries: [], selectedId: 0, query: "", loading: false },
+  contextMenuTrigger: null,
+  modalReturnFocus: null,
 };
 
 const COLLECTION_PAGES = new Set(["collections", "novel_collections", "comic_collections"]);
@@ -1478,13 +1481,32 @@ function renderCollections(area, items) {
   const page = State.currentPage;
   mountVirtualCoverGrid(area, items, page, true, State.renderGen, (item) => {
     const card = elem("article", "book-card");
+    card.setAttribute("tabindex", "0");
+    card.setAttribute("role", "button");
+    card.setAttribute("aria-label", item.title || "");
     card.appendChild(buildCover(item, "cover"));
     card.appendChild(elem("div", "card-title", item.title));
     card.appendChild(elem("div", "card-meta", item.meta || ""));
+    if (item.ruleEnabled) {
+      card.appendChild(elem("span", "collection-rule-badge", fmt(
+        t("collection_rules.card_badge", "Auto {count}"),
+        { count: Number(item.ruleAutoMemberCount || 0) }
+      )));
+    }
     const openCol = () => {
       openCollectionWithHistory(page, item.collectionId, false);
     };
     card.addEventListener("click", openCol);
+    card.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openCol();
+      } else if ((event.shiftKey && event.key === "F10") || event.key === "ContextMenu") {
+        event.preventDefault();
+        const rect = card.getBoundingClientRect();
+        openCollectionCardMenu({ clientX: rect.left + 18, clientY: rect.top + 18, currentTarget: card }, item, openCol);
+      }
+    });
     card.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       openCollectionCardMenu(e, item, openCol);
@@ -2204,6 +2226,7 @@ function positionContextMenu(event) {
 
 function menuAction(label, fn, danger) {
   const btn = elem("button", danger ? "danger-btn" : null, label);
+  btn.setAttribute("role", "menuitem");
   btn.addEventListener("click", () => { hideContextMenu(); fn(); });
   $("contextMenu").appendChild(btn);
   return btn;
@@ -2211,12 +2234,17 @@ function menuAction(label, fn, danger) {
 
 function openCollectionCardMenu(event, item, openCol) {
   const menu = $("contextMenu");
+  State.contextMenuTrigger = event.currentTarget || document.activeElement;
   clear(menu);
+  menu.setAttribute("role", "menu");
   menuAction(t("menu.collection_open", "Open"), openCol);
+  menuAction(t("menu.collection_rule_edit", "Edit collection rule…"), () => openCollectionRuleModal(item.collectionId));
   menu.appendChild(elem("hr"));
   menuAction(t("menu.collection_rename", "Rename"), () => openRenameCollectionModal(item));
   menuAction(t("menu.collection_delete", "Delete"), () => openDeleteCollectionModal(item), true);
   positionContextMenu(event);
+  const first = menu.querySelector('button[role="menuitem"]');
+  if (first) first.focus();
 }
 
 function openContextMenu(event, page, item, isCollectionDetail) {
@@ -2296,7 +2324,28 @@ function confirmRemoveFromLibrary(page, item) {
   });
 }
 
-function hideContextMenu() { $("contextMenu").classList.add("hidden"); }
+function hideContextMenu(restoreFocus) {
+  const menu = $("contextMenu");
+  const wasOpen = !menu.classList.contains("hidden");
+  menu.classList.add("hidden");
+  if (restoreFocus && wasOpen && State.contextMenuTrigger && State.contextMenuTrigger.isConnected) {
+    State.contextMenuTrigger.focus();
+  }
+  State.contextMenuTrigger = null;
+}
+const contextMenuNode = $("contextMenu");
+if (contextMenuNode && typeof contextMenuNode.addEventListener === "function") contextMenuNode.addEventListener("keydown", (event) => {
+  const items = [...$("contextMenu").querySelectorAll('button[role="menuitem"]:not(:disabled)')];
+  if (!items.length) return;
+  const index = Math.max(0, items.indexOf(document.activeElement));
+  if (event.key === "Escape") { event.preventDefault(); hideContextMenu(true); return; }
+  if (event.key === "Home" || event.key === "End" || event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
+      : event.key === "ArrowDown" ? (index + 1) % items.length : (index - 1 + items.length) % items.length;
+    items[next].focus();
+  }
+});
 document.addEventListener("click", (e) => { if (!$("contextMenu").contains(e.target)) hideContextMenu(); });
 document.addEventListener("scroll", hideContextMenu, true);
 // Block Chromium default menu globally; card handlers still call preventDefault + custom menu.
@@ -2361,19 +2410,44 @@ function updateScanProgress(d) {
 /* ---------- modals ---------- */
 function openModal(build) {
   const overlay = $("overlay");
+  State.modalReturnFocus = document.activeElement;
   clear(overlay);
   overlay.classList.remove("hidden");
   const modal = elem("div", "modal");
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
   const close = () => {
     if (modal.parentElement === overlay) closeModal();
   };
   build(modal, close);
   overlay.appendChild(modal);
+  const focusable = typeof modal.querySelector === "function"
+    ? modal.querySelector('input, select, textarea, button, [tabindex]:not([tabindex="-1"])')
+    : null;
+  if (focusable) focusable.focus();
   overlay.onclick = (e) => {
     if (e.target === overlay && modal.dataset.submitting !== "true") close();
   };
+  overlay.onkeydown = (event) => {
+    if (event.key === "Escape" && modal.dataset.submitting !== "true") {
+      event.preventDefault(); close(); return;
+    }
+    if (event.key !== "Tab") return;
+    const nodes = typeof modal.querySelectorAll === "function"
+      ? [...modal.querySelectorAll('input:not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled), [tabindex]:not([tabindex="-1"])')]
+      : [];
+    if (!nodes.length) return;
+    const first = nodes[0], last = nodes[nodes.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  };
 }
-function closeModal() { const o = $("overlay"); o.classList.add("hidden"); clear(o); o.onclick = null; }
+function closeModal() {
+  const o = $("overlay");
+  o.classList.add("hidden"); clear(o); o.onclick = null; o.onkeydown = null;
+  if (State.modalReturnFocus && State.modalReturnFocus.isConnected) State.modalReturnFocus.focus();
+  State.modalReturnFocus = null;
+}
 
 function modalHeader(modal, title, onClose) {
   const head = elem("div", "modal-title");
@@ -3034,6 +3108,7 @@ const SETTINGS_SECTIONS = [
   ["shortcuts", "settings.nav.shortcuts"],
   ["paths", "settings.nav.paths"],
   ["errors", "settings.nav.errors"],
+  ["collection_rules", "settings.nav.collection_rules"],
 ];
 
 function renderSettings() {
@@ -3074,6 +3149,7 @@ function renderSettings() {
     renderSettingsPaths(panel);
     renderSettingsTasks(panel);
   }
+  else if (section === "collection_rules") renderSettingsCollectionRules(panel);
   else renderSettingsErrors(panel);
 }
 
@@ -3081,6 +3157,396 @@ function settingCard(title) {
   const card = elem("div", "settings-card");
   if (title) card.appendChild(elem("h3", null, title));
   return card;
+}
+
+const COLLECTION_RULE_OPERATORS = [
+  ["contains", "collection_rules.operator.contains", "Contains"],
+  ["not_contains", "collection_rules.operator.not_contains", "Does not contain"],
+  ["starts_with", "collection_rules.operator.starts_with", "Starts with"],
+  ["ends_with", "collection_rules.operator.ends_with", "Ends with"],
+  ["equals", "collection_rules.operator.equals", "Exactly equals"],
+];
+
+function collectionRuleKindLabel(kind) {
+  return {
+    book: t("collection_rules.kind.book", "Books"),
+    text_novel: t("collection_rules.kind.text_novel", "Text Novel"),
+    comic: t("collection_rules.kind.comic", "Comic"),
+  }[kind] || kind;
+}
+
+function collectionRuleError(error) {
+  const key = `collection_rules.error.${String(error || "unknown")}`;
+  return t(key, String(error || t("common.error", "Error")));
+}
+
+function applyCollectionRuleResult(result) {
+  if (!result || !result.collectionPage || !result.collectionPageData) return;
+  State.pages[result.collectionPage] = result.collectionPageData;
+  if (State.currentPage === result.collectionPage) scheduleRenderPage();
+}
+
+function requestCollectionRuleDisableMode(onChoice, onCancel) {
+  const returnFocus = document.activeElement;
+  const layer = elem("div", "collection-rule-choice-layer");
+  const box = elem("div", "collection-rule-choice");
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-modal", "true");
+  box.setAttribute("aria-labelledby", "collectionRuleDisableTitle");
+  const title = elem("h3", null, t("collection_rules.disable_title", "Turn off collection rule"));
+  title.id = "collectionRuleDisableTitle";
+  box.appendChild(title);
+  box.appendChild(elem("p", "small-note", t("collection_rules.disable_help", "Choose how to handle members previously added by this rule.")));
+  const remove = elem("button", "danger-btn", t("collection_rules.disable_remove", "Remove automatic members"));
+  const convert = elem("button", "primary-btn", t("collection_rules.disable_convert", "Keep and convert to manual"));
+  const cancel = elem("button", "ghost-btn", t("common.cancel", "Cancel"));
+  const restore = () => { if (returnFocus && returnFocus.isConnected) returnFocus.focus(); };
+  const finish = (value) => { layer.remove(); onChoice(value); restore(); };
+  remove.addEventListener("click", () => finish("remove"));
+  convert.addEventListener("click", () => finish("convert"));
+  cancel.addEventListener("click", () => { layer.remove(); onCancel(); restore(); });
+  box.appendChild(remove); box.appendChild(convert); box.appendChild(cancel);
+  layer.appendChild(box);
+  document.body.appendChild(layer);
+  layer.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") { event.preventDefault(); layer.remove(); onCancel(); restore(); return; }
+    if (event.key === "Tab") {
+      const buttons = [remove, convert, cancel];
+      const index = Math.max(0, buttons.indexOf(document.activeElement));
+      if (event.shiftKey && index === 0) { event.preventDefault(); buttons[buttons.length - 1].focus(); }
+      else if (!event.shiftKey && index === buttons.length - 1) { event.preventDefault(); buttons[0].focus(); }
+    }
+  });
+  remove.focus();
+}
+
+function collectionRulePayload(draft, page) {
+  return {
+    enabled: Boolean(draft.enabled),
+    rule: {
+      version: 1,
+      matchMode: draft.matchMode,
+      conditions: draft.conditions.map((item) => ({
+        operator: item.operator,
+        value: item.value,
+        caseSensitive: Boolean(item.caseSensitive),
+      })),
+    },
+    disableMode: draft.disableMode || "",
+    page: Number(page || 1),
+    pageSize: 20,
+  };
+}
+
+function buildCollectionRuleEditor(host, detail, options) {
+  const config = options || {};
+  const sourceRule = detail.rule || { matchMode: "all", conditions: [] };
+  const draft = {
+    enabled: Boolean(detail.enabled),
+    originalEnabled: Boolean(detail.enabled),
+    matchMode: sourceRule.matchMode === "any" ? "any" : "all",
+    conditions: (sourceRule.conditions || []).map((item) => ({
+      operator: item.operator || "contains",
+      value: String(item.value || ""),
+      caseSensitive: Boolean(item.caseSensitive),
+    })),
+    disableMode: "",
+    previewToken: "",
+    preview: null,
+    page: 1,
+    busy: false,
+  };
+  const live = elem("div", "collection-rule-live");
+  live.setAttribute("aria-live", "polite");
+  const editor = elem("div", "collection-rule-editor");
+  const modalRoot = typeof host.closest === "function" ? host.closest(".modal") : null;
+  const titleRow = elem("div", "collection-rule-title-row");
+  const titleStack = elem("div");
+  titleStack.appendChild(elem("h3", null, detail.name || ""));
+  titleStack.appendChild(elem("div", "small-note", collectionRuleKindLabel(detail.kind)));
+  const enabledLabel = elem("label", "collection-rule-switch");
+  const enabled = elem("input"); enabled.type = "checkbox"; enabled.checked = draft.enabled;
+  enabledLabel.appendChild(enabled);
+  enabledLabel.appendChild(elem("span", null, t("collection_rules.enabled", "Enable rule")));
+  titleRow.appendChild(titleStack); titleRow.appendChild(enabledLabel);
+  editor.appendChild(titleRow);
+
+  const invalidation = () => {
+    draft.previewToken = "";
+    draft.preview = null;
+    draft.page = 1;
+    renderPreview();
+    syncActions();
+    live.textContent = t("collection_rules.preview_stale", "Changes made. Preview again before saving.");
+  };
+
+  const modeField = elem("div", "field collection-rule-mode");
+  modeField.appendChild(elem("label", null, t("collection_rules.match_mode", "Match")));
+  const mode = elem("select");
+  [["all", "collection_rules.match_all", "All conditions"], ["any", "collection_rules.match_any", "Any condition"]].forEach(([value, key, fallback]) => {
+    const option = elem("option", null, t(key, fallback)); option.value = value;
+    if (value === draft.matchMode) option.selected = true;
+    mode.appendChild(option);
+  });
+  mode.addEventListener("change", () => { draft.matchMode = mode.value; invalidation(); });
+  modeField.appendChild(mode); editor.appendChild(modeField);
+
+  const conditionSection = elem("section", "collection-rule-section");
+  const conditionHead = elem("div", "collection-rule-section-head");
+  conditionHead.appendChild(elem("h4", null, t("collection_rules.conditions", "Conditions")));
+  const addCondition = elem("button", "ghost-btn", t("collection_rules.add_condition", "Add condition"));
+  conditionHead.appendChild(addCondition); conditionSection.appendChild(conditionHead);
+  const conditionList = elem("div", "collection-rule-condition-list");
+  conditionSection.appendChild(conditionList); editor.appendChild(conditionSection);
+
+  const renderConditions = () => {
+    clear(conditionList);
+    if (!draft.conditions.length) conditionList.appendChild(elem("p", "small-note", t("collection_rules.no_conditions", "Add at least one condition to enable this rule.")));
+    draft.conditions.forEach((condition, index) => {
+      const row = elem("div", "collection-rule-condition");
+      const operator = elem("select");
+      COLLECTION_RULE_OPERATORS.forEach(([value, key, fallback]) => {
+        const option = elem("option", null, t(key, fallback)); option.value = value;
+        if (condition.operator === value) option.selected = true;
+        operator.appendChild(option);
+      });
+      operator.setAttribute("aria-label", t("collection_rules.operator_label", "Operator"));
+      operator.addEventListener("change", () => { condition.operator = operator.value; invalidation(); });
+      const value = elem("input"); value.value = condition.value;
+      value.placeholder = t("collection_rules.keyword", "Keyword");
+      value.setAttribute("aria-label", t("collection_rules.keyword", "Keyword"));
+      value.addEventListener("input", () => { condition.value = value.value; invalidation(); });
+      const caseLabel = elem("label", "collection-rule-case");
+      const caseInput = elem("input"); caseInput.type = "checkbox"; caseInput.checked = condition.caseSensitive;
+      caseInput.addEventListener("change", () => { condition.caseSensitive = caseInput.checked; invalidation(); });
+      caseLabel.appendChild(caseInput); caseLabel.appendChild(elem("span", null, t("collection_rules.case_sensitive", "Case sensitive")));
+      const remove = elem("button", "icon-btn", "×");
+      remove.setAttribute("aria-label", t("collection_rules.remove_condition", "Remove condition"));
+      remove.addEventListener("click", () => { draft.conditions.splice(index, 1); renderConditions(); invalidation(); });
+      row.appendChild(operator); row.appendChild(value); row.appendChild(caseLabel); row.appendChild(remove);
+      conditionList.appendChild(row);
+    });
+  };
+  addCondition.addEventListener("click", () => {
+    draft.conditions.push({ operator: "contains", value: "", caseSensitive: false });
+    renderConditions(); invalidation();
+    const inputs = conditionList.querySelectorAll('input[type="text"], input:not([type])');
+    if (inputs.length) inputs[inputs.length - 1].focus();
+  });
+
+  const exclusionSection = elem("section", "collection-rule-section");
+  exclusionSection.appendChild(elem("h4", null, fmt(t("collection_rules.exclusions", "Manual exclusions ({count})"), { count: Number(detail.excludedCount || 0) })));
+  const exclusions = elem("div", "collection-rule-exclusions"); exclusionSection.appendChild(exclusions);
+  const renderExclusions = () => {
+    clear(exclusions);
+    if (!(detail.exclusions || []).length) exclusions.appendChild(elem("p", "small-note", t("collection_rules.no_exclusions", "No manual exclusions.")));
+    (detail.exclusions || []).forEach((item) => {
+      const row = elem("div", "collection-rule-exclusion");
+      const label = elem("div"); label.appendChild(elem("strong", null, item.title || item.sourceName));
+      label.appendChild(elem("div", "small-note", item.sourceName || ""));
+      const clearBtn = elem("button", "ghost-btn", t("collection_rules.clear_exclusion", "Restore"));
+      clearBtn.addEventListener("click", () => {
+        clearBtn.disabled = true;
+        State.bridge.clearCollectionRuleExclusion(detail.id, item.resourceId, (json) => {
+          const result = safeParse(json);
+          if (!result || !result.ok) { clearBtn.disabled = false; live.textContent = collectionRuleError(result && result.error); return; }
+          Object.assign(detail, result.rule || {}); applyCollectionRuleResult(result);
+          if (config.onChanged) config.onChanged();
+          clear(host); buildCollectionRuleEditor(host, detail, config);
+        });
+      });
+      row.appendChild(label); row.appendChild(clearBtn); exclusions.appendChild(row);
+    });
+  };
+  editor.appendChild(exclusionSection);
+
+  const previewSection = elem("section", "collection-rule-section");
+  const previewHead = elem("div", "collection-rule-section-head");
+  previewHead.appendChild(elem("h4", null, t("collection_rules.preview", "Impact preview")));
+  const previewButton = elem("button", "ghost-btn", t("collection_rules.run_preview", "Preview"));
+  previewHead.appendChild(previewButton); previewSection.appendChild(previewHead);
+  const previewBody = elem("div", "collection-rule-preview"); previewSection.appendChild(previewBody); editor.appendChild(previewSection);
+
+  const previewLabels = [
+    ["matched", "matched", "collection_rules.preview.matched", "Matched"],
+    ["add", "add", "collection_rules.preview.add", "Add"],
+    ["remove", "remove", "collection_rules.preview.remove", "Remove"],
+    ["manual_kept", "manualKept", "collection_rules.preview.manual_kept", "Manual kept"],
+    ["excluded", "excluded", "collection_rules.preview.excluded", "Excluded"],
+  ];
+  const renderPreview = () => {
+    clear(previewBody);
+    if (!draft.preview) {
+      previewBody.appendChild(elem("p", "small-note", t("collection_rules.preview_empty", "Run a preview to review changes before saving.")));
+      return;
+    }
+    const stats = elem("div", "collection-rule-stats");
+    previewLabels.forEach(([summaryKey, , key, fallback]) => {
+      const card = elem("div", "collection-rule-stat");
+      card.appendChild(elem("strong", null, String(draft.preview.summary[summaryKey] || 0)));
+      card.appendChild(elem("span", null, t(key, fallback))); stats.appendChild(card);
+    });
+    previewBody.appendChild(stats);
+    const lists = elem("div", "collection-rule-preview-lists");
+    previewLabels.forEach(([, listKey, key, fallback]) => {
+      const pageData = draft.preview[listKey];
+      if (!pageData || !pageData.items || !pageData.items.length) return;
+      const block = elem("div", "collection-rule-preview-list");
+      block.appendChild(elem("h5", null, `${t(key, fallback)} (${pageData.total})`));
+      pageData.items.forEach((item) => block.appendChild(elem("div", "collection-rule-resource", item.sourceName || item.title || item.resourceId)));
+      lists.appendChild(block);
+    });
+    previewBody.appendChild(lists);
+    const total = Math.max(...previewLabels.map(([, listKey]) => Number(draft.preview[listKey] && draft.preview[listKey].total || 0)), 0);
+    if (total > 20) {
+      const pages = Math.ceil(total / 20); const nav = elem("div", "collection-rule-pages");
+      const prev = elem("button", "ghost-btn", t("comic.pagination.prev", "Prev"));
+      const next = elem("button", "ghost-btn", t("comic.pagination.next", "Next"));
+      prev.disabled = draft.page <= 1; next.disabled = draft.page >= pages;
+      prev.addEventListener("click", () => runPreview(draft.page - 1)); next.addEventListener("click", () => runPreview(draft.page + 1));
+      nav.appendChild(prev); nav.appendChild(elem("span", "small-note", `${draft.page}/${pages}`)); nav.appendChild(next); previewBody.appendChild(nav);
+    }
+  };
+
+  const actions = elem("div", "modal-actions collection-rule-actions");
+  const cancel = elem("button", "ghost-btn", t("common.cancel", "Cancel"));
+  if (!config.onCancel) cancel.classList.add("hidden");
+  else cancel.addEventListener("click", config.onCancel);
+  const save = elem("button", "primary-btn", t("common.save", "Save"));
+  actions.appendChild(cancel); actions.appendChild(save); editor.appendChild(actions); editor.appendChild(live);
+
+  const valid = () => !draft.enabled || draft.conditions.some((item) => String(item.value || "").trim());
+  const syncActions = () => {
+    previewButton.disabled = draft.busy || !valid() || (draft.originalEnabled && !draft.enabled && !draft.disableMode);
+    save.disabled = draft.busy || !draft.previewToken;
+    enabled.disabled = draft.busy;
+  };
+  const runPreview = (page) => {
+    if (!valid()) { live.textContent = t("collection_rules.error.conditions_required", "At least one non-empty condition is required."); return; }
+    draft.busy = true; draft.page = page || 1; syncActions();
+    const payload = collectionRulePayload(draft, draft.page);
+    State.bridge.previewCollectionRule(detail.id, JSON.stringify(payload), (json) => {
+      draft.busy = false;
+      const result = safeParse(json);
+      if (!result || !result.ok) { draft.previewToken = ""; live.textContent = collectionRuleError(result && result.error); syncActions(); return; }
+      draft.previewToken = result.previewToken; draft.preview = result.preview;
+      live.textContent = t("collection_rules.preview_ready", "Preview is ready. You can save this configuration.");
+      renderPreview(); syncActions();
+    });
+  };
+  previewButton.addEventListener("click", () => runPreview(1));
+  save.addEventListener("click", () => {
+    if (!draft.previewToken || draft.busy) return;
+    draft.busy = true;
+    const submitRoot = modalRoot || editor;
+    submitRoot.dataset.submitting = "true";
+    if (typeof submitRoot.querySelectorAll === "function") {
+      submitRoot.querySelectorAll("button, input, select, textarea").forEach((control) => { control.disabled = true; });
+    }
+    syncActions();
+    const payload = { ...collectionRulePayload(draft, draft.page), previewToken: draft.previewToken };
+    State.bridge.saveCollectionRule(detail.id, JSON.stringify(payload), (json) => {
+      draft.busy = false; delete submitRoot.dataset.submitting;
+      if (typeof submitRoot.querySelectorAll === "function") {
+        submitRoot.querySelectorAll("button, input, select, textarea").forEach((control) => { control.disabled = false; });
+      }
+      const result = safeParse(json);
+      if (!result || !result.ok) { live.textContent = collectionRuleError(result && result.error); syncActions(); return; }
+      applyCollectionRuleResult(result);
+      live.textContent = t("collection_rules.saved", "Collection rule saved.");
+      if (config.onSaved) config.onSaved(result);
+    });
+  });
+  enabled.addEventListener("change", () => {
+    if (draft.originalEnabled && !enabled.checked) {
+      requestCollectionRuleDisableMode((modeValue) => {
+        draft.enabled = false; draft.disableMode = modeValue; invalidation();
+      }, () => { enabled.checked = true; draft.enabled = true; draft.disableMode = ""; syncActions(); });
+      return;
+    }
+    draft.enabled = enabled.checked; draft.disableMode = ""; invalidation();
+  });
+
+  host.appendChild(editor);
+  renderConditions(); renderExclusions(); renderPreview(); syncActions();
+  return { draft, runPreview };
+}
+
+function openCollectionRuleModal(collectionId) {
+  State.bridge.getCollectionRule(Number(collectionId), (json) => {
+    const detail = safeParse(json);
+    if (!detail || detail.ok === false) { showToast(t("common.error", "Error"), collectionRuleError(detail && detail.error), "error"); return; }
+    openModal((modal, close) => {
+      modal.classList.add("collection-rule-modal");
+      modalHeader(modal, t("collection_rules.edit_title", "Edit collection rule"), close);
+      const mount = elem("div", "collection-rule-modal-body"); modal.appendChild(mount);
+      buildCollectionRuleEditor(mount, detail, {
+        onCancel: close,
+        onChanged: () => { State.collectionRules.summaries = []; },
+        onSaved: () => {
+          State.collectionRules.summaries = [];
+          close(); showToast(t("collection_rules.saved", "Collection rule saved."), detail.name, "success");
+        },
+      });
+    });
+  });
+}
+
+function renderSettingsCollectionRules(panel) {
+  const state = State.collectionRules;
+  const card = settingCard(t("settings.nav.collection_rules", "Collection Rules"));
+  card.classList.add("collection-rule-settings-card"); panel.appendChild(card);
+  if (!state.summaries.length && !state.loading) {
+    state.loading = true;
+    State.bridge.getCollectionRules((json) => {
+      state.loading = false; state.summaries = safeParse(json) || [];
+      if (!state.selectedId && state.summaries.length) state.selectedId = Number(state.summaries[0].id);
+      if (State.currentPage === "settings" && State._settingsSection === "collection_rules") renderSettings();
+    });
+  }
+  if (state.loading) { card.appendChild(elem("p", "small-note", t("common.loading", "Loading…"))); return; }
+  const layout = elem("div", "collection-rule-manager");
+  const listPanel = elem("aside", "collection-rule-list-panel");
+  const search = elem("input"); search.type = "search"; search.value = state.query;
+  search.placeholder = t("collection_rules.search", "Search collections…");
+  search.setAttribute("aria-label", t("collection_rules.search", "Search collections…"));
+  listPanel.appendChild(search);
+  const list = elem("div", "collection-rule-groups"); listPanel.appendChild(list);
+  const editorPanel = elem("div", "collection-rule-settings-editor");
+  const drawList = () => {
+    clear(list); const query = state.query.trim().toLocaleLowerCase();
+    ["book", "text_novel", "comic"].forEach((kind) => {
+      const items = state.summaries.filter((item) => item.kind === kind && (!query || String(item.name || "").toLocaleLowerCase().includes(query)));
+      if (!items.length) return;
+      const group = elem("section", "collection-rule-group");
+      group.appendChild(elem("h4", null, collectionRuleKindLabel(kind)));
+      items.forEach((item) => {
+        const btn = elem("button", Number(item.id) === Number(state.selectedId) ? "collection-rule-list-item active" : "collection-rule-list-item");
+        const text = elem("span"); text.appendChild(elem("strong", null, item.name));
+        text.appendChild(elem("small", null, fmt(t("collection_rules.list_meta", "Auto {auto} · Excluded {excluded}"), { auto: item.autoMemberCount || 0, excluded: item.excludedCount || 0 })));
+        btn.appendChild(text); btn.appendChild(elem("span", item.enabled ? "status-on" : "status-off", item.enabled ? t("collection_rules.on", "On") : t("collection_rules.off", "Off")));
+        btn.addEventListener("click", () => { state.selectedId = Number(item.id); renderSettingsCollectionRulesEditor(editorPanel, state.selectedId); drawList(); });
+        group.appendChild(btn);
+      }); list.appendChild(group);
+    });
+    if (!list.children.length) list.appendChild(elem("p", "small-note", t("collection_rules.search_empty", "No matching collections.")));
+  };
+  search.addEventListener("input", () => { state.query = search.value; drawList(); });
+  layout.appendChild(listPanel); layout.appendChild(editorPanel); card.appendChild(layout); drawList();
+  if (state.selectedId) renderSettingsCollectionRulesEditor(editorPanel, state.selectedId);
+}
+
+function renderSettingsCollectionRulesEditor(panel, collectionId) {
+  clear(panel); panel.appendChild(elem("p", "small-note", t("common.loading", "Loading…")));
+  State.bridge.getCollectionRule(Number(collectionId), (json) => {
+    if (Number(State.collectionRules.selectedId) !== Number(collectionId)) return;
+    const detail = safeParse(json); clear(panel);
+    if (!detail || detail.ok === false) { panel.appendChild(elem("p", "small-note", collectionRuleError(detail && detail.error))); return; }
+    buildCollectionRuleEditor(panel, detail, {
+      onChanged: () => { State.collectionRules.summaries = []; },
+      onSaved: () => { State.collectionRules.summaries = []; renderSettings(); },
+    });
+  });
 }
 
 function selectField(labelKey, key, options, current) {
@@ -3733,6 +4199,17 @@ function formatScanSummary(report) {
     workers: report.comic_thumbnail_workers_used || "—",
     downscaled,
   });
+  if (report.collection_rules) {
+    const rules = report.collection_rules;
+    text += fmt(t("settings.collection_rules.scan_summary", "\nCollection Rules - status:{status} collections:{collections} matched:{matched} added:{added} removed:{removed} excluded:{excluded}"), {
+      status: rules.status || "—",
+      collections: rules.collectionsEvaluated || 0,
+      matched: rules.matched || 0,
+      added: rules.added || 0,
+      removed: rules.removed || 0,
+      excluded: rules.excluded || 0,
+    });
+  }
   return text;
 }
 

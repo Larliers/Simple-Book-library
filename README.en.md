@@ -45,7 +45,7 @@ _Captured from the real Qt WebEngine interface with anonymous demo records and p
 | Status | Included capabilities |
 |--------|-----------------------|
 | **Stable v2.4.0** | Three resource scanners and collection types, covers and thumbnails, search, TXT import rules, random recommendations, configurable shortcuts, Text Novel grid/list sorting, and Glass/Vaporwave skins |
-| **Current main** | Adds a standalone tag manager, in-place Quick Add for all three resource types, persistent Library/book-collection sorting, multi-selection and batch collection actions, Library image-folder books, plus later fixes |
+| **Current main** | Adds a standalone tag manager, in-place Quick Add for all three resource types, persistent Library/book-collection sorting, multi-selection and batch collection actions, Library image-folder books, automatic collection rules, plus later fixes |
 
 The Releases page contains the stable build. Features listed under main remain source-only until a later Release completes validation; choose the stable package if you simply want to use the app.
 
@@ -75,6 +75,12 @@ The Releases page contains the stable build. Features listed under main remain s
 - Edit TXT rule chains and preview extracted metadata under **Settings → Paths & Scan → Rules**.
 - If you use download automation, browser extensions, or Tampermonkey/Greasemonkey userscripts to collect TXT books from websites, Rules can turn filename or body text into titles, authors, and tags after import.
 - That saves you from tagging every file by hand. Rules classify local files; they do not download content.
+
+### Automatic collection rules (current main only)
+
+- Each Book, Text Novel, or Comic collection can independently match source filenames or folder names with contains, excludes, starts-with, ends-with, and exact conditions. One resource may enter every matching collection.
+- Open **Edit collection rule…** from a collection card's context menu, or manage all rules under **Settings → Collection Rules**. A required preview shows additions, removals, manual keeps, and exclusions before saving.
+- These rules organize resources already imported into the local library. They neither browse nor download content, and are not included in stable v2.4.0 yet.
 
 ## Local data and privacy
 

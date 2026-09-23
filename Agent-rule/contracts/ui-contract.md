@@ -197,6 +197,15 @@ settings payload 必须提供完整的 `shortcutBindings`，八个固定动作�
 - 校验与 SQLite 写入失败均返回 `{ok:false,error:string}`，不得部分写入；弹窗保持打开并恢复可操作状态。提交期间关闭、遮罩、标签与合集操作全部锁定。
 - 旧 `setCollectionMembership` 保留兼容，但不得广播全量页面刷新。
 
+## Collection Rules Extension
+
+- `getCollectionRules()` 返回书籍、Text Novel、Comic 合集摘要；`getCollectionRule(id)` 返回单合集规则、自动成员数与排除项。
+- `previewCollectionRule(id,payloadJson)` 只读校验并返回分页影响列表与 `previewToken`；任一编辑必须丢弃旧 token。
+- `saveCollectionRule(id,payloadJson)` 仅接受与当前配置一致的 token，原子保存规则及成员来源，返回 `collectionPage` / `collectionPageData` 定向缓存；不得广播全量 `resourcesChanged`。
+- `clearCollectionRuleExclusion(id,resourceId)` 取消单项排除并立即重判，返回最新规则和定向合集页。
+- 影响预览固定展示 matched/add/remove/manual_kept/excluded；启用至少一条非空条件；关闭原启用规则必须提供 `disableMode=remove|convert`。
+- 合集卡片右键顺序为打开、编辑集合规则、重命名、删除；Settings 左栏按 kind 分组并搜索，右栏与模态复用编辑器。两套皮肤共享结构，740px 降为单栏，600px 条件行继续降级且无横向溢出。
+
 ## Batch Quick Add Extension
 
 `applyBatchQuickAdd(payloadJson)` 用于把多类资源原子添加到各自类型的多个合集和多个 Tag。资源必须携带真实 `sourcePage`：

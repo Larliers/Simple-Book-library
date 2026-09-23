@@ -795,3 +795,21 @@
 ### 验证结果
 - 英文新增说明的每个段落均不超过 240 个字符。
 - `git diff --check` 通过。
+
+---
+
+## 2026-09-23 - 三类合集的集合规则自动归档
+
+### 任务
+把已批准的集合规则原型实现为 Book、Text Novel、Comic 共用的正式功能，并保持旧库、手动合集成员和扫描结果兼容。
+
+### 实现内容
+- 新增独立 `collection_rules.py`，按来源原名执行 all/any、五种字符串操作符和逐条件大小写。
+- SQLite 自动迁移合集规则字段、成员 manual/rule 双来源与 Book/Comic 排除表；预览、保存、关闭转换、排除恢复和扫描重算均保持事务边界。
+- `ScanWorker` 在报告写入前按 scope 重算；规则失败只回滚该轮成员变化，保留已完成扫描并写 warning/错误日志。
+- Bridge 新增五个稳定接口与预览 token；前端实现合集右键模态、Settings 双栏共享编辑器、关闭选择、分页预览、排除管理、焦点恢复和定向页面回写。
+- Glass/Vaporwave 共用结构并分别补视觉层；740px/600px 分级降栏。同步双语 README、UI 参考、角色/合同、模块注册表与结构说明。
+
+### 验证结果
+- 实施中完整 Python/Node 门禁：329 tests passed。
+- 真实 Qt WebEngine、多宽度双皮肤门禁和最终审查结果见当日 history/evidence。

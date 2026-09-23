@@ -6,6 +6,37 @@
 ```
 
 ```json
+{
+  "decision_id": "decision-20260923-001",
+  "timestamp": "2026-09-23T12:00:00+08:00",
+  "owner": "parser-agent + indexer-agent + ui-agent",
+  "title": "集合规则使用独立匹配器、双来源成员和持久排除",
+  "context": "三类资源的来源命名规范不同，需要自动进入所有命中合集，同时不能破坏既有手动成员或让手动移除在下一次扫描立即失效",
+  "options": [
+    "复用 Text Rules 元数据提取引擎",
+    "仅保存规则，不记录成员来源",
+    "独立匹配器 + manual/rule 双来源 + 同类型排除表"
+  ],
+  "decision": "采用独立 collection_rules 模块；成员关系记录 manual_source/rule_source，排除在持续命中期间生效",
+  "rationale": [
+    "集合规则只做布尔匹配，与 Text Rules 的字段提取职责不同",
+    "双来源允许规则失配时只撤销自动来源并保留手动成员",
+    "排除表表达用户明确意图，失配时自动清除以允许未来重新命中",
+    "预览 token 保证保存的正是用户刚检查过的配置"
+  ],
+  "impact": [
+    "旧库自动迁移，既有成员全部视为手动，规则默认关闭",
+    "保存配置、成员变化和排除变化在同一 SQLite 事务",
+    "扫描后按 scope 重算，失败不回滚资源扫描",
+    "UI 只定向回写合集页，不重绘资源主页"
+  ],
+  "followups": [
+    "在后续 Release 前继续观察大型书库全规则重算耗时"
+  ]
+}
+```
+
+```json
 {"decision_id":"decision-20260920-002","timestamp":"2026-09-20T15:20:05+08:00","owner":"maintenance-agent + ui-agent","title":"README 采用稳定版/main 双口径与匿名真实运行截图","context":"稳定版下载能力、main 源码进展和公开截图隐私需要同时准确表达","options":["仅改 README","新增 documentation agent/contract","在 shared-rules 增加最小文档规则"],"decision":"选择最小规则补丁；README 分开稳定版与 main，主图使用真实 Qt WebEngine 和隔离匿名数据","rationale":["避免向下载用户承诺未发布能力","保留 main 进展透明度","真实匿名截图兼顾可信度、隐私和版权边界"],"impact":["规则版本升至 v0.1.1","双语 README 保持事实与版本标记同步","业务接口和 registry 不变"],"followups":["下一次 Release 后同步版本口径和截图"]}
 ```
 

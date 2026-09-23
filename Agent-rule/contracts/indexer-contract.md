@@ -12,6 +12,7 @@ scan_roots / comic_roots / text_roots
             → scan_comic_roots  # 叶子图片文件夹 + CBZ；folder/file snapshot 跳过；同 comic_root 标题冲突按策略
             → scan_text_roots   # TXT + 规则链 + 同名封面；文本/封面指纹共同决定跳过
         → SQLite upsert / 失踪则删除
+        → 对本次 scope 的已启用集合规则做一次原子重算
         → scan_report.json + Scan_error_logs
 ```
 
@@ -70,6 +71,7 @@ scan_roots / comic_roots / text_roots
 - 同名同扩展冲突（书籍/TXT）写入 `name_conflicts` 与错误日志。
 - Text 同名封面损坏时继续入库 TXT，在 `warnings` 写入 `text_cover_generation_failed` 并返回无封面状态。
 - 漫画同 `comic_root` 同标题冲突按 `comic_title_conflict_policy` 分支，并写入 `name_conflicts` / 错误日志（跨根目录允许同名）。
+- 集合规则在资源扫描完成、扫描报告写入前执行；成功统计写入 `collection_rules` 摘要。规则重算失败不撤销已完成扫描，但该轮规则成员变更整体回滚，并追加 `collection_rules_failed` warning 与错误日志。
 
 ## Error Shape (implementation)
 ```json

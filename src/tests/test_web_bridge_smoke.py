@@ -1228,6 +1228,55 @@ class WebBridgeSmokeTests(unittest.TestCase):
         self.assertEqual(events, [])
 
 
+    def test_collection_rule_bridge_requires_current_preview_and_returns_targeted_page(self) -> None:
+        bridge = self._make_bridge()
+        bridge._repo.upsert_book(
+            {
+                "resource_id": "rule-book",
+                "path": r"C:\library\Python Bridge.pdf",
+                "title": "Display title",
+                "file_name": "Python Bridge.pdf",
+                "extension": ".pdf",
+                "resource_type": "book",
+                "tags_json": "[]",
+            }
+        )
+        collection_id = bridge._repo.create_collection("Python", kind="book")
+        rule_payload = {
+            "enabled": True,
+            "rule": {
+                "version": 1,
+                "matchMode": "all",
+                "conditions": [{"operator": "contains", "value": "Python", "caseSensitive": False}],
+            },
+            "page": 1,
+            "pageSize": 25,
+        }
+
+        summaries = json.loads(bridge.getCollectionRules())
+        detail = json.loads(bridge.getCollectionRule(collection_id))
+        without_preview = json.loads(bridge.saveCollectionRule(collection_id, json.dumps(rule_payload)))
+        preview = json.loads(bridge.previewCollectionRule(collection_id, json.dumps(rule_payload)))
+
+        self.assertEqual(summaries[0]["id"], collection_id)
+        self.assertFalse(detail["enabled"])
+        self.assertEqual(without_preview["error"], "preview_required")
+        self.assertEqual(preview["preview"]["summary"]["matched"], 1)
+        self.assertEqual(preview["preview"]["matched"]["total"], 1)
+
+        changed = dict(rule_payload)
+        changed["rule"] = {**rule_payload["rule"], "matchMode": "any"}
+        changed["previewToken"] = preview["previewToken"]
+        stale = json.loads(bridge.saveCollectionRule(collection_id, json.dumps(changed)))
+        self.assertEqual(stale["error"], "stale_preview")
+
+        rule_payload["previewToken"] = preview["previewToken"]
+        saved = json.loads(bridge.saveCollectionRule(collection_id, json.dumps(rule_payload)))
+        self.assertTrue(saved["ok"])
+        self.assertEqual(saved["collectionPage"], PAGE_COLLECTIONS)
+        self.assertEqual(saved["collectionPageData"]["items"][0]["collectionId"], collection_id)
+
+
 class SettingsUiStructureTests(unittest.TestCase):
     def test_image_folder_book_reuses_the_top_left_format_badge(self) -> None:
         app_js = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
@@ -1455,6 +1504,20 @@ class SettingsUiStructureTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("MULTI_SELECT_BEHAVIOR_OK", completed.stdout)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is not available")
+    def test_collection_rules_frontend_behavior(self) -> None:
+        script = PROJECT_ROOT / "src" / "tests" / "js" / "test_collection_rules.js"
+        app_js = PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js"
+        completed = subprocess.run(
+            [shutil.which("node") or "node", str(script), str(app_js)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("COLLECTION_RULES_BEHAVIOR_OK", completed.stdout)
 
     def test_batch_quick_add_strings_and_both_skins_are_wired(self) -> None:
         strings = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web_bridge.py").read_text(encoding="utf-8")
