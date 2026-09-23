@@ -1,6 +1,6 @@
 # Simple Book Library：Windows 本地电子书与漫画管理器
 
-**v2.4.0** · **Windows 10 / 11** · **MIT License** · [English](README.en.md)
+**v2.5.0** · **Windows 10 / 11** · **MIT License** · [English](README.en.md)
 
 Simple Book Library（简易图书馆）是一款离线运行的个人藏书管理软件。它把本机的 PDF、EPUB、文档、CBZ 漫画、漫画图片文件夹和 TXT 小说整理进同一个本地图书馆，并保留你习惯的系统阅读器。
 

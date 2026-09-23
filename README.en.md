@@ -1,6 +1,6 @@
 # Simple Book Library — Local Ebook & Comic Manager for Windows
 
-**v2.4.0** · **Windows 10 / 11** · **MIT License** · [中文](README.md)
+**v2.5.0** · **Windows 10 / 11** · **MIT License** · [中文](README.md)
 
 Simple Book Library is an offline personal library organizer for PDFs, EPUBs, documents, CBZ comics, comic image folders, and TXT novels.
 
