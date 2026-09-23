@@ -2584,6 +2584,8 @@ class LibraryRepository:
             row = conn.execute("SELECT * FROM collections WHERE id = ?", (int(collection_id),)).fetchone()
             if not row:
                 raise ValueError("collection_not_found")
+            if bool(row["rule_enabled"]) and not enabled and not normalized_disable_mode:
+                raise ValueError("disable_mode_required")
             preview = self._collection_rule_preview_in_connection(
                 conn,
                 collection=dict(row),
@@ -2665,11 +2667,7 @@ class LibraryRepository:
             collection = dict(row)
             kind = normalize_collection_kind(collection.get("kind"))
             _resource_table, link_table, resource_column, exclusion_table = self._collection_rule_storage(kind)
-            has_rule_members = conn.execute(
-                f"SELECT 1 FROM {link_table} WHERE collection_id = ? AND rule_source = 1 LIMIT 1",  # noqa: S608
-                (int(collection_id),),
-            ).fetchone()
-            if bool(collection.get("rule_enabled")) and not enabled and has_rule_members and not normalized_disable_mode:
+            if bool(collection.get("rule_enabled")) and not enabled and not normalized_disable_mode:
                 raise ValueError("disable_mode_required")
             now = now_utc_iso()
             if not enabled:

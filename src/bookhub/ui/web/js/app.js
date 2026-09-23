@@ -41,7 +41,7 @@ const State = {
   shortcutCaptureAction: "",
   _scanRunning: false,
   _taskKind: "scan",
-  collectionRules: { summaries: [], selectedId: 0, query: "", loading: false },
+  collectionRules: { summaries: [], selectedId: 0, query: "", loading: false, loaded: false },
   contextMenuTrigger: null,
   modalReturnFocus: null,
 };
@@ -2227,7 +2227,12 @@ function positionContextMenu(event) {
 function menuAction(label, fn, danger) {
   const btn = elem("button", danger ? "danger-btn" : null, label);
   btn.setAttribute("role", "menuitem");
-  btn.addEventListener("click", () => { hideContextMenu(); fn(); });
+  btn.addEventListener("click", () => {
+    const returnFocus = State.contextMenuTrigger;
+    hideContextMenu();
+    if (returnFocus && returnFocus.isConnected) returnFocus.focus();
+    fn();
+  });
   $("contextMenu").appendChild(btn);
   return btn;
 }
@@ -2249,6 +2254,7 @@ function openCollectionCardMenu(event, item, openCol) {
 
 function openContextMenu(event, page, item, isCollectionDetail) {
   const menu = $("contextMenu");
+  State.contextMenuTrigger = event.currentTarget || document.activeElement;
   clear(menu);
   const ref = { sourcePage: tagSourcePage(page), id: String(item.id) };
   const selectionKey = resourceSelectionKey(ref);
@@ -3226,11 +3232,13 @@ function collectionRulePayload(draft, page) {
     rule: {
       version: 1,
       matchMode: draft.matchMode,
-      conditions: draft.conditions.map((item) => ({
-        operator: item.operator,
-        value: item.value,
-        caseSensitive: Boolean(item.caseSensitive),
-      })),
+      conditions: draft.conditions
+        .filter((item) => String(item.value || "").trim())
+        .map((item) => ({
+          operator: item.operator,
+          value: item.value,
+          caseSensitive: Boolean(item.caseSensitive),
+        })),
     },
     disableMode: draft.disableMode || "",
     page: Number(page || 1),
@@ -3425,10 +3433,17 @@ function buildCollectionRuleEditor(host, detail, options) {
     if (!valid()) { live.textContent = t("collection_rules.error.conditions_required", "At least one non-empty condition is required."); return; }
     draft.busy = true; draft.page = page || 1; syncActions();
     const payload = collectionRulePayload(draft, draft.page);
+    const requestKey = JSON.stringify(payload);
     State.bridge.previewCollectionRule(detail.id, JSON.stringify(payload), (json) => {
       draft.busy = false;
       const result = safeParse(json);
       if (!result || !result.ok) { draft.previewToken = ""; live.textContent = collectionRuleError(result && result.error); syncActions(); return; }
+      if (JSON.stringify(collectionRulePayload(draft, draft.page)) !== requestKey) {
+        draft.previewToken = "";
+        live.textContent = t("collection_rules.preview_stale", "Changes made. Preview again before saving.");
+        syncActions();
+        return;
+      }
       draft.previewToken = result.previewToken; draft.preview = result.preview;
       live.textContent = t("collection_rules.preview_ready", "Preview is ready. You can save this configuration.");
       renderPreview(); syncActions();
@@ -3482,9 +3497,9 @@ function openCollectionRuleModal(collectionId) {
       const mount = elem("div", "collection-rule-modal-body"); modal.appendChild(mount);
       buildCollectionRuleEditor(mount, detail, {
         onCancel: close,
-        onChanged: () => { State.collectionRules.summaries = []; },
+        onChanged: () => { State.collectionRules.summaries = []; State.collectionRules.loaded = false; },
         onSaved: () => {
-          State.collectionRules.summaries = [];
+          State.collectionRules.summaries = []; State.collectionRules.loaded = false;
           close(); showToast(t("collection_rules.saved", "Collection rule saved."), detail.name, "success");
         },
       });
@@ -3496,10 +3511,10 @@ function renderSettingsCollectionRules(panel) {
   const state = State.collectionRules;
   const card = settingCard(t("settings.nav.collection_rules", "Collection Rules"));
   card.classList.add("collection-rule-settings-card"); panel.appendChild(card);
-  if (!state.summaries.length && !state.loading) {
+  if (!state.loaded && !state.loading) {
     state.loading = true;
     State.bridge.getCollectionRules((json) => {
-      state.loading = false; state.summaries = safeParse(json) || [];
+      state.loading = false; state.loaded = true; state.summaries = safeParse(json) || [];
       if (!state.selectedId && state.summaries.length) state.selectedId = Number(state.summaries[0].id);
       if (State.currentPage === "settings" && State._settingsSection === "collection_rules") renderSettings();
     });
@@ -3543,8 +3558,8 @@ function renderSettingsCollectionRulesEditor(panel, collectionId) {
     const detail = safeParse(json); clear(panel);
     if (!detail || detail.ok === false) { panel.appendChild(elem("p", "small-note", collectionRuleError(detail && detail.error))); return; }
     buildCollectionRuleEditor(panel, detail, {
-      onChanged: () => { State.collectionRules.summaries = []; },
-      onSaved: () => { State.collectionRules.summaries = []; renderSettings(); },
+      onChanged: () => { State.collectionRules.summaries = []; State.collectionRules.loaded = false; },
+      onSaved: () => { State.collectionRules.summaries = []; State.collectionRules.loaded = false; renderSettings(); },
     });
   });
 }

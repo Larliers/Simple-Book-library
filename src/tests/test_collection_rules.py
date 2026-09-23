@@ -277,6 +277,20 @@ class CollectionRuleRepositoryTests(unittest.TestCase):
             ).fetchone()
         self.assertEqual(dict(link), {"manual_source": 1, "rule_source": 0})
 
+        zero_collection = repo.create_collection("No automatic members", kind=COLLECTION_KIND_BOOK)
+        zero_rule = {
+            "version": 1,
+            "matchMode": "all",
+            "conditions": [{"operator": "contains", "value": "Never matches", "caseSensitive": False}],
+        }
+        repo.save_collection_rule(zero_collection, enabled=True, rule=zero_rule)
+        self.assertEqual(repo.get_collection_rule(zero_collection)["autoMemberCount"], 0)
+        with self.assertRaisesRegex(ValueError, "disable_mode_required"):
+            repo.preview_collection_rule(zero_collection, enabled=False, rule=zero_rule)
+        with self.assertRaisesRegex(ValueError, "disable_mode_required"):
+            repo.save_collection_rule(zero_collection, enabled=False, rule=zero_rule)
+        repo.save_collection_rule(zero_collection, enabled=False, rule=zero_rule, disable_mode="remove")
+
     def test_rules_are_kind_isolated_and_resource_can_match_multiple_collections(self) -> None:
         repo = self._repo()
         book_id = self._book(repo, "Shared Keyword.pdf")

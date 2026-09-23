@@ -813,3 +813,4 @@
 ### 验证结果
 - 实施中完整 Python/Node 门禁：329 tests passed。
 - 真实 Qt WebEngine、多宽度双皮肤门禁和最终审查结果见当日 history/evidence。
+- Standards/Spec 双轴审查发现并修复：空合集重复加载、空白草稿条件前后端不一致、右键模态焦点返回隐藏菜单项，以及零自动成员规则绕过关闭方式；均补入回归测试。

@@ -85,21 +85,22 @@ let previewPayload = null;
 let savePayload = null;
 let clearedResource = null;
 let controlsLockedDuringSave = false;
+const previewResponse = JSON.stringify({
+  ok: true,
+  previewToken: "preview-1",
+  preview: {
+    summary: { matched: 1, add: 1, remove: 0, manual_kept: 0, excluded: 0 },
+    matched: { total: 1, page: 1, pageSize: 20, items: [{ sourceName: "Alpha" }] },
+    add: { total: 1, page: 1, pageSize: 20, items: [{ sourceName: "Alpha" }] },
+    remove: { total: 0, page: 1, pageSize: 20, items: [] },
+    manualKept: { total: 0, page: 1, pageSize: 20, items: [] },
+    excluded: { total: 0, page: 1, pageSize: 20, items: [] },
+  },
+});
 State.bridge = {
   previewCollectionRule(id, json, callback) {
     previewPayload = JSON.parse(json);
-    callback(JSON.stringify({
-      ok: true,
-      previewToken: "preview-1",
-      preview: {
-        summary: { matched: 1, add: 1, remove: 0, manual_kept: 0, excluded: 0 },
-        matched: { total: 1, page: 1, pageSize: 20, items: [{ sourceName: "Alpha" }] },
-        add: { total: 1, page: 1, pageSize: 20, items: [{ sourceName: "Alpha" }] },
-        remove: { total: 0, page: 1, pageSize: 20, items: [] },
-        manualKept: { total: 0, page: 1, pageSize: 20, items: [] },
-        excluded: { total: 0, page: 1, pageSize: 20, items: [] },
-      },
-    }));
+    callback(previewResponse);
   },
   saveCollectionRule(id, json, callback) {
     savePayload = JSON.parse(json);
@@ -127,8 +128,11 @@ const byText = (text) => buttons().find((node) => node.textContent === text);
 const preview = byText("Preview");
 const save = byText("Save");
 assert.strictEqual(save.disabled, true, "saving must be locked until preview");
+byText("Add condition").dispatch("click");
+assert.strictEqual(controller.draft.conditions.length, 2);
 preview.dispatch("click");
 assert.strictEqual(previewPayload.rule.conditions[0].value, "Alpha");
+assert.strictEqual(previewPayload.rule.conditions.length, 1, "blank draft rows must be omitted from the saved rule payload");
 assert.strictEqual(save.disabled, false, "current preview must unlock save");
 const keyword = walk(host, (node) => node.tagName === "INPUT" && node.value === "Alpha")[0];
 keyword.value = "Beta";
@@ -141,6 +145,14 @@ assert.strictEqual(savePayload.rule.conditions[0].value, "Beta");
 assert.strictEqual(controlsLockedDuringSave, true, "all editor controls must lock during submit");
 assert.strictEqual(save.disabled, false, "failed save must unlock the editor for retry");
 
+let delayedPreview = null;
+State.bridge.previewCollectionRule = (id, json, callback) => { delayedPreview = callback; };
+keyword.value = "Gamma"; keyword.dispatch("input");
+preview.dispatch("click");
+keyword.value = "Delta"; keyword.dispatch("input");
+delayedPreview(previewResponse);
+assert.strictEqual(save.disabled, true, "a late preview for an edited draft must stay invalid");
+
 const enabled = walk(host, (node) => node.tagName === "INPUT" && node.attributes.type !== "search")[0];
 enabled.checked = false;
 enabled.dispatch("change");
@@ -152,6 +164,29 @@ assert.strictEqual(controller.draft.disableMode, "remove");
 const restore = byText("Restore");
 restore.dispatch("click");
 assert.strictEqual(clearedResource, "book-9");
+
+const triggerCard = document.createElement("article");
+let focusRestoredBeforeAction = false;
+State.contextMenuTrigger = triggerCard;
+const focusAction = menuAction("Focus test", () => { focusRestoredBeforeAction = document.activeElement === triggerCard; });
+focusAction.focus();
+focusAction.dispatch("click");
+assert.strictEqual(focusRestoredBeforeAction, true, "context actions must restore the trigger before opening a modal");
+
+let collectionRuleListRequests = 0;
+let settingsRenders = 0;
+const originalRenderSettings = renderSettings;
+renderSettings = () => { settingsRenders += 1; };
+State.collectionRules = { summaries: [], selectedId: 0, query: "", loading: false, loaded: false };
+State.currentPage = "settings";
+State._settingsSection = "collection_rules";
+State.bridge.getCollectionRules = (callback) => { collectionRuleListRequests += 1; callback("[]"); };
+renderSettingsCollectionRules(document.createElement("div"));
+renderSettingsCollectionRules(document.createElement("div"));
+assert.strictEqual(collectionRuleListRequests, 1, "an empty collection list must be treated as loaded");
+assert.strictEqual(State.collectionRules.loaded, true);
+assert.strictEqual(settingsRenders, 1);
+renderSettings = originalRenderSettings;
 console.log("COLLECTION_RULES_BEHAVIOR_OK");
 `;
 
