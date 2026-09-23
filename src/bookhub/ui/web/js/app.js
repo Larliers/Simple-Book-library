@@ -15,6 +15,8 @@ const State = {
   theme: { mode: "auto", autoEnabled: true, nightStart: "22:00", dayResume: "07:00", checkFrequency: 5, transitionMinutes: 3 },
   themeTimer: null,
   uiSkin: "glass",
+  uiSkinPending: "",
+  uiSkinSwapId: 0,
   renderGen: 0,
   renderTimer: null,
   scrollPos: {},
@@ -465,12 +467,10 @@ function saveSearchQueryForPage(page, query) {
 
 const SKIN_STYLESHEETS = {
   glass: [
-    "app://app/css/base.css",
     "app://app/css/skins/glass/tokens.css",
     "app://app/css/skins/glass/components.css",
   ],
   vaporwave: [
-    "app://app/css/base.css",
     "app://app/css/skins/vaporwave/fonts.css",
     "app://app/css/skins/vaporwave/tokens.css",
     "app://app/css/skins/vaporwave/background.css",
@@ -544,31 +544,7 @@ function wireSignals() {
   b.toast.connect((json) => { const d = safeParse(json); if (d) showToast(d.title, d.message, d.kind); });
   b.scanProgress.connect((json) => { const d = safeParse(json); if (d) updateScanProgress(d); });
   b.scanState.connect((json) => { const d = safeParse(json); if (d) updateScanState(d); });
-  b.settingsChanged.connect((json) => {
-    const d = safeParse(json);
-    if (!d) return;
-    const previousItemCount = getRecommendationItemsPerCategory(State.settings);
-    const previousColumnCount = getRecommendationColumnsPerCategory(State.settings);
-    const previousTagScopes = JSON.stringify((State.settings || {}).tagManagerScopes || {});
-    State.settings = d;
-    const itemCountChanged = previousItemCount !== getRecommendationItemsPerCategory(d);
-    const columnCountChanged = previousColumnCount !== getRecommendationColumnsPerCategory(d);
-    if (itemCountChanged) {
-      invalidateRandomRecommendations();
-      if (State.currentPage === RANDOM_RECOMMENDATIONS_PAGE) {
-        renderDetailEmpty();
-        loadRandomRecommendations();
-      }
-    }
-    else if (columnCountChanged && State.currentPage === RANDOM_RECOMMENDATIONS_PAGE) scheduleRenderPage();
-    if (previousTagScopes !== JSON.stringify(d.tagManagerScopes || {})) {
-      invalidateTagManager(true);
-      if (State.currentPage === TAG_MANAGER_PAGE) loadCurrentTagPage();
-    }
-    if (d.theme) applyThemeConfig(d.theme);
-    if (d.uiSkin) State.uiSkin = normalizeUiSkin(d.uiSkin);
-    if (State.currentPage === "settings") renderSettings();
-  });
+  b.settingsChanged.connect(handleSettingsChanged);
   b.errorLogsChanged.connect((text) => { const box = document.getElementById("errorLogBox"); if (box) box.textContent = text; });
   if (b.updateCheckResult && b.updateCheckResult.connect) {
     b.updateCheckResult.connect((json) => {
@@ -599,8 +575,48 @@ function wireSignals() {
 
 function safeParse(json) { try { return JSON.parse(json); } catch (e) { return null; } }
 
+async function handleSettingsChanged(json) {
+  const d = safeParse(json);
+  if (!d) return;
+  const previousSettings = State.settings || {};
+  const previousItemCount = getRecommendationItemsPerCategory(previousSettings);
+  const previousColumnCount = getRecommendationColumnsPerCategory(previousSettings);
+  const previousTagScopes = JSON.stringify(previousSettings.tagManagerScopes || {});
+  const previousWithoutSkin = Object.assign({}, previousSettings);
+  const nextWithoutSkin = Object.assign({}, d);
+  delete previousWithoutSkin.uiSkin;
+  delete nextWithoutSkin.uiSkin;
+  const changedBeyondSkin = JSON.stringify(previousWithoutSkin) !== JSON.stringify(nextWithoutSkin);
+  const skinChanged = Boolean(d.uiSkin) && normalizeUiSkin(d.uiSkin) !== State.uiSkin;
+  State.settings = d;
+  const itemCountChanged = previousItemCount !== getRecommendationItemsPerCategory(d);
+  const columnCountChanged = previousColumnCount !== getRecommendationColumnsPerCategory(d);
+  if (itemCountChanged) {
+    invalidateRandomRecommendations();
+    if (State.currentPage === RANDOM_RECOMMENDATIONS_PAGE) {
+      renderDetailEmpty();
+      loadRandomRecommendations();
+    }
+  }
+  else if (columnCountChanged && State.currentPage === RANDOM_RECOMMENDATIONS_PAGE) scheduleRenderPage();
+  if (previousTagScopes !== JSON.stringify(d.tagManagerScopes || {})) {
+    invalidateTagManager(true);
+    if (State.currentPage === TAG_MANAGER_PAGE) loadCurrentTagPage();
+  }
+  if (d.theme) applyThemeConfig(d.theme);
+  if (skinChanged) {
+    try {
+      await applyUiSkin(d.uiSkin);
+    } catch (error) {
+      State.settings.uiSkin = State.uiSkin;
+      showUiSkinLoadFailure();
+    }
+  }
+  if (State.currentPage === "settings" && (!skinChanged || changedBeyondSkin)) renderSettings();
+}
+
 function loadBootstrap() {
-  State.bridge.getBootstrap((json) => {
+  State.bridge.getBootstrap(async (json) => {
     const data = safeParse(json);
     if (!data) return;
     State.strings = data.strings || {};
@@ -609,8 +625,12 @@ function loadBootstrap() {
     State.settings = data.settings || {};
     State.errorLogs = data.errorLogs || "";
     if (State.settings.theme) State.theme = Object.assign(State.theme, State.settings.theme);
-    if (State.settings.uiSkin) State.uiSkin = State.settings.uiSkin;
-    applyUiSkin(State.uiSkin);
+    const requestedSkin = State.settings.uiSkin || State.uiSkin;
+    try {
+      await applyUiSkin(requestedSkin);
+    } catch (error) {
+      showUiSkinLoadFailure();
+    }
     applyStaticStrings();
     applyFont();
     renderNav();
@@ -3888,10 +3908,13 @@ function renderSettingsAppearance(panel) {
   panel.appendChild(fontCard);
 
   const skinCard = settingCard(t("settings.ui_skin.title", "UI Style"));
-  skinCard.appendChild(elem("p", "small-note", t("settings.ui_skin.restart_hint", "Please restart the app to apply the new UI style.")));
+  skinCard.appendChild(elem("p", "small-note", t("settings.ui_skin.instant_hint", "Changes apply immediately without reloading the page.")));
   const skinSeg = elem("div", "segmented");
   [["glass", "settings.ui_skin.glass"], ["vaporwave", "settings.ui_skin.vaporwave"]].forEach(([skin, key]) => {
     const btn = elem("button", State.uiSkin === skin ? "active" : null, t(key));
+    btn.dataset.uiSkinOption = skin;
+    btn.setAttribute("aria-pressed", State.uiSkin === skin ? "true" : "false");
+    btn.disabled = Boolean(State.uiSkinPending);
     btn.addEventListener("click", () => { if (State.uiSkin !== skin) setUiSkin(skin); });
     skinSeg.appendChild(btn);
   });
@@ -4291,15 +4314,61 @@ function normalizeUiSkin(skin) {
   return skin === "vaporwave" ? "vaporwave" : "glass";
 }
 
+function skinStylesheetLinks() {
+  return Array.from(document.querySelectorAll("link[data-skin-link]"));
+}
+
+function findSkinStylesheet(skin, href) {
+  return skinStylesheetLinks().find((link) => (
+    link.dataset.skin === skin && link.getAttribute("href") === href
+  ));
+}
+
+function ensureSkinStylesheet(skin, href) {
+  let link = findSkinStylesheet(skin, href);
+  if (link && (link.dataset.skinReady === "true" || link.sheet)) {
+    link.dataset.skinReady = "true";
+    return Promise.resolve(link);
+  }
+  return new Promise((resolve, reject) => {
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = href;
+      link.media = "not all";
+      link.setAttribute("data-skin-link", "");
+      link.setAttribute("data-skin", skin);
+    }
+    const cleanup = () => {
+      link.removeEventListener("load", onLoad);
+      link.removeEventListener("error", onError);
+    };
+    const onLoad = () => {
+      cleanup();
+      link.dataset.skinReady = "true";
+      resolve(link);
+    };
+    const onError = () => {
+      cleanup();
+      link.remove();
+      reject(new Error(`Unable to load UI skin stylesheet: ${href}`));
+    };
+    link.addEventListener("load", onLoad);
+    link.addEventListener("error", onError);
+    if (!link.parentNode) document.head.appendChild(link);
+  });
+}
+
 function loadSkinStylesheets(skin) {
   const normalized = normalizeUiSkin(skin);
-  document.querySelectorAll("link[data-skin-link]").forEach((node) => node.remove());
-  SKIN_STYLESHEETS[normalized].forEach((href) => {
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = href;
-    link.setAttribute("data-skin-link", "");
-    document.head.appendChild(link);
+  return Promise.all(SKIN_STYLESHEETS[normalized].map((href) => (
+    ensureSkinStylesheet(normalized, href)
+  )));
+}
+
+function activateSkinStylesheets(skin) {
+  skinStylesheetLinks().forEach((link) => {
+    link.media = link.dataset.skin === skin ? "all" : "not all";
   });
 }
 
@@ -4316,26 +4385,69 @@ function toggleVaporwaveScene(enabled) {
   mount.appendChild(scene);
 }
 
-function applyUiSkin(skin) {
-  const normalized = normalizeUiSkin(skin);
-  State.uiSkin = normalized;
-  document.body.dataset.uiSkin = normalized;
-  loadSkinStylesheets(normalized);
-  toggleVaporwaveScene(normalized === "vaporwave");
+function syncUiSkinControls(skin) {
+  document.querySelectorAll("[data-ui-skin-option]").forEach((button) => {
+    const active = button.dataset.uiSkinOption === skin;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+    button.disabled = Boolean(State.uiSkinPending);
+  });
 }
 
-function setUiSkin(skin) {
+function syncUiSkinPageBackground(skin) {
+  const theme = document.body.dataset.theme === "night" ? "night" : "day";
+  try {
+    if (State.bridge && State.bridge.setPageBackground) {
+      State.bridge.setPageBackground(skin, theme);
+    } else if (State.bridge && State.bridge.setPageBackgroundTheme) {
+      State.bridge.setPageBackgroundTheme(theme);
+    }
+  } catch (error) {}
+}
+
+async function applyUiSkin(skin) {
   const normalized = normalizeUiSkin(skin);
-  if (normalized === State.uiSkin || !State.bridge) return;
-  State.bridge.setUiSkin(normalized);
-  State.uiSkin = normalized;
-  if (State.settings) State.settings.uiSkin = normalized;
-  if (State.currentPage === "settings") renderSettings();
+  const swapId = ++State.uiSkinSwapId;
+  State.uiSkinPending = normalized;
+  syncUiSkinControls(State.uiSkin);
+  try {
+    await loadSkinStylesheets(normalized);
+    if (swapId !== State.uiSkinSwapId) return false;
+    activateSkinStylesheets(normalized);
+    State.uiSkin = normalized;
+    if (State.settings) State.settings.uiSkin = normalized;
+    document.body.dataset.uiSkin = normalized;
+    toggleVaporwaveScene(normalized === "vaporwave");
+    syncUiSkinPageBackground(normalized);
+    return true;
+  } finally {
+    if (swapId === State.uiSkinSwapId) {
+      State.uiSkinPending = "";
+      syncUiSkinControls(State.uiSkin);
+    }
+  }
+}
+
+function showUiSkinLoadFailure() {
   showToast(
-    t("toast.ui_skin_restart_required", "Restart required"),
-    t("settings.ui_skin.restart_hint", "Please restart the app to apply the new UI style."),
-    "info"
+    t("toast.ui_skin_load_failed", "UI style unchanged"),
+    t("settings.ui_skin.load_failed", "The selected UI style could not be loaded."),
+    "warning"
   );
+}
+
+async function setUiSkin(skin) {
+  const normalized = normalizeUiSkin(skin);
+  if (normalized === State.uiSkin || !State.bridge || State.uiSkinPending) return false;
+  try {
+    const applied = await applyUiSkin(normalized);
+    if (!applied) return false;
+  } catch (error) {
+    showUiSkinLoadFailure();
+    return false;
+  }
+  State.bridge.setUiSkin(normalized);
+  return true;
 }
 
 /* ---------- theme engine ---------- */

@@ -2,6 +2,10 @@
 
 ## 最新记录
 ```json
+{"log_id":"worklog-20260923-003","timestamp":"2026-09-23T19:48:03+08:00","actor":"ui-agent + maintenance-agent","task":"实现 Glass / Vaporwave 无刷新热切换","changes":["将 base.css 改为常驻并为皮肤 stylesheet 标记所属皮肤","首次切换预加载目标皮肤全部 CSS，成功后原子切换 media，后续复用缓存","原位同步 State、body dataset、Vaporwave 背景层、Qt 页面背景和设置分段按钮","视觉切换成功后才通过既有 Bridge 持久化，失败时保持旧皮肤并显示本地化警告","删除重启提示并补充生产 app.js Node 行为测试、结构测试与真实 Qt WebEngine 证据","同步 UI agent、UI contract、module registry 和 src_construction"],"affected_files":["src/bookhub/ui/web/index.html","src/bookhub/ui/web/js/app.js","src/bookhub/ui/web_bridge.py","src/bookhub/i18n/locales/zh-cn.json","src/tests/js/test_ui_skin_hot_swap.js","src/tests/test_web_bridge_smoke.py","Agent-rule/agents/ui-agent.md","Agent-rule/contracts/ui-contract.md","Agent-rule/registry/module-registry.md","Agent-rule/logs/evidence/2026-09-23-ui-skin-hot-swap.md","Agent-rule/logs/history/2026-09-23.md","src_construction.md"],"outputs":["Python 全量 330 tests 通过","七组 Node 行为测试和两份生产 JS 语法检查通过","1400/760/390px 双皮肤双向 Qt WebEngine 验收通过并保存 6 张匿名截图","JSON 校验与 git diff --check 通过"],"risks":["首次切换依赖目标 CSS 能成功从 app scheme 加载；失败时会保留原皮肤并允许重试"],"next_actions":[]}
+```
+
+```json
 {"log_id":"worklog-20260923-002","timestamp":"2026-09-23T17:45:00+08:00","actor":"maintenance-agent","task":"核对近期 Codex 与 Git 提交并远程发布 v2.5.0","changes":["确认 v2.4.0 后新增标签管理、Quick Add 与批量多选、Library/Text Novel 排序、图片文件夹书籍、集合规则及稳定性修复","推送本地领先的 6 个提交到 origin/main","触发 GitHub Actions Release workflow minor bump，远程完成 Nuitka 构建、压缩和 Release","补充 Release 新功能与升级说明","同步中英文 README 的 v2.5.0 稳定版事实"],"affected_files":["README.md","README.en.md","src/bookhub/version.py","src_construction.md","Agent-rule/logs/history/2026-09-23.md","Agent-rule/logs/worklog.md"],"outputs":["v2.5.0 Release","Simple-Book-library-v2.5.0-win64.zip，200941443 bytes","SHA-256 092d1c3d169b06130ca934728582fa52b4794dc142e467057d1718e3be51ee59","Python 329 passed、70 subtests passed；六组 Node 行为测试和两份生产 JS 语法检查通过"],"risks":["GitHub Actions 报告 actions/cache@v4、checkout@v4、setup-python@v5、softprops/action-gh-release@v2 的 Node.js 20 兼容警告，当前由 Node 24 强制运行"],"next_actions":["升级发布 workflow 中仍以 Node.js 20 为目标的 action 主版本，并重新验证发布链路"]}
 ```
 

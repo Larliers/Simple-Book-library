@@ -2,6 +2,10 @@
 
 ## 最新决策
 ```json
+{"decision_id":"decision-20260923-002","timestamp":"2026-09-23T19:48:03+08:00","owner":"ui-agent + maintenance-agent","title":"皮肤切换采用预加载后的 stylesheet 原子交换","context":"现有 setUiSkin 只持久化并提示重启；历史 WebView reload 会重建 DOM，导致页面、滚动与交互状态丢失","options":["继续要求重启","切换后 reload WebView","常驻 base.css，预加载目标皮肤并原子切换 stylesheet media"],"decision":"采用 stylesheet media 原子交换；目标皮肤首次全部加载成功后才提交视觉状态与持久化，失败保留旧皮肤","rationale":["不重建 DOM，可保持路由、滚动、搜索、选择、详情与弹窗","两套皮肤留在内存后可即时双向切换","成功后持久化可避免配置值与可见皮肤不一致","保持 settings.uiSkin 与 setUiSkin(skin) 兼容且不新增后端 API"],"impact":["base.css 不参与皮肤启停","设置页分段按钮仅原位更新 active 与 aria-pressed","Qt 页面背景随当前昼夜模式同步","不新增动画、快捷入口、依赖或启动方式"],"followups":[]}
+```
+
+```json
 {"decision_id":"decision-20260922-001","timestamp":"2026-09-22T21:53:44+08:00","owner":"ui-agent + maintenance-agent","title":"集合规则先交付独立单文件原型，正式实现继续搁置","context":"集合规则涉及合集右键、设置统一管理、规则编辑、预览和自动成员处置，用户要求先检查交互再决定是否进入运行时实现","options":["直接修改正式 Web UI 和数据库","在 Dev_Document 内追加静态稿","在项目根目录提供可双击、可交互、无依赖的单文件原型"],"decision":"选择根目录独立 HTML 原型；使用虚构三类合集和内存状态模拟完整交互，不连接 Bridge、数据库或真实书库","rationale":["用户可不经命令行直接检查关键路径","隔离原型避免在交互未批准前引入 schema 和运行时返工","双皮肤与三档宽度能提前暴露响应式问题"],"impact":["新增 collection-rules-prototype.html 与必要日志/结构说明","正式 UI、Repository、Bridge、扫描、contracts、README 不变","原型状态刷新即重置，不能视为产品能力"],"followups":["用户审核原型后，再单独确认正式实现范围和计划"]}
 ```
 

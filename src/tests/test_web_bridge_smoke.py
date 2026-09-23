@@ -1519,6 +1519,20 @@ class SettingsUiStructureTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("COLLECTION_RULES_BEHAVIOR_OK", completed.stdout)
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js is not available")
+    def test_ui_skin_hot_swap_frontend_behavior(self) -> None:
+        script = PROJECT_ROOT / "src" / "tests" / "js" / "test_ui_skin_hot_swap.js"
+        app_js = PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js"
+        completed = subprocess.run(
+            [shutil.which("node") or "node", str(script), str(app_js)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("UI_SKIN_HOT_SWAP_BEHAVIOR_OK", completed.stdout)
+
     def test_batch_quick_add_strings_and_both_skins_are_wired(self) -> None:
         strings = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web_bridge.py").read_text(encoding="utf-8")
         locale = (PROJECT_ROOT / "src" / "bookhub" / "i18n" / "locales" / "zh-cn.json").read_text(encoding="utf-8")
@@ -1555,10 +1569,22 @@ class SettingsUiStructureTests(unittest.TestCase):
         self.assertIn("buildCoverSlot", app_js)
         self.assertIn('page === "library"', app_js)
 
-    def test_set_ui_skin_updates_active_segment(self) -> None:
+    def test_set_ui_skin_hot_swap_structure(self) -> None:
         app_js = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
-        self.assertIn("State.uiSkin = normalized;", app_js)
-        self.assertIn("if (State.currentPage === \"settings\") renderSettings();", app_js)
+        index_html = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web" / "index.html").read_text(encoding="utf-8")
+        strings = (PROJECT_ROOT / "src" / "bookhub" / "ui" / "web_bridge.py").read_text(encoding="utf-8")
+        locale = (PROJECT_ROOT / "src" / "bookhub" / "i18n" / "locales" / "zh-cn.json").read_text(encoding="utf-8")
+
+        self.assertIn('data-ui-skin-option', app_js)
+        self.assertIn('document.querySelectorAll("link[data-skin-link]")', app_js)
+        setter = re.search(r"async function setUiSkin\(skin\).*?\n}\n", app_js, re.DOTALL)
+        self.assertIsNotNone(setter)
+        self.assertNotIn("renderSettings", setter.group(0) if setter else "")
+        self.assertIn('<link rel="stylesheet" href="app://app/css/base.css">', index_html)
+        self.assertNotIn('href="app://app/css/base.css" data-skin-link', index_html)
+        self.assertNotIn('data-skin-ready="true"', index_html)
+        self.assertNotIn("settings.ui_skin.restart_hint", strings + locale)
+        self.assertNotIn("toast.ui_skin_restart_required", strings + locale)
 
 
 if __name__ == "__main__":

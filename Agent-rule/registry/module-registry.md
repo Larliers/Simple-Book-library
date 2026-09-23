@@ -159,6 +159,21 @@
 }
 ```
 
+### ui_skin_runtime
+```json
+{
+  "module_name": "ui_skin_runtime",
+  "owner_agent": "ui-agent",
+  "status": "active",
+  "purpose": "在不重载 WebView 或重建页面状态的前提下即时切换 Glass/Vaporwave",
+  "input": ["settings.uiSkin", "skin stylesheet manifest", "current day/night theme"],
+  "output": ["active skin stylesheets", "body data-ui-skin", "vaporwave scene", "Qt page background", "persisted ui_skin"],
+  "upstream": ["Settings appearance control", "UiBridge settings payload"],
+  "downstream": ["resource_list_view", "settings view", "all Web UI surfaces"],
+  "notes": "base.css 常驻；目标 CSS 全部就绪后原子启用；两套皮肤保留禁用缓存；失败保持旧皮肤且不持久化；路由、滚动、搜索、选择、详情和弹窗不变"
+}
+```
+
 ### quick_add_collection_membership
 ```json
 {

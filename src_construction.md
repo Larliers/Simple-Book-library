@@ -186,7 +186,7 @@ src/
 - `src/tests/test_missed_cleanup.py`：启动时清理遗留 `is_missing=1` 行；确认无 Missed 恢复 API。
 - `src/tests/test_comic_preview_pipeline.py`：漫画快扫占位与后台并行补图回归测试（占位复制、压缩替换、原图删除、超大图降采样、排序顺序、GIF/BMP/TIFF 入库与 GIF 首帧封面）。
 - `src/tests/test_cover_grid_settings.py`：封面选中边框归一化与 Repository 偏好持久化（含 Text Novel Grid/List、Text 规则预览高度/窗口尺寸/预设、随机推荐密度，以及八项快捷键的默认空绑定、合法值、非法/保留键拒绝、冲突、清除和重启持久化）；已不再依赖旧 Widgets 页。
-- `src/tests/test_web_bridge_smoke.py`：Web Bridge / scheme / Text Rules CRUD 冒烟；`NAV_ITEMS` 含图书馆/书籍合集/文本小说/小说合集/漫画/漫画合集/随机推荐/标签管理；验证 Library/Text Novel 排序 payload、持久化、搜索保序与 sort 事件，以及推荐、标签、Quick Add、目录策略、更新、资源格式、合集、漫画与 `.imgfolder` 打开路径/角标。
+- `src/tests/test_web_bridge_smoke.py`：Web Bridge / scheme / Text Rules CRUD 冒烟；`NAV_ITEMS` 含图书馆/书籍合集/文本小说/小说合集/漫画/漫画合集/随机推荐/标签管理；验证 Library/Text Novel 排序 payload、持久化、搜索保序与 sort 事件，以及推荐、标签、Quick Add、目录策略、更新、资源格式、合集、漫画、`.imgfolder` 打开路径/角标和 UI 皮肤热切换行为入口。
 - `src/tests/test_collection_rules.py`：集合规则匹配、来源原名、旧库迁移、三类隔离、手动/规则双来源、排除生命周期、两种关闭方式、原子回滚及扫描后重算/失败隔离回归。
 - `src/tests/test_tag_management.py`：标签 Repository 回归；覆盖旧漫画表迁移、漫画扫描保留标签、三类范围组合、缺失资源排除、资源内标签去重、非法 JSON、中文拼音与英文大小写排序、`#` 置尾、正逆序和漫画标签增删。
 - `src/tests/test_text_thumbnail_tasks.py`：Text Novel 设置页缩略图任务回归；覆盖清空受控 sidecar 缓存、清除封面状态、从当前同名图重建，以及有效 manual 封面不被重建覆盖。
@@ -196,6 +196,7 @@ src/
 - `src/tests/js/test_quick_add.js`：以 Node 内置 `vm` 和最小 DOM 假件执行生产 `app.js`；覆盖单项快捷创建/Unicode casefold/成员调整，以及多资源多合集多 Tag payload、右键已选/未选分流、全控件提交锁、失败留窗、成功清选、滚动保持、显式表单标签和定向缓存回写。
 - `src/tests/js/test_multi_select.js`：以 Node 内置 `vm` 执行生产多选状态机；覆盖单击、Ctrl、Shift、Ctrl+Shift、Ctrl+A、Ctrl+Space、Shift+Space、混合来源同 ID、同范围保留、排序换范围清空，以及退出详情后旧范围不可被快捷键重新选中。
 - `src/tests/js/test_collection_rules.js`：以 Node 内置 `vm` 和最小 DOM 假件执行生产编辑器；覆盖预览前禁存、编辑后 token 失效、分页载荷、关闭方式选择和取消排除。
+- `src/tests/js/test_ui_skin_hot_swap.js`：以 Node 内置 `vm` 和可控 stylesheet load/error 假件执行生产 `app.js`；覆盖 Glass/Vaporwave 预加载与原子双向切换、CSS 缓存、昼夜背景同步、路由/滚动/搜索/选择/弹窗保持及失败不持久化。
 - `src/tests/test_comic_search.py`：漫画顶栏搜索回归（ViewModel title/path/info_text 过滤；UiBridge comic 与 comic_collections 总览 context 路由，PySide6 可用时跑 Bridge 集成）。
 - `src/tests/test_collection_kinds.py`：合集 kind 隔离（book/text_novel/comic 互不混装）、跨类加入拒绝、小说成员从书籍合集剥离、收藏星标迁入默认「收藏」合集、删漫画清 `collection_comics`；覆盖单项成员事务及混合资源批量合集/Tag 的同名复用、幂等、预校验和真实 SQLite 异常整批回滚。
 - `src/tests/test_library_viewmodel_search.py`：Library/Text 搜索与字段前缀建议回归。
@@ -248,12 +249,12 @@ src/
 ### 3.5 UI 主组件（bookhub/ui）
 - `src/bookhub/ui/__init__.py`：UI 包导出入口。
 - `src/bookhub/ui/web_window.py`：当前主窗口 `WebAppWindow`；负责 WebEngine、主题底色/缩放、扫描/缩略图/缓存迁移/更新、原生目录与封面选择、资源删除及设置写库；`scanDepth`、`textPreviewChars`、`comicPageSize`、`viewportBufferScreens`、`gridColumns` 均把原值交给 Repository 单一归一化，不在 Qt slot 预先 `int()`；扫描、根目录变更和资源删除同时发出标签目录失效信号；手动编辑书籍/小说封面时标记 `cover_source=manual`；`ShortcutWebView` 统一转发鼠标 Back/Forward 并阻止网页历史导航。
-- `src/bookhub/ui/web/js/app.js`：单一 SPA 壳；新增集合卡右键“编辑集合规则…”与 Settings 集合规则双栏管理，共用编辑器、预览失效令牌、分页影响清单、两种关闭选择、排除恢复、焦点恢复/键盘菜单及定向合集页回写；其余含 Library/Text/Comic 页面、排序、多选、Quick Add、标签、快捷键、推荐、搜索、主题和任务交互。
+- `src/bookhub/ui/web/js/app.js`：单一 SPA 壳；Glass/Vaporwave 通过目标 CSS 预加载、禁用缓存和原子启用实现无刷新热切换，同步 scene、昼夜 Qt 背景及原位分段控件而不重建页面状态；其余含集合规则、Library/Text/Comic 页面、排序、多选、Quick Add、标签、快捷键、推荐、搜索、主题和任务交互。
 - `src/bookhub/ui/web/js/text_rules.js`：Text Rules 宽屏遮罩三栏编辑器（字段/规则链/步骤/预览）；防抖单样本预览、多样本预览、内置模板、用户预设、常用正则与帮助抽屉；经 Bridge 读写 `rules_json`。`renderTextRulesPanel()` 仅在 `openTextRulesPanel` 打开时构建一次性外壳（`.tr-overlay`/`.tr-host`/header/footer，带入场动画）；此后所有编辑（字段切换、规则/步骤增删移动、source/类别/类型 change、模板/预设）改调用 `renderTrBody()` 仅重建 `.tr-body` 三栏内容并保存/恢复各栏 `scrollTop`，不再重播入场动画；`installTrWheelGuard` 在 host 上拦截落在 `<select>` 的滚轮事件（Windows 悬停滚轮会静默改变原生 select 值并触发 change），`preventDefault` 后手动转发 `deltaY` 给 `.tr-col`/`.tr-drawer-body`，修复滚动时误触发全量重建导致的「白屏/像整页重载」；预览 diag 展示 `detectedEncoding` 与置信度。
 - `src/bookhub/ui/web_bridge.py`：`UiBridge(QObject)` 前后端桥；新增 `getCollectionRules/getCollectionRule/previewCollectionRule/saveCollectionRule/clearCollectionRuleExclusion`，用配置 canonical + preview token 拒绝过期保存并仅返回定向合集页；其余包括批量/单项 Quick Add、标签、推荐、设置/扫描、资源 CRUD 与 Text Rules。
 - `src/bookhub/library/repository.py`：集合表自动迁移 `rule_enabled/rule_json/rule_updated_at`，成员表记录 manual/rule 双来源并维护 Book/Comic 排除表；预览、保存、成员重算、关闭转换和排除恢复均走 SQLite 事务；Quick Add/批量加入固定记为手动来源并清同合集排除。
 - `src/bookhub/ui/web_scheme.py`：`app://` 自定义 URL scheme；`register_app_scheme()`（须在 QApplication 前调用）、`to_local_path()`（`file://`/裸路径归一化）、`AppSchemeHandler`（`app://app/*` 服务 `web/` 静态资源含 woff2 字体；`app://img/x?p=` 仅服务白名单封面图，越权拒绝）。
-- `src/bookhub/ui/web/index.html`：玻璃拟态 UI 骨架（侧栏含 Import Books、顶栏/主区/详情栏/遮罩/toast/右键菜单挂载点）；`data-ui-skin` + `data-theme` 双轴；`data-skin-link` 样式链由 `app.js` 按皮肤动态注入；`#vwSceneMount` 供蒸汽波 vw-scene 背景层。
+- `src/bookhub/ui/web/index.html`：玻璃拟态 UI 骨架（侧栏含 Import Books、顶栏/主区/详情栏/遮罩/toast/右键菜单挂载点）；公共 `base.css` 常驻，初始 Glass link 以 `data-skin-link/data-skin` 标记并由 `app.js` 与 Vaporwave 缓存原子切换；`data-ui-skin` + `data-theme` 双轴，`#vwSceneMount` 供蒸汽波背景层。
 - `src/bookhub/ui/web/fonts/`：蒸汽波 Web 字体（Sora/Space Mono woff2 + OFL.txt）；`skins/vaporwave/fonts.css` 以从皮肤目录返回三级的相对 URL 解析为 `app://app/fonts/*`，不依赖 CDN。
 - `src/bookhub/ui/web/css/base.css`：布局/结构/动画（无 skin 色板）；集合规则双栏在 740px 降单栏、条件编辑器在 600px 再降级，模态/关闭选择/预览/排除列表无横向溢出；Glass/Vaporwave 的组件文件分别补充视觉层。
 - `src/bookhub/ui/web/css/app.css`：legacy 入口，`@import` glass bundle（兼容旧引用）。
@@ -307,7 +308,8 @@ src/
 - 2026-07-25 书籍格式角标：图书馆/书籍与小说合集详情封面网格左上角显示格式 pill（PDF/EPUB/FB2 等）；Bridge `_record_to_item`/`_item_payload`/`_book_payload` 下发 `extension`；`app.js` 白名单启用 `buildCoverSlot`+`formatBadgeLabel`；漫画页不显示；Glass/Vaporwave 双皮肤 `.cover-wrap`/`.format-badge`。
 - 2026-07-24 蒸汽波排版崩坏修复（P0）：`skins/vaporwave/components.css` 由原型逐字节复制版（1090 行，选择器对不上真实 DOM，四大面板丢失 grid 落位导致主区被挤进 320px 窄列）重写为与 glass 逐选择器对齐的 613 行版本；布局声明照抄 glass、视觉层保留蒸汽波语言；新增 `Changable_vaporwave_ui/real-dom-preview.html` 真实 DOM 镜像验证页，浏览器截图验收 Library/Settings/Modal/Toast/TextRules 与 day/night 全部正常。
 - 2026-07-24 蒸汽波背景精简：移除 vw-sun 条纹太阳与 vw-grid 动态透视网格，保留 atmosphere 渐变 + scanlines，减轻主内容区视觉干扰。
-- 2026-07-24 UI 皮肤切换按钮反馈：`setUiSkin` 持久化后同步 `State.uiSkin` 并重绘 Settings 分段控件 active 态（仅视觉选中，仍不热重载 CSS）；`settingsChanged` 同步 `uiSkin` 字段。
+- 2026-09-23 UI 皮肤无刷新热切换：`setUiSkin` 在目标 CSS 全部加载后原子切换并缓存两套 stylesheet，原位同步 active/ARIA、Vaporwave scene 和当前昼夜 Qt 背景，再持久化；不 reload WebView、不重跑 bootstrap、不重绘 Settings，失败保留原皮肤和完整页面状态。
+- 2026-07-24 UI 皮肤切换按钮反馈（历史，已被 2026-09-23 热切换替代）：当时仅持久化 `ui_skin` 并重绘 Settings active 态，当前 session 仍需重启才应用 CSS。
 - 2026-07-24 UI 皮肤切换（重启生效）：Settings Appearance Glass/Vaporwave 切换后 `setUiSkin` 持久化并 Toast 提示重启软件（不再 WebView 热重载）；蒸汽波字体内嵌于 `web/fonts/` + `skins/vaporwave/fonts.css`，离线可用。
 - 2026-07-24 UI 皮肤切换：Settings Appearance 增加 Glass/Vaporwave 分段切换；`ui_skin` 持久化至 `app_settings`；CSS 拆为 `base.css` + `skins/glass/*` + `skins/vaporwave/*` 独立 bundle；`data-ui-skin` 与 `data-theme` 正交；蒸汽波含 day/night token 与 vw-scene 背景层。
 - 2026-07-24 蒸汽波 UI 静态预览：新增 `Simple-Book-library-Dev_Document/UI/Changable_vaporwave_ui/`，DOM 结构与 `glassmorphism-ui.html` 对等，样式完全独立（Sora + Space Mono、霓虹硬阴影、透视网格背景）；含 Settings/Dialogs/Component States 底部预览区与 Text Rules 假交互；Night mode 控件仅静态展示；本次不涉及 `src/` 运行时皮肤切换。

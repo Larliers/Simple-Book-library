@@ -68,6 +68,14 @@
 - 保证每个推荐列携带 `sourcePage`，列内卡片继承该来源上下文；详情与打开动作必须使用该来源上下文。
 - 保证标签目录和详情仅统计当前 `tagManagerScopes` 纳入的未缺失资源；混合卡片携带真实 `sourcePage` 并复用来源动作。
 
+## UI Skin Hot Swap Extension
+
+- settings payload 继续提供 `uiSkin`，合法值仅为 `glass|vaporwave`；`setUiSkin(skin)` Bridge interface 保持不变并负责持久化。
+- 公共 `base.css` 常驻；目标皮肤 CSS 全部加载完成前，当前皮肤必须保持活动。加载完成后在同一前端任务中停用旧皮肤、启用目标皮肤，并缓存两套 stylesheet 供后续切换复用。
+- 成功切换必须同步 `State.uiSkin`、`body[data-ui-skin]`、Settings 分段控件、Vaporwave scene 和当前 day/night 对应的 Qt 页面背景，再持久化目标皮肤。
+- 切换不得 reload WebView、重新执行 bootstrap、导航或重建 Settings；当前路由、滚动、搜索、选择、详情、弹窗和昼夜模式必须保持。
+- 任一目标 stylesheet 加载失败时保留原皮肤、不持久化目标值，并显示可恢复的 warning。
+
 ## Random Recommendations Extension
 ```json
 {
