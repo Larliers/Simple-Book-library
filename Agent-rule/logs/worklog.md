@@ -2,6 +2,11 @@
 
 ## 最新记录
 ```json
+{"log_id":"worklog-20260923-002","timestamp":"2026-09-23T17:45:00+08:00","actor":"maintenance-agent","task":"核对近期 Codex 与 Git 提交并远程发布 v2.5.0","changes":["确认 v2.4.0 后新增标签管理、Quick Add 与批量多选、Library/Text Novel 排序、图片文件夹书籍、集合规则及稳定性修复","推送本地领先的 6 个提交到 origin/main","触发 GitHub Actions Release workflow minor bump，远程完成 Nuitka 构建、压缩和 Release","补充 Release 新功能与升级说明","同步中英文 README 的 v2.5.0 稳定版事实"],"affected_files":["README.md","README.en.md","src/bookhub/version.py","src_construction.md","Agent-rule/logs/history/2026-09-23.md","Agent-rule/logs/worklog.md"],"outputs":["v2.5.0 Release","Simple-Book-library-v2.5.0-win64.zip，200941443 bytes","SHA-256 092d1c3d169b06130ca934728582fa52b4794dc142e467057d1718e3be51ee59","Python 329 passed、70 subtests passed；六组 Node 行为测试和两份生产 JS 语法检查通过"],"risks":["GitHub Actions 报告 actions/cache@v4、checkout@v4、setup-python@v5、softprops/action-gh-release@v2 的 Node.js 20 兼容警告，当前由 Node 24 强制运行"],"next_actions":["升级发布 workflow 中仍以 Node.js 20 为目标的 action 主版本，并重新验证发布链路"]}
+```
+
+## 2026-09-20 - README TXT Rules 目标用户说明
+```json
 {"log_id":"worklog-20260920-003","timestamp":"2026-09-20T16:05:00+08:00","actor":"maintenance-agent","task":"补充 README 的 TXT Rules 目标用户说明及英文翻译","changes":["中文 README 说明 Rules 面向使用自动化下载程序、浏览器插件或油猴脚本收集 TXT 图书后进行分类的用户","英文 README 增加对应的 download automation、browser extensions 和 Tampermonkey/Greasemonkey userscripts 说明","明确 Rules 只负责本地文件识别与分类，不负责下载内容","src_construction 更新公开文档资产说明"],"affected_files":["README.md","README.en.md","src_construction.md","Agent-rule/logs/worklog.md","Agent-rule/logs/history/2026-09-20.md"],"outputs":["中英文新增说明均位于 TXT Rules 小节","英文新增段落保持单段不超过 240 字符","git diff --check 通过"],"risks":["Rules 的实际能力仍限于导入后的本地文件识别与分类，不应被描述为下载器"],"next_actions":[]}
 ```
 

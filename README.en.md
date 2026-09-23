@@ -44,10 +44,10 @@ _Captured from the real Qt WebEngine interface with anonymous demo records and p
 
 | Status | Included capabilities |
 |--------|-----------------------|
-| **Stable v2.4.0** | Three resource scanners and collection types, covers and thumbnails, search, TXT import rules, random recommendations, configurable shortcuts, Text Novel grid/list sorting, and Glass/Vaporwave skins |
-| **Current main** | Adds a standalone tag manager, in-place Quick Add for all three resource types, persistent Library/book-collection sorting, multi-selection and batch collection actions, Library image-folder books, automatic collection rules, plus later fixes |
+| **Stable v2.5.0** | Three resource scanners and collection types, standalone tag management, in-place Quick Add, batch organization, persistent Library/Text Novel sorting, Library image-folder books, automatic collection rules, random recommendations, configurable shortcuts, and Glass/Vaporwave skins |
+| **Current main** | Functionally aligned with v2.5.0; later development continues here |
 
-The Releases page contains the stable build. Features listed under main remain source-only until a later Release completes validation; choose the stable package if you simply want to use the app.
+The Releases page contains the remotely built Windows package; choose the stable release if you simply want to use the app.
 
 ## Get started in three steps
 
@@ -65,7 +65,7 @@ The Releases page contains the stable build. Features listed under main remain s
 | **Text novels** | TXT | Encoding detection, text preview, same-stem sidecar covers, import rules, novel collections |
 | **Comics** | Leaf folders containing JPG/JPEG/PNG/WebP/GIF/BMP/TIFF images, plus CBZ | Waterfall/pagination, covers, comic collections, external opening |
 
-> **Current main only:** Library can also import a folder as one regular book when it is within levels 1 through the configured scan depth, has no subfolders, contains at least three supported images, and has more images than other files. The card shows an `IMG` badge, and the first naturally sorted image supplies both the automatic cover and double-click target. This is not part of stable v2.4.0.
+Library can also import a folder as one regular book when it is within levels 1 through the configured scan depth, has no subfolders, contains at least three supported images, and has more images than other files. The card shows an `IMG` badge, and the first naturally sorted image supplies both the automatic cover and double-click target.
 
 ### Search, covers, and TXT rules
 
@@ -76,11 +76,11 @@ The Releases page contains the stable build. Features listed under main remain s
 - If you use download automation, browser extensions, or Tampermonkey/Greasemonkey userscripts to collect TXT books from websites, Rules can turn filename or body text into titles, authors, and tags after import.
 - That saves you from tagging every file by hand. Rules classify local files; they do not download content.
 
-### Automatic collection rules (current main only)
+### Automatic collection rules
 
 - Each Book, Text Novel, or Comic collection can independently match source filenames or folder names with contains, excludes, starts-with, ends-with, and exact conditions. One resource may enter every matching collection.
 - Open **Edit collection rule…** from a collection card's context menu, or manage all rules under **Settings → Collection Rules**. A required preview shows additions, removals, manual keeps, and exclusions before saving.
-- These rules organize resources already imported into the local library. They neither browse nor download content, and are not included in stable v2.4.0 yet.
+- These rules organize resources already imported into the local library. They neither browse nor download content.
 
 ## Local data and privacy
 

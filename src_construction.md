@@ -285,6 +285,7 @@ src/
 - `src/bookhub/ui/viewmodels/library_viewmodel.py`：Library/Text/Comic 资源查询过滤、字段前缀搜索（`title:`/`author:`/`tag:`）、普通 query 匹配 title/author/tags/path/info_text、视图模式、搜索建议状态。
 
 ## 4. 当前关键实现（简要）
+- 2026-09-23 远程 minor Release：近期 main 的标签管理、无刷新/批量 Quick Add、Library/Text Novel 排序、图片文件夹书籍、集合规则与稳定性修复已通过 GitHub Actions 发布为 `v2.5.0`；产物 `Simple-Book-library-v2.5.0-win64.zip`，Release 页面含新增功能与升级说明。发布前 Python 329 passed / 70 subtests passed，六组 Node 行为测试和生产 JS 语法检查通过。
 - 2026-09-23 集合规则自动归档：三类合集独立、默认关闭；按来源原名执行 all/any 五类条件，手动/规则成员来源与排除生命周期完整持久化；保存先预览并原子应用，扫描后按 scope 自动重算；右键模态与 Settings 双栏共用编辑器，Glass/Vaporwave 支持 740/600px。
 - 2026-09-19 远程同步：将 Codex 已提交的 Library 排序 `dde2105` 与当日 P1 修复推送到 `origin/main`；安装包版本仍为 v2.4.0，本轮未触发 Release。
 - 2026-09-19 Library 排序：总书库新增十档字段排序并默认标题 A-Z；书籍合集详情新增同款十档及加入时间新旧两档并默认最新加入。主页/合集分键持久化；List 保留封面列，四个文本表头与下拉共享 `setPageSort`、方向箭头和 `aria-sort`；搜索在排序结果上继续过滤，Text Novel/Comic 不受影响。
