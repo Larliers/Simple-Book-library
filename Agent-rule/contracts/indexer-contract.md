@@ -22,7 +22,7 @@ scan_roots / comic_roots / text_roots
   - Library：按有效 `hash_strategy`（`size_mtime` / `quick` / `sha256`）比对已存指纹；未变且缩略图仍在则跳过元数据/封面。支持扩展：`.pdf .epub .html .htm .md .markdown .fb2 .fb2.zip .docx`。封面优先内嵌图，否则标题占位卡（HTML 不做浏览器整页渲染）。docx/fb2.zip 经 zip 安全上限校验。
   - Library 图片文件夹书：与普通文件共用一次 `os.walk`。候选必须位于根目录第 1～`scan_depth` 层，根本身不入库；必须无子目录，直接含至少 3 张 `jpg/jpeg/png/webp/gif/bmp/tif/tiff`，且图片数严格多于其他直接文件。符合后整目录作为普通 `book` 入库，`extension=.imgfolder`，内部支持格式文件不再单独入库；标题和 `file_name` 均为目录名。直接文件名、size、mtime_ns 组成快照；快照与自然序首图未变且缓存有效时跳过。失踪或失去资格时删除记录及外键关联，两种情况均计入 `removed_ineligible_image_book_count`，失踪另计 `removed_missing_*`；根遍历失败时该根不做清理。
   - Comic：叶子图片文件夹用 `folder_size_mtime`；**CBZ** 用文件 `size:mtime` 快照与封面成员指纹；`full` 禁用快照短路（文件夹另重读旁注 TXT）；同一 `comic_root` 下同标题冲突按 `comic_title_conflict_policy` 处理。失踪清理同时接受目录或文件源。
-  - Text：按与 Library 相同的有效 `hash_strategy` 比对文本指纹；同目录同 stem 封面按 `.webp` → `.png` → `.jpg` → `.jpeg` 选择，封面路径+size+mtime_ns 指纹决定是否重建封面。**每次扫描都用该根当前 `rules_json` 重抽 title/author/series/tag**（无自定义 title 时注入默认标题链）。文件+封面都未变：只走 `update_text_novel_metadata` 写四列元数据，不改 `status`、不重生封面；字段未变计 `skipped_unchanged_count`，字段变了计 `text_updated_count`。指纹或封面变了：保持整本 upsert（含封面）。自动封面新增、变更、删除均触发整本更新；`cover_source=manual` 且文件有效时不被自动封面覆盖。TXT 正文经 `text_encoding` 按偏好读入。
+  - Text：按与 Library 相同的有效 `hash_strategy` 比对文本指纹；同目录同 stem 封面按 `.webp` → `.png` → `.jpg` → `.jpeg` 选择，封面路径+size+mtime_ns 指纹决定是否重建封面。**每次扫描都用该根当前 `rules_json` 重抽 title/author/series/tag**（无自定义 title 时注入默认标题链），并持久化 `series`。文件+封面都未变：只窄更新元数据，不改 `status`、不重生封面；字段未变计 `skipped_unchanged_count`，字段变了计 `text_updated_count`。指纹或封面变了：保持整本 upsert（含封面）。扫描仅替换导入标签，最终 `tags_json` 合并手动保留与排除意图；旧标签迁移为保留基线，旧系列等下次扫描补齐。自动封面新增、变更、删除均触发整本更新；`cover_source=manual` 且文件有效时不被自动封面覆盖。TXT 正文经 `text_encoding` 按偏好读入。
 - **目录级策略覆盖**（Settings `per_root_scan_strategy_enabled`，默认关）：
   - **关**：Library/Text 统一用全局 `hash_strategy`；Comic 统一用全局 `comic_scan_strategy`；各根表 `scan_strategy` 列仍持久化覆盖值但不生效。
   - **开**：`library_roots` / `comic_roots` / `text_roots` 可空列 `scan_strategy`；`NULL` 或空串 = 继承对应全局策略。
@@ -72,6 +72,7 @@ scan_roots / comic_roots / text_roots
 - Text 同名封面损坏时继续入库 TXT，在 `warnings` 写入 `text_cover_generation_failed` 并返回无封面状态。
 - 漫画同 `comic_root` 同标题冲突按 `comic_title_conflict_policy` 分支，并写入 `name_conflicts` / 错误日志（跨根目录允许同名）。
 - 集合规则在资源扫描完成、扫描报告写入前执行；成功统计写入 `collection_rules` 摘要。规则重算失败不撤销已完成扫描，但该轮规则成员变更整体回滚，并追加 `collection_rules_failed` warning 与错误日志。
+- 手动或批量添加/移除标签时，同一 SQLite 事务内重算受影响资源的同类型已启用集合规则；失败时标签与成员变更一起回滚。
 
 ## Error Shape (implementation)
 ```json

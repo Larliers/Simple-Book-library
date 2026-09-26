@@ -1019,6 +1019,7 @@ def scan_text_roots(
                 extracted = _extract_text_fields(rule_map=rule_map, context=context)
                 title = extracted.get("title") or file_path.stem
                 author = _clean_text_rule_author(extracted.get("author"))
+                series = extracted.get("series") or ""
                 tags = _split_text_rule_tags(extracted.get("tag") or "")
 
                 file_and_cover_unchanged = (
@@ -1033,6 +1034,7 @@ def scan_text_roots(
                         normalized_path,
                         title=title,
                         author=author,
+                        series=series,
                         tags=tags,
                         info_text=txt_head_text,
                     ):
@@ -1043,6 +1045,7 @@ def scan_text_roots(
                         **(existing or {}),
                         "title": title,
                         "author": author or "",
+                        "series": series,
                         "tags_json": json.dumps(tags, ensure_ascii=False),
                         "info_text": txt_head_text or "",
                     }
@@ -1080,6 +1083,7 @@ def scan_text_roots(
                     "extension": TEXT_FILE_EXTENSION,
                     "title": title,
                     "author": author,
+                    "series": series or None,
                     "publisher": None,
                     "language": None,
                     "tags_json": json.dumps(tags, ensure_ascii=False),
@@ -1125,6 +1129,7 @@ def scan_text_roots(
                     "path": normalized_path,
                     "title": title,
                     "author": author or "",
+                    "series": series,
                     "tags_json": json.dumps(tags, ensure_ascii=False),
                     "info_text": txt_head_text or "",
                     "thumbnail_path": thumbnail_path or "",

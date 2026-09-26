@@ -96,6 +96,16 @@ class WebBridgeSmokeTests(unittest.TestCase):
         pages = [page for page, _, _ in NAV_ITEMS]
         self.assertEqual(pages[-2:], [PAGE_RANDOM_RECOMMENDATIONS, PAGE_TAG_MANAGER])
 
+    def test_text_novel_main_page_exposes_saved_series(self) -> None:
+        bridge = self._make_bridge()
+        bridge._repo.upsert_book({
+            "path": r"C:\novels\Series.txt", "file_name": "Series.txt", "extension": ".txt",
+            "title": "书名", "series": "银月", "resource_type": "text_novel", "tags_json": "[]",
+        })
+        bridge.reload_data()
+        item = bridge._page_resources(PAGE_TEXT)["items"][0]
+        self.assertEqual(item["series"], "银月")
+
     def test_tag_manager_bridge_catalog_detail_and_scope_contract(self) -> None:
         bridge = self._make_bridge()
         bridge._repo.upsert_book(

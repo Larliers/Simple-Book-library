@@ -177,8 +177,8 @@ src/
 - `src/tests/test_scan_pdf_degrade.py`：PDF 后端降级容错回归测试（PyMuPDF 不可用时的聚合 warning 与入库行为）；Library 扫描进度 `total=0` busy 语义；comic/text 扫描断言真实 total。
 - `src/tests/test_repository_orphan_cleanup.py`：根目录删除 LIKE 通配符误伤回归；整型设置非法值回退/越界 clamp（BUG-6），`scan_depth`/`text_preview_chars` setter 与 getter 共用归一化。
 - `src/tests/test_library_scan_incremental.py`：Library 增量扫描与 `hash_strategy` 分级指纹（未变跳过、touch 强制更新、缺缩略图重处理、COALESCE 保留指纹）；`ScanRequest.roots` 使用 `LibraryScanRoot`。
-- `src/tests/test_text_scan_incremental.py`：Text Novel 同名 sidecar 扫描回归；覆盖 webp/png/jpg/jpeg 优先级、非同名忽略、无封面/坏图 warning、自动封面增删改、TXT 未变时封面仍刷新、有效 manual 不被扫描覆盖；以及默认标题剥 `Title:`（不吃成 `itle:`）、改规则后文件未变第二次扫描写回 author/tags 且不把 `status` 打回 `UNREAD`；`series` 规则不写入标签。
-- `src/tests/test_text_novel_sort.py`：Library/Text Novel 排序回归；覆盖十档字段排序、空字段自然顺序、稳定兜底、非法设置回退、主页与合集分键持久化、书籍合集加入时间升降序，以及小说启动时从指纹回填 `file_mtime`。
+- `src/tests/test_text_scan_incremental.py`：Text Novel 同名 sidecar 扫描回归；覆盖 webp/png/jpg/jpeg 优先级、非同名忽略、无封面/坏图 warning、自动封面增删改、TXT 未变时封面仍刷新、有效 manual 不被扫描覆盖；以及默认标题剥 `Title:`、改规则后窄更新、`series` 独立持久化且不写入标签。
+- `src/tests/test_text_novel_sort.py`：Library/Text Novel 排序回归；覆盖原十档字段及小说系列升降序、空字段自然顺序、稳定兜底、非法设置回退、主页与合集分键持久化、书籍合集加入时间升降序，以及小说启动时从指纹回填 `file_mtime`。
 - `src/tests/test_root_scan_strategy.py`：目录级扫描策略回归（旧库 `scan_strategy` 列迁移、Library/Text per-root 覆盖与全局回退、漫画 snapshot/full 旁注刷新、`set_root_scan_strategy` 合法性与 repository 默认值）。
 - `src/tests/test_scan_summary_fields.py`：扫描摘要字段对齐回归（comic 计入新增、别名键、冲突 `incoming_path`）。
 - `src/tests/test_image_folder_book_import.py`：总书库图片文件夹书籍回归；覆盖深度与资格边界、八类图片扩展、自然序首图、内部单文件抑制、同名冲突、目录快照跳过、手动封面、失效/不可访问根清理、旧库迁移及缩略图重建。
@@ -186,16 +186,16 @@ src/
 - `src/tests/test_missed_cleanup.py`：启动时清理遗留 `is_missing=1` 行；确认无 Missed 恢复 API。
 - `src/tests/test_comic_preview_pipeline.py`：漫画快扫占位与后台并行补图回归测试（占位复制、压缩替换、原图删除、超大图降采样、排序顺序、GIF/BMP/TIFF 入库与 GIF 首帧封面）。
 - `src/tests/test_cover_grid_settings.py`：封面选中边框归一化与 Repository 偏好持久化（含 Text Novel Grid/List、Text 规则预览高度/窗口尺寸/预设、随机推荐密度，以及八项快捷键的默认空绑定、合法值、非法/保留键拒绝、冲突、清除和重启持久化）；已不再依赖旧 Widgets 页。
-- `src/tests/test_web_bridge_smoke.py`：Web Bridge / scheme / Text Rules CRUD 冒烟；`NAV_ITEMS` 含图书馆/书籍合集/文本小说/小说合集/漫画/漫画合集/随机推荐/标签管理；验证 Library/Text Novel 排序 payload、持久化、搜索保序与 sort 事件，以及推荐、标签、Quick Add、目录策略、更新、资源格式、合集、漫画、`.imgfolder` 打开路径/角标和 UI 皮肤热切换行为入口。
-- `src/tests/test_collection_rules.py`：集合规则匹配、来源原名、旧库迁移、三类隔离、手动/规则双来源、排除生命周期、两种关闭方式、原子回滚及扫描后重算/失败隔离回归。
+- `src/tests/test_web_bridge_smoke.py`：Web Bridge / scheme / Text Rules CRUD 冒烟；`NAV_ITEMS` 含图书馆/书籍合集/文本小说/小说合集/漫画/漫画合集/随机推荐/标签管理；验证 Library/Text Novel 排序与系列 payload、持久化、搜索保序及 sort 事件，以及推荐、标签、Quick Add、目录策略、更新、资源格式、合集、漫画、`.imgfolder` 打开路径/角标和 UI 皮肤热切换入口。
+- `src/tests/test_collection_rules.py`：集合规则来源原名与元数据字段匹配、v1/v2 兼容、旧库系列/标签迁移、三类隔离、空值/逐项标签语义、手动/规则双来源、排除生命周期、两种关闭方式、手动/批量标签即时重算及原子回滚、扫描后重算/失败隔离回归。
 - `src/tests/test_tag_management.py`：标签 Repository 回归；覆盖旧漫画表迁移、漫画扫描保留标签、三类范围组合、缺失资源排除、资源内标签去重、非法 JSON、中文拼音与英文大小写排序、`#` 置尾、正逆序和漫画标签增删。
 - `src/tests/test_text_thumbnail_tasks.py`：Text Novel 设置页缩略图任务回归；覆盖清空受控 sidecar 缓存、清除封面状态、从当前同名图重建，以及有效 manual 封面不被重建覆盖。
-- `src/tests/js/test_random_recommendations.js`：以 Node 内置 `vm` 和最小 DOM 假件真实执行生产 `app.js`；覆盖图书/小说/漫画推荐交互、缓存与响应式密度，以及 Library/Text Novel 的 Grid/List、排序下拉、可访问表头、封面列差异和书籍合集加入时间选项。
+- `src/tests/js/test_random_recommendations.js`：以 Node 内置 `vm` 和最小 DOM 假件真实执行生产 `app.js`；覆盖图书/小说/漫画推荐交互、缓存与响应式密度，以及 Library/Text Novel 的 Grid/List、排序下拉、可访问表头、小说主页系列列、封面列差异和书籍合集加入时间选项。
 - `src/tests/js/test_tag_management.js`：以 Node 内置 `vm` 和最小 DOM 假件执行生产 `app.js`；覆盖目录请求去重与旧响应丢弃、目录 click 调用 `openTag`、直接 `loadTagResources` 不发事件、标签详情、三类来源卡片、键盘/双击/右键路由、搜索禁用、范围至少一项，以及标签页复用合集前进/后退。
 - `src/tests/js/test_shortcuts.js`：以 Node 内置 `vm` 执行生产 `app.js`；覆盖按键规范化/保留键、`BrowserBack`/`keyCode` 166/167/`button`/`which`/`buttons` 侧键录入、`auxclick` 去重、统一动作路由、Library/合集详情/随机推荐来源、无选择和不可用提示、输入/模态/长按屏蔽、冲突保持录入、Escape 取消、原生侧键分发，以及退出/进入最近系列分动作和三类合集独立记忆。
 - `src/tests/js/test_quick_add.js`：以 Node 内置 `vm` 和最小 DOM 假件执行生产 `app.js`；覆盖单项快捷创建/Unicode casefold/成员调整，以及多资源多合集多 Tag payload、右键已选/未选分流、全控件提交锁、失败留窗、成功清选、滚动保持、显式表单标签和定向缓存回写。
 - `src/tests/js/test_multi_select.js`：以 Node 内置 `vm` 执行生产多选状态机；覆盖单击、Ctrl、Shift、Ctrl+Shift、Ctrl+A、Ctrl+Space、Shift+Space、混合来源同 ID、同范围保留、排序换范围清空，以及退出详情后旧范围不可被快捷键重新选中。
-- `src/tests/js/test_collection_rules.js`：以 Node 内置 `vm` 和最小 DOM 假件执行生产编辑器；覆盖预览前禁存、编辑后 token 失效、分页载荷、关闭方式选择和取消排除。
+- `src/tests/js/test_collection_rules.js`：以 Node 内置 `vm` 和最小 DOM 假件执行生产编辑器；覆盖 v2 字段选择、字段变更后 token 失效、预览前禁存、分页载荷、关闭方式选择和取消排除。
 - `src/tests/js/test_ui_skin_hot_swap.js`：以 Node 内置 `vm` 和可控 stylesheet load/error 假件执行生产 `app.js`；覆盖 Glass/Vaporwave 预加载与原子双向切换、CSS 缓存、昼夜背景同步、路由/滚动/搜索/选择/弹窗保持及失败不持久化。
 - `src/tests/test_comic_search.py`：漫画顶栏搜索回归（ViewModel title/path/info_text 过滤；UiBridge comic 与 comic_collections 总览 context 路由，PySide6 可用时跑 Bridge 集成）。
 - `src/tests/test_collection_kinds.py`：合集 kind 隔离（book/text_novel/comic 互不混装）、跨类加入拒绝、小说成员从书籍合集剥离、收藏星标迁入默认「收藏」合集、删漫画清 `collection_comics`；覆盖单项成员事务及混合资源批量合集/Tag 的同名复用、幂等、预校验和真实 SQLite 异常整批回滚。
@@ -214,12 +214,12 @@ src/
 ### 3.3 国际化组件（bookhub/i18n）
 - `src/bookhub/i18n/__init__.py`：国际化导出入口。
 - `src/bookhub/i18n/language.py`：语言切换、词典加载、回退策略。
-- `src/bookhub/i18n/locales/zh-cn.json`：中文文案键值表；含随机推荐、标签管理、快捷键、单项/批量 Quick Add 的分组、计数、提交与错误提示；设置导航将路径与扫描合并命名；含 `text_novel.sort.*` 十档排序及 `text.rules.step.loop_inline` 文案。
+- `src/bookhub/i18n/locales/zh-cn.json`：中文文案键值表；含随机推荐、标签管理、快捷键、单项/批量 Quick Add、集合规则字段选择与标签回滚提示；设置导航将路径与扫描合并命名；含 `text_novel.sort.*` 系列排序及 `text.rules.step.loop_inline` 文案。
 
 ### 3.4 书库后端组件（bookhub/library）
 - `src/bookhub/library/__init__.py`：后端模块导出入口。
-- `src/bookhub/library/repository.py`：SQLite 读写中心；设置、书籍、合集、收藏、标签操作；`books.cover_image_path` 可空列由旧库启动迁移并贯通查询/upsert；Library/Text Novel 共用文件日期、标题、作者、标签、路径的稳定 SQL 排序 implementation，主页/合集分别持久化，书籍合集另支持加入时间升降序；Quick Add 经 `apply_collection_membership_changes` 在单事务内校验资源/合集 kind 并批量增删成员；其余包含标签管理、缩略图、随机推荐密度、快捷键、目录策略、扫描指纹、漫画策略、文本编码、预览缓存及 UI 偏好。
-- `src/bookhub/library/scanner.py`：目录扫描与文件过滤；Library 单次 `os.walk` 同时入库 PDF/EPUB/HTML/MD/FB2/DOCX 与 `.imgfolder` 图片书，候选限定根下 1～`scan_depth` 层、无子目录、至少 3 图且图片严格多于其他文件，目录快照采用直接文件名/size/mtime_ns，自然序首图写 `cover_image_path`，失去资格删除记录与关联，根遍历失败不清理；Comic 入库叶子图片文件夹与 CBZ；Text 为 TXT 并复用 `text_cover.py` 完成同名 sidecar 选择、指纹和缓存，有效 manual 优先、损坏图 warning 降级；每次扫 TXT 都用当前根 `rules_json` 重抽字段，文件+封面未变只窄更新元数据，指纹或封面变了才整本 upsert；文本标签只写入 `tag` 字段拆分结果，不再把 `series:` 拼进 `tags_json`；文本入库写入 `file_mtime`；其余包含目录策略、漫画快照/full、同名冲突、失踪清理、文本编码和进度语义。
+- `src/bookhub/library/repository.py`：SQLite 读写中心；设置、书籍、合集、收藏、标签操作；`books.series` 与导入/手动保留/手动排除标签列由旧库启动迁移，既有文本标签作为保留基线，`tags_json` 始终为有效合并值；手动/批量标签写入与受影响资源规则成员变化同事务；Library/Text Novel 共用文件日期、标题、作者、标签、路径的稳定 SQL 排序，小说另支持系列，主页/合集分别持久化；其余包含 Quick Add、缩略图、推荐、快捷键、扫描策略和 UI 偏好。
+- `src/bookhub/library/scanner.py`：目录扫描与文件过滤；Library 单次 `os.walk` 同时入库 PDF/EPUB/HTML/MD/FB2/DOCX 与 `.imgfolder` 图片书，候选限定根下 1～`scan_depth` 层、无子目录、至少 3 图且图片严格多于其他文件，目录快照采用直接文件名/size/mtime_ns，自然序首图写 `cover_image_path`，失去资格删除记录与关联，根遍历失败不清理；Comic 入库叶子图片文件夹与 CBZ；Text 为 TXT 并复用 `text_cover.py` 完成同名 sidecar 选择、指纹和缓存，有效 manual 优先、损坏图 warning 降级；每次扫 TXT 都用当前根 `rules_json` 重抽 title/author/series/tag，系列独立写库，文件+封面未变只窄更新元数据，指纹或封面变了才整本 upsert；导入标签与手动意图合并，不把 `series:` 写入 `tags_json`；文本入库写入 `file_mtime`；其余包含目录策略、漫画快照/full、同名冲突、失踪清理、文本编码和进度语义。
 - `src/bookhub/library/text_cover.py`：Text Novel 同名封面的共享服务；按 `.webp/.png/.jpg/.jpeg` 选择同 stem 图片，计算路径+size+mtime_ns 指纹，并生成 360×540 以内 WebP 缓存，供扫描与设置页重建任务复用。
 - `src/bookhub/library/text_encoding.py`：TXT 统一读入；`DecodeResult` / `detect_and_decode`；UTF-8 优先，64KB 样本经 charset-normalizer 按 `text_encoding_preference`（简/繁/自动）排名；简体永不选 Big5，繁体优先 Big5；低置信时 GB18030↔UTF-8 双候选回退。
 - `src/bookhub/library/data_paths.py`：缩略图缓存目录解析；默认经 `app_paths.default_preview_dir()`（dev：`img_preview/`，打包：exe 同级）；空/相对/不可写路径回退默认；`preview_cache` 模式枚举。
@@ -230,7 +230,7 @@ src/
 - `src/bookhub/library/update_checker.py`：GitHub `/releases/latest` 请求（stdlib urllib）、semver 归一化/比较、`check_for_update()` 返回 `update_available|up_to_date|error` JSON 形字段。
 - `src/bookhub/library/update_check_worker.py`：`UpdateCheckWorker(QThread)` 后台执行更新检查并通过 `finished` 信号回传 JSON，避免阻塞 WebEngine UI 线程。
 - `src/bookhub/library/metadata.py`：元数据提取与缩略图生成（WebP，`file://` 路径）；`extract_metadata_by_extension` / `build_thumbnail_by_extension` 显式分派 PDF/EPUB/HTML/MD/FB2/DOCX；`extension_lower` 识别 `.fb2.zip`；`compute_fingerprints` 按策略分级读盘（`size_mtime` 仅 stat、`quick` 前 4MB、`sha256` 整文件）；`build_metadata_tags` 不再把 author/publisher/language 拼进 `tags_json`。
-- `src/bookhub/library/collection_rules.py`：独立集合规则匹配器；固定 version/matchMode/conditions schema，支持五种字符串操作符、逐条件大小写和 Book/Text/Comic 来源原名提取，不复用 Text Rules。
+- `src/bookhub/library/collection_rules.py`：独立集合规则匹配器；v2 条件新增 `field`，v1 自动按来源原名读取；按 Book/Text/Comic kind 限定已存字段，支持五种操作符、逐条件大小写、空值拒绝和标签逐项匹配，不复用 Text Rules。
 - `src/bookhub/library/models.py`：扫描/任务的数据结构定义（含 `LibraryScanRoot`/`ComicScanRoot`/`TextScanRoot` 可空 `scan_strategy`；`resolve_library_hash_strategy` / `resolve_comic_scan_strategy`——总开关关时忽略根覆盖、开时 NULL 继承全局）；`IMAGE_FOLDER_BOOK_EXTENSION=.imgfolder`；`ScanResult.to_summary()` 输出图片书识别/新增/更新/失效移除指标及历史别名键；`ComicScanRequest.scan_strategy` 全局默认 `snapshot`；`TextScanRequest.hash_strategy` 默认 `quick` 并携带 `encoding_preference`；`ComicScanRequest.title_conflict_policy` / `encoding_preference`；`COMIC_IMAGE_EXTENSIONS` 含 jpg/png/webp/gif/bmp/tif/tiff。
 - `src/bookhub/library/media_sanitizer.py`：封面图消毒；GIF/多帧图 `seek(0)` 后转 RGB PNG。
 - `src/bookhub/library/text_rules/rule_models.py`：Text Novel 规则模型（`ImportRule`/`RuleStep`/`RuleContext`/`RuleResult`，含预览 warning 字段）。
@@ -249,14 +249,14 @@ src/
 ### 3.5 UI 主组件（bookhub/ui）
 - `src/bookhub/ui/__init__.py`：UI 包导出入口。
 - `src/bookhub/ui/web_window.py`：当前主窗口 `WebAppWindow`；负责 WebEngine、主题底色/缩放、扫描/缩略图/缓存迁移/更新、原生目录与封面选择、资源删除及设置写库；`scanDepth`、`textPreviewChars`、`comicPageSize`、`viewportBufferScreens`、`gridColumns` 均把原值交给 Repository 单一归一化，不在 Qt slot 预先 `int()`；扫描、根目录变更和资源删除同时发出标签目录失效信号；手动编辑书籍/小说封面时标记 `cover_source=manual`；`ShortcutWebView` 统一转发鼠标 Back/Forward 并阻止网页历史导航。
-- `src/bookhub/ui/web/js/app.js`：单一 SPA 壳；Glass/Vaporwave 通过目标 CSS 预加载、禁用缓存和原子启用实现无刷新热切换，同步 scene、昼夜 Qt 背景及原位分段控件而不重建页面状态；其余含集合规则、Library/Text/Comic 页面、排序、多选、Quick Add、标签、快捷键、推荐、搜索、主题和任务交互。
+- `src/bookhub/ui/web/js/app.js`：单一 SPA 壳；集合规则设置页与右键弹窗共用逐条件字段编辑器，变更字段使旧预览失效；文本小说主页 List 第四列为系列、小说合集保留路径；Glass/Vaporwave 通过目标 CSS 预加载和原子启用实现无刷新热切换；其余含 Library/Text/Comic 页面、排序、多选、Quick Add、标签、快捷键、推荐、搜索、主题和任务交互。
 - `src/bookhub/ui/web/js/text_rules.js`：Text Rules 宽屏遮罩三栏编辑器（字段/规则链/步骤/预览）；防抖单样本预览、多样本预览、内置模板、用户预设、常用正则与帮助抽屉；经 Bridge 读写 `rules_json`。`renderTextRulesPanel()` 仅在 `openTextRulesPanel` 打开时构建一次性外壳（`.tr-overlay`/`.tr-host`/header/footer，带入场动画）；此后所有编辑（字段切换、规则/步骤增删移动、source/类别/类型 change、模板/预设）改调用 `renderTrBody()` 仅重建 `.tr-body` 三栏内容并保存/恢复各栏 `scrollTop`，不再重播入场动画；`installTrWheelGuard` 在 host 上拦截落在 `<select>` 的滚轮事件（Windows 悬停滚轮会静默改变原生 select 值并触发 change），`preventDefault` 后手动转发 `deltaY` 给 `.tr-col`/`.tr-drawer-body`，修复滚动时误触发全量重建导致的「白屏/像整页重载」；预览 diag 展示 `detectedEncoding` 与置信度。
-- `src/bookhub/ui/web_bridge.py`：`UiBridge(QObject)` 前后端桥；新增 `getCollectionRules/getCollectionRule/previewCollectionRule/saveCollectionRule/clearCollectionRuleExclusion`，用配置 canonical + preview token 拒绝过期保存并仅返回定向合集页；其余包括批量/单项 Quick Add、标签、推荐、设置/扫描、资源 CRUD 与 Text Rules。
+- `src/bookhub/ui/web_bridge.py`：`UiBridge(QObject)` 前后端桥；`getCollectionRule` 另返回 `availableFields`，原预览/保存接口承载 v2 条件并用 canonical + preview token 拒绝过期保存；资源 payload 含小说系列，单项标签失败时提示事务回滚；其余包括批量/单项 Quick Add、推荐、设置/扫描、资源 CRUD 与 Text Rules。
 - `src/bookhub/library/repository.py`：集合表自动迁移 `rule_enabled/rule_json/rule_updated_at`，成员表记录 manual/rule 双来源并维护 Book/Comic 排除表；预览、保存、成员重算、关闭转换和排除恢复均走 SQLite 事务；Quick Add/批量加入固定记为手动来源并清同合集排除。
 - `src/bookhub/ui/web_scheme.py`：`app://` 自定义 URL scheme；`register_app_scheme()`（须在 QApplication 前调用）、`to_local_path()`（`file://`/裸路径归一化）、`AppSchemeHandler`（`app://app/*` 服务 `web/` 静态资源含 woff2 字体；`app://img/x?p=` 仅服务白名单封面图，越权拒绝）。
 - `src/bookhub/ui/web/index.html`：玻璃拟态 UI 骨架（侧栏含 Import Books、顶栏/主区/详情栏/遮罩/toast/右键菜单挂载点）；公共 `base.css` 常驻，初始 Glass link 以 `data-skin-link/data-skin` 标记并由 `app.js` 与 Vaporwave 缓存原子切换；`data-ui-skin` + `data-theme` 双轴，`#vwSceneMount` 供蒸汽波背景层。
 - `src/bookhub/ui/web/fonts/`：蒸汽波 Web 字体（Sora/Space Mono woff2 + OFL.txt）；`skins/vaporwave/fonts.css` 以从皮肤目录返回三级的相对 URL 解析为 `app://app/fonts/*`，不依赖 CDN。
-- `src/bookhub/ui/web/css/base.css`：布局/结构/动画（无 skin 色板）；集合规则双栏在 740px 降单栏、条件编辑器在 600px 再降级，模态/关闭选择/预览/排除列表无横向溢出；Glass/Vaporwave 的组件文件分别补充视觉层。
+- `src/bookhub/ui/web/css/base.css`：布局/结构/动画（无 skin 色板）；集合规则五控件条件行在 740px/600px 逐级降为单列，设置双栏降单栏，模态/关闭选择/预览/排除列表无横向溢出；Glass/Vaporwave 共享此结构并由各皮肤组件文件补充视觉层。
 - `src/bookhub/ui/web/css/app.css`：legacy 入口，`@import` glass bundle（兼容旧引用）。
 - `src/bookhub/ui/web/css/skins/glass/tokens.css`：玻璃拟态 day/night CSS 变量。
 - `src/bookhub/ui/web/css/skins/glass/components.css`：玻璃拟态组件样式；含资源多选勾选标识、批量面板/分组弹窗/选中合集态，以及标签、推荐、快捷键和焦点样式。
@@ -270,7 +270,7 @@ src/
 
 ### 3.6 UI 数据模型（bookhub/ui/models）
 - `src/bookhub/ui/models/__init__.py`：模型包入口。
-- `src/bookhub/ui/models/resource.py`：UI 层 `ResourceItem` 资源模型。
+- `src/bookhub/ui/models/resource.py`：UI 层 `ResourceItem` 资源模型，包含文本小说系列以贯通主列表 ViewModel 与 Bridge payload。
 
 ### 3.7 UI 资源组件（bookhub/ui/resources）
 - `src/bookhub/ui/resources/__init__.py`：资源包入口。
@@ -286,6 +286,7 @@ src/
 - `src/bookhub/ui/viewmodels/library_viewmodel.py`：Library/Text/Comic 资源查询过滤、字段前缀搜索（`title:`/`author:`/`tag:`）、普通 query 匹配 title/author/tags/path/info_text、视图模式、搜索建议状态。
 
 ## 4. 当前关键实现（简要）
+- 2026-09-26 集合规则元数据扩展（main，未发布）：规则 v2 每条条件可选字段，旧 v1 保持来源原名语义；小说系列独立保存并在主列表替换路径列，旧小说下次扫描补齐；导入/手动标签分存，旧标签优先保留，单项和批量标签改动同事务重算对应规则。
 - 2026-09-23 远程 minor Release：近期 main 的标签管理、无刷新/批量 Quick Add、Library/Text Novel 排序、图片文件夹书籍、集合规则与稳定性修复已通过 GitHub Actions 发布为 `v2.5.0`；产物 `Simple-Book-library-v2.5.0-win64.zip`，Release 页面含新增功能与升级说明。发布前 Python 329 passed / 70 subtests passed，六组 Node 行为测试和生产 JS 语法检查通过。
 - 2026-09-23 集合规则自动归档：三类合集独立、默认关闭；按来源原名执行 all/any 五类条件，手动/规则成员来源与排除生命周期完整持久化；保存先预览并原子应用，扫描后按 scope 自动重算；右键模态与 Settings 双栏共用编辑器，Glass/Vaporwave 支持 740/600px。
 - 2026-09-19 远程同步：将 Codex 已提交的 Library 排序 `dde2105` 与当日 P1 修复推送到 `origin/main`；安装包版本仍为 v2.4.0，本轮未触发 Release。

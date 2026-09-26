@@ -245,6 +245,11 @@ const BOOK_FIELD_SORT_OPTIONS = [
   ["path_asc", "text_novel.sort.path_asc", "Path: A-Z"],
   ["path_desc", "text_novel.sort.path_desc", "Path: Z-A"],
 ];
+const TEXT_NOVEL_SORT_OPTIONS = [
+  ...BOOK_FIELD_SORT_OPTIONS,
+  ["series_asc", "text_novel.sort.series_asc", "Series: A-Z"],
+  ["series_desc", "text_novel.sort.series_desc", "Series: Z-A"],
+];
 
 const BOOK_COLLECTION_SORT_OPTIONS = [
   ["added_desc", "favorites.sort.added_desc", "Added Time: Newest First"],
@@ -916,7 +921,7 @@ function renderPageTools(page, data) {
     const wrap = elem("div", "page-sort");
     wrap.appendChild(elem("span", "small-note", t("text_novel.sort.label", "Sort")));
     const sel = elem("select", "sort-select");
-    BOOK_FIELD_SORT_OPTIONS.forEach(([value, key, fb]) => {
+    (page === "text_novel" ? TEXT_NOVEL_SORT_OPTIONS : BOOK_FIELD_SORT_OPTIONS).forEach(([value, key, fb]) => {
       const opt = elem("option", null, t(key, fb));
       opt.value = value;
       if ((data.sort || "file_mtime_desc") === value) opt.selected = true;
@@ -1597,7 +1602,7 @@ function renderTable(area, items, page, pageSort) {
     ["title", t("detail.title", "Title")],
     ["author", t("detail.author", "Author")],
     ["tags", t("detail.tags", "Tags")],
-    ["path", t("detail.path", "Path")],
+    [page === "text_novel" ? "series" : "path", page === "text_novel" ? t("detail.series", "Series") : t("detail.path", "Path")],
   ];
   if (showCoverColumn) htr.appendChild(elem("th", null, t("detail.cover", "Cover")));
   headers.forEach(([field, label]) => {
@@ -1664,7 +1669,7 @@ function renderTable(area, items, page, pageSort) {
       tr.appendChild(elem("td", null, item.title));
       tr.appendChild(elem("td", null, item.author || ""));
       tr.appendChild(elem("td", null, (item.tags || []).join(", ")));
-      tr.appendChild(elem("td", null, item.path || ""));
+      tr.appendChild(elem("td", null, page === "text_novel" ? (item.series || "") : (item.path || "")));
       tr.addEventListener("click", (event) => handleResourceSelection(ref, event));
       tr.addEventListener("keydown", (event) => handleResourceSelectionKeydown(ref, event));
       tr.addEventListener("dblclick", () => State.bridge.openResource(page, item.id));
@@ -1850,6 +1855,7 @@ function renderDetail(d, sourcePage) {
   const meta = elem("div", "detail-meta");
   const isComic = COMIC_PAGES.has(actionPage);
   if (d.author) meta.appendChild(buildDetailBlock(t("detail.author", "Author"), d.author));
+  if (d.series && actionPage === "text_novel") meta.appendChild(buildDetailBlock(t("detail.series", "Series"), d.series));
   if (d.publisher && d.publisher.toLowerCase() !== "unknown") meta.appendChild(buildDetailBlock(t("detail.publisher", "Publisher"), d.publisher));
   if (isComic && d.imageCount) meta.appendChild(buildDetailBlock(t("detail.images", "Images"), String(d.imageCount)));
   if (d.tags && d.tags.length) meta.appendChild(buildDetailBlock(t("detail.tags", "Tags"), d.tags.join("、")));
@@ -3192,6 +3198,15 @@ const COLLECTION_RULE_OPERATORS = [
   ["ends_with", "collection_rules.operator.ends_with", "Ends with"],
   ["equals", "collection_rules.operator.equals", "Exactly equals"],
 ];
+const COLLECTION_RULE_FIELD_LABELS = {
+  source_name: ["collection_rules.field.source_name", "Source name"],
+  title: ["collection_rules.field.title", "Title"],
+  author: ["collection_rules.field.author", "Author"],
+  publisher: ["collection_rules.field.publisher", "Publisher"],
+  language: ["collection_rules.field.language", "Language"],
+  tags: ["collection_rules.field.tags", "Tags"],
+  series: ["collection_rules.field.series", "Series"],
+};
 
 function collectionRuleKindLabel(kind) {
   return {
@@ -3250,11 +3265,12 @@ function collectionRulePayload(draft, page) {
   return {
     enabled: Boolean(draft.enabled),
     rule: {
-      version: 1,
+      version: 2,
       matchMode: draft.matchMode,
       conditions: draft.conditions
         .filter((item) => String(item.value || "").trim())
         .map((item) => ({
+          field: item.field || "source_name",
           operator: item.operator,
           value: item.value,
           caseSensitive: Boolean(item.caseSensitive),
@@ -3269,11 +3285,14 @@ function collectionRulePayload(draft, page) {
 function buildCollectionRuleEditor(host, detail, options) {
   const config = options || {};
   const sourceRule = detail.rule || { matchMode: "all", conditions: [] };
+  const availableFields = Array.isArray(detail.availableFields) && detail.availableFields.length
+    ? detail.availableFields : ["source_name"];
   const draft = {
     enabled: Boolean(detail.enabled),
     originalEnabled: Boolean(detail.enabled),
     matchMode: sourceRule.matchMode === "any" ? "any" : "all",
     conditions: (sourceRule.conditions || []).map((item) => ({
+      field: item.field || "source_name",
       operator: item.operator || "contains",
       value: String(item.value || ""),
       caseSensitive: Boolean(item.caseSensitive),
@@ -3332,6 +3351,16 @@ function buildCollectionRuleEditor(host, detail, options) {
     if (!draft.conditions.length) conditionList.appendChild(elem("p", "small-note", t("collection_rules.no_conditions", "Add at least one condition to enable this rule.")));
     draft.conditions.forEach((condition, index) => {
       const row = elem("div", "collection-rule-condition");
+      const field = elem("select");
+      availableFields.forEach((fieldId) => {
+        const label = COLLECTION_RULE_FIELD_LABELS[fieldId];
+        if (!label) return;
+        const option = elem("option", null, t(label[0], label[1])); option.value = fieldId;
+        if (condition.field === fieldId) option.selected = true;
+        field.appendChild(option);
+      });
+      field.setAttribute("aria-label", t("collection_rules.field_label", "Match field"));
+      field.addEventListener("change", () => { condition.field = field.value; invalidation(); });
       const operator = elem("select");
       COLLECTION_RULE_OPERATORS.forEach(([value, key, fallback]) => {
         const option = elem("option", null, t(key, fallback)); option.value = value;
@@ -3351,12 +3380,12 @@ function buildCollectionRuleEditor(host, detail, options) {
       const remove = elem("button", "icon-btn", "×");
       remove.setAttribute("aria-label", t("collection_rules.remove_condition", "Remove condition"));
       remove.addEventListener("click", () => { draft.conditions.splice(index, 1); renderConditions(); invalidation(); });
-      row.appendChild(operator); row.appendChild(value); row.appendChild(caseLabel); row.appendChild(remove);
+      row.appendChild(field); row.appendChild(operator); row.appendChild(value); row.appendChild(caseLabel); row.appendChild(remove);
       conditionList.appendChild(row);
     });
   };
   addCondition.addEventListener("click", () => {
-    draft.conditions.push({ operator: "contains", value: "", caseSensitive: false });
+    draft.conditions.push({ field: "source_name", operator: "contains", value: "", caseSensitive: false });
     renderConditions(); invalidation();
     const inputs = conditionList.querySelectorAll('input[type="text"], input:not([type])');
     if (inputs.length) inputs[inputs.length - 1].focus();

@@ -45,7 +45,7 @@ _Captured from the real Qt WebEngine interface with anonymous demo records and p
 | Status | Included capabilities |
 |--------|-----------------------|
 | **Stable v2.5.0** | Three resource scanners and collection types, standalone tag management, in-place Quick Add, batch organization, persistent Library/Text Novel sorting, Library image-folder books, automatic collection rules, random recommendations, configurable shortcuts, and Glass/Vaporwave skins |
-| **Current main** | Functionally aligned with v2.5.0; later development continues here |
+| **Current main** | Adds metadata-field collection rules, stored Text Novel series, and preservation of manual novel tags on top of v2.5.0 |
 
 The Releases page contains the remotely built Windows package; choose the stable release if you simply want to use the app.
 
@@ -81,6 +81,7 @@ Library can also import a folder as one regular book when it is within levels 1 
 - Each Book, Text Novel, or Comic collection can independently match source filenames or folder names with contains, excludes, starts-with, ends-with, and exact conditions. One resource may enter every matching collection.
 - Open **Edit collection rule…** from a collection card's context menu, or manage all rules under **Settings → Collection Rules**. A required preview shows additions, removals, manual keeps, and exclusions before saving.
 - These rules organize resources already imported into the local library. They neither browse nor download content.
+- **Current main only:** Each condition can target the source name or stored metadata. Books support title, author, publisher, language, and tags; Text Novels also support series; Comics support title and tags. Manual tag changes update matching collections immediately, and rescans preserve manual novel tags. Existing novels gain a series on their next text scan. The Text Novel main list shows a sortable Series column instead of Path; the path remains in details.
 
 ## Local data and privacy
 

@@ -74,6 +74,39 @@ class CollectionRuleMatchingTests(unittest.TestCase):
         self.assertTrue(matches_collection_rule("这是备用名称", equals_any))
         self.assertFalse(matches_collection_rule("完全名称-增补", equals_any))
 
+    def test_metadata_conditions_use_selected_fields_and_preserve_v1_names(self) -> None:
+        record = {
+            "file_name": "Old Filename.txt", "extension": ".txt", "path": r"C:\novels\Old Filename.txt",
+            "title": "新标题", "author": "Alice", "series": "银月系列", "tags_json": '["科幻", "长篇"]',
+        }
+        rule = normalize_collection_rule({
+            "version": 2, "matchMode": "all", "conditions": [
+                {"field": "author", "operator": "equals", "value": "alice", "caseSensitive": False},
+                {"field": "series", "operator": "contains", "value": "银月", "caseSensitive": False},
+                {"field": "tags", "operator": "equals", "value": "科幻", "caseSensitive": False},
+            ],
+        })
+        self.assertTrue(matches_collection_rule(record, rule, kind="text_novel"))
+        self.assertFalse(matches_collection_rule({**record, "author": "Bob"}, rule, kind="text_novel"))
+        legacy = normalize_collection_rule({"version": 1, "conditions": [
+            {"operator": "contains", "value": "Old Filename", "caseSensitive": False},
+        ]})
+        self.assertEqual(legacy["conditions"][0]["field"], "source_name")
+        self.assertTrue(matches_collection_rule(record, legacy, kind="text_novel"))
+
+    def test_empty_fields_and_individual_tags_do_not_match_accidentally(self) -> None:
+        rule = {"version": 2, "conditions": [
+            {"field": "tags", "operator": "not_contains", "value": "试读", "caseSensitive": False},
+        ]}
+        self.assertFalse(matches_collection_rule({"tags_json": "[]"}, rule, kind="comic"))
+        self.assertFalse(matches_collection_rule({"tags_json": '["科幻", "试读版"]'}, rule, kind="comic"))
+        self.assertTrue(matches_collection_rule({"tags_json": '["科幻", "长篇"]'}, rule, kind="comic"))
+        no_author = {"version": 2, "conditions": [
+            {"field": "author", "operator": "not_contains", "value": "Alice", "caseSensitive": False},
+        ]}
+        self.assertFalse(matches_collection_rule({"author": ""}, no_author, kind="book"))
+        self.assertTrue(matches_collection_rule({"author": "Bob"}, no_author, kind="book"))
+
 
 class CollectionRuleRepositoryTests(unittest.TestCase):
     def _repo(self) -> LibraryRepository:
@@ -110,6 +143,154 @@ class CollectionRuleRepositoryTests(unittest.TestCase):
         with repo._connection() as conn:
             return int(conn.execute("SELECT id FROM comics WHERE path = ?", (path,)).fetchone()["id"])
 
+    def test_preview_uses_metadata_fields_and_rejects_wrong_kind(self) -> None:
+        repo = self._repo()
+        repo.upsert_book({
+            "path": r"C:\books\Opaque.pdf", "file_name": "Opaque.pdf", "extension": ".pdf",
+            "title": "显示名称", "author": "Alice", "publisher": "青山社", "language": "zh",
+            "tags_json": '["科幻", "长篇"]', "resource_type": "book",
+        })
+        book_collection = repo.create_collection("科幻", kind="book")
+        rule = {"version": 2, "matchMode": "all", "conditions": [
+            {"field": "author", "operator": "equals", "value": "Alice", "caseSensitive": True},
+            {"field": "tags", "operator": "not_contains", "value": "试读", "caseSensitive": False},
+        ]}
+        self.assertEqual(repo.preview_collection_rule(book_collection, enabled=True, rule=rule)["summary"]["matched"], 1)
+        self.assertEqual(repo.get_collection_rule(book_collection)["availableFields"],
+                         ["source_name", "title", "author", "publisher", "language", "tags"])
+        invalid = {"version": 2, "conditions": [
+            {"field": "series", "operator": "contains", "value": "某系列", "caseSensitive": False},
+        ]}
+        with self.assertRaisesRegex(ValueError, "invalid_field"):
+            repo.preview_collection_rule(book_collection, enabled=True, rule=invalid)
+
+    def test_comic_title_and_tags_match_without_book_only_fields(self) -> None:
+        repo = self._repo()
+        repo.upsert_comic({"path": r"C:\comics\Opaque.cbz", "title": "夜航",
+                           "comic_root": r"C:\comics", "image_count": 3})
+        with repo._connection() as conn:
+            resource_id = conn.execute("SELECT resource_id FROM comics WHERE path = ?", (r"C:\comics\Opaque.cbz",)).fetchone()[0]
+        repo.add_resource_tag("comic", resource_id, "短篇")
+        collection_id = repo.create_collection("短篇", kind="comic")
+        detail = repo.get_collection_rule(collection_id)
+        self.assertEqual(detail["availableFields"], ["source_name", "title", "tags"])
+        rule = {"version": 2, "matchMode": "all", "conditions": [
+            {"field": "title", "operator": "equals", "value": "夜航", "caseSensitive": False},
+            {"field": "tags", "operator": "contains", "value": "短", "caseSensitive": False},
+        ]}
+        self.assertEqual(repo.preview_collection_rule(collection_id, enabled=True, rule=rule)["summary"]["matched"], 1)
+        with self.assertRaisesRegex(ValueError, "invalid_field"):
+            repo.save_collection_rule(collection_id, enabled=True, rule={"version": 2, "conditions": [
+                {"field": "author", "operator": "contains", "value": "某人", "caseSensitive": False},
+            ]})
+
+    def test_text_tag_manual_changes_reconcile_immediately_and_survive_rescan(self) -> None:
+        repo = self._repo()
+        payload = {
+            "path": r"C:\novels\Opaque.txt", "file_name": "Opaque.txt", "extension": ".txt",
+            "title": "一部小说", "resource_type": "text_novel", "tags_json": '["科幻"]',
+        }
+        repo.upsert_book(payload)
+        with repo._connection() as conn:
+            row = conn.execute("SELECT id, resource_id FROM books WHERE path = ?", (payload["path"],)).fetchone()
+        collection_id = repo.create_collection("科幻", kind="text_novel")
+        rule = {"version": 2, "conditions": [
+            {"field": "tags", "operator": "equals", "value": "科幻", "caseSensitive": False},
+        ]}
+        repo.save_collection_rule(collection_id, enabled=True, rule=rule)
+        self.assertTrue(repo.is_book_in_collection(row["id"], collection_id))
+        self.assertTrue(repo.remove_resource_tag("text_novel", row["resource_id"], "科幻"))
+        self.assertFalse(repo.is_book_in_collection(row["id"], collection_id))
+        repo.upsert_book(payload)
+        self.assertEqual(repo.get_book_tags(row["id"]), [])
+        self.assertTrue(repo.add_resource_tag("text_novel", row["resource_id"], "科幻"))
+        self.assertTrue(repo.is_book_in_collection(row["id"], collection_id))
+
+    def test_batch_added_tag_reconciles_rule_and_remains_after_text_rescan(self) -> None:
+        repo = self._repo()
+        payload = {
+            "path": r"C:\novels\Batch.txt", "file_name": "Batch.txt", "extension": ".txt",
+            "title": "批量", "resource_type": "text_novel", "tags_json": "[]",
+        }
+        repo.upsert_book(payload)
+        with repo._connection() as conn:
+            row = conn.execute("SELECT id, resource_id FROM books WHERE path = ?", (payload["path"],)).fetchone()
+        collection_id = repo.create_collection("科幻", kind="text_novel")
+        repo.save_collection_rule(collection_id, enabled=True, rule={"version": 2, "conditions": [
+            {"field": "tags", "operator": "equals", "value": "科幻", "caseSensitive": False},
+        ]})
+        repo.apply_batch_quick_add(resources=[{"source_page": "text_novel", "resource_id": row["resource_id"]}],
+                                   tags=["科幻"])
+        self.assertTrue(repo.is_book_in_collection(row["id"], collection_id))
+        repo.upsert_book(payload)
+        self.assertEqual(repo.get_book_tags(row["id"]), ["科幻"])
+
+    def test_tag_change_rolls_back_when_rule_membership_write_fails(self) -> None:
+        repo = self._repo()
+        repo.upsert_book({"path": r"C:\books\Atomic.pdf", "file_name": "Atomic.pdf",
+                          "extension": ".pdf", "title": "原子", "resource_type": "book", "tags_json": "[]"})
+        with repo._connection() as conn:
+            row = conn.execute("SELECT id, resource_id FROM books WHERE file_name = 'Atomic.pdf'").fetchone()
+        collection_id = repo.create_collection("原子", kind="book")
+        repo.save_collection_rule(collection_id, enabled=True, rule={"version": 2, "conditions": [
+            {"field": "tags", "operator": "equals", "value": "科幻", "caseSensitive": False},
+        ]})
+        with repo._connection() as conn:
+            conn.execute("CREATE TRIGGER fail_tag_rule BEFORE INSERT ON collection_books "
+                         "BEGIN SELECT RAISE(ABORT, 'blocked'); END")
+        with self.assertRaises(sqlite3.IntegrityError):
+            repo.add_resource_tag("library", row["resource_id"], "科幻")
+        self.assertEqual(repo.get_book_tags(row["id"]), [])
+        self.assertFalse(repo.is_book_in_collection(row["id"], collection_id))
+
+    def test_tag_mismatch_clears_exclusion_before_future_rematch(self) -> None:
+        repo = self._repo()
+        repo.upsert_book({"path": r"C:\books\Excluded.pdf", "file_name": "Excluded.pdf",
+                          "extension": ".pdf", "title": "测试", "resource_type": "book",
+                          "tags_json": '["科幻"]'})
+        with repo._connection() as conn:
+            row = conn.execute("SELECT id, resource_id FROM books WHERE file_name = 'Excluded.pdf'").fetchone()
+        collection_id = repo.create_collection("科幻", kind="book")
+        repo.save_collection_rule(collection_id, enabled=True, rule={"version": 2, "conditions": [
+            {"field": "tags", "operator": "equals", "value": "科幻", "caseSensitive": False},
+        ]})
+        repo.remove_book_from_collection(row["id"], collection_id)
+        self.assertEqual(repo.get_collection_rule(collection_id)["excludedCount"], 1)
+        repo.remove_resource_tag("library", row["resource_id"], "科幻")
+        self.assertEqual(repo.get_collection_rule(collection_id)["excludedCount"], 0)
+        repo.add_resource_tag("library", row["resource_id"], "科幻")
+        self.assertTrue(repo.is_book_in_collection(row["id"], collection_id))
+
+    def test_legacy_text_tags_become_preserved_baseline_without_series_backfill(self) -> None:
+        base = Path(tempfile.mkdtemp(prefix="bookhub_legacy_text_rule_"))
+        db_path = base / "library.db"
+        with sqlite3.connect(db_path) as conn:
+            conn.executescript("""
+                CREATE TABLE books (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, resource_id TEXT NOT NULL UNIQUE,
+                    file_name TEXT NOT NULL, extension TEXT NOT NULL, title TEXT, author TEXT,
+                    publisher TEXT, language TEXT, tags_json TEXT NOT NULL DEFAULT '[]',
+                    status TEXT NOT NULL DEFAULT 'UNREAD', resource_type TEXT NOT NULL DEFAULT 'book',
+                    path TEXT NOT NULL UNIQUE, thumbnail_path TEXT, cover_image_path TEXT,
+                    cover_source TEXT, cover_fingerprint TEXT, info_text TEXT,
+                    is_missing INTEGER NOT NULL DEFAULT 0, missing_reason TEXT,
+                    fingerprint_sha256 TEXT, fingerprint_size_mtime TEXT, fingerprint_quick TEXT,
+                    file_mtime INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+                );
+            """)
+            conn.execute(
+                "INSERT INTO books(resource_id,file_name,extension,title,tags_json,resource_type,path,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?)",
+                ("old-novel", "Old.txt", ".txt", "旧小说", '["旧标签"]', "text_novel", r"C:\novels\Old.txt", "", ""),
+            )
+        repo = LibraryRepository(db_path, base / "scan_report.json")
+        self.assertEqual(repo.list_books(resource_type="text_novel")[0]["series"], "")
+        repo.update_text_novel_metadata(r"C:\novels\Old.txt", title="旧小说", author=None,
+                                        series="新系列", tags=[], info_text=None)
+        record = repo.list_books(resource_type="text_novel")[0]
+        self.assertEqual(record["series"], "新系列")
+        self.assertEqual(record["tags"], ["旧标签"])
+
     def test_new_collections_are_disabled_and_manual_members_are_marked(self) -> None:
         repo = self._repo()
         repo.upsert_book(
@@ -131,7 +312,7 @@ class CollectionRuleRepositoryTests(unittest.TestCase):
         self.assertEqual(collection["rule_enabled"], 0)
         self.assertEqual(
             collection["rule_json"],
-            '{"version":1,"matchMode":"all","conditions":[]}',
+            '{"version":2,"matchMode":"all","conditions":[]}',
         )
         with repo._connection() as conn:
             link = conn.execute(
@@ -264,7 +445,7 @@ class CollectionRuleRepositoryTests(unittest.TestCase):
         self.assertTrue(repo.get_collection_rule(remove_collection)["enabled"])
         repo.save_collection_rule(remove_collection, enabled=False, rule=rule, disable_mode="remove")
         self.assertFalse(repo.is_book_in_collection(book_id, remove_collection))
-        self.assertEqual(repo.get_collection_rule(remove_collection)["rule"], rule)
+        self.assertEqual(repo.get_collection_rule(remove_collection)["rule"], normalize_collection_rule(rule))
 
         convert_collection = repo.create_collection("Convert", kind=COLLECTION_KIND_BOOK)
         repo.save_collection_rule(convert_collection, enabled=True, rule=rule)

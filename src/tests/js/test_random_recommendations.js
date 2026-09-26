@@ -245,7 +245,7 @@ const clickNovelHeader = (columnIndex, currentSort) => {
   [0, "title_asc"],
   [1, "author_asc"],
   [2, "tags_asc"],
-  [3, "path_asc"],
+  [3, "series_asc"],
 ].forEach(([columnIndex, expectedOrder]) => {
   clickNovelHeader(columnIndex, "file_mtime_desc");
   assert.deepStrictEqual(pageSortCalls.at(-1), ["text_novel", expectedOrder]);
@@ -260,11 +260,11 @@ assert.strictEqual(activeTitleHeader.children[0].children.at(-1).textContent, "â
 clear(document.getElementById("pageHeadTools"));
 renderPageTools("text_novel", { mode: "grid_or_list", sort: "author_desc", items: [novelListItem] });
 const textSortSelect = document.getElementById("pageHeadTools").children[0].children.at(-1);
-assert.strictEqual(textSortSelect.children.length, 10, "Text Novel dropdown exposes every supported order");
+assert.strictEqual(textSortSelect.children.length, 12, "Text Novel dropdown exposes every supported order");
 assert.strictEqual(textSortSelect.children.find((option) => option.selected).value, "author_desc");
-textSortSelect.value = "path_asc";
+textSortSelect.value = "series_asc";
 textSortSelect.dispatch("change");
-assert.deepStrictEqual(pageSortCalls.at(-1), ["text_novel", "path_asc"]);
+assert.deepStrictEqual(pageSortCalls.at(-1), ["text_novel", "series_asc"]);
 
 teardownVirtualWindow(area);
 clear(area);

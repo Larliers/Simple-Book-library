@@ -21,3 +21,4 @@ class ResourceItem:
     info_text: str | None = None
     cover_image_path: str | None = None
     image_count: int = 0
+    series: str = ""

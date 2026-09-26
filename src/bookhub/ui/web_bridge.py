@@ -105,6 +105,8 @@ def _web_strings() -> dict[str, str]:
         ("tags.source.library", "Book"),
         ("tags.source.text_novel", "Novel"),
         ("tags.source.comic", "Comic"),
+        ("tags.save_failed_title", "Tag update failed"),
+        ("tags.save_failed_message", "The tag and collection changes were rolled back."),
         ("recommendations.refresh", "Recommend Again"),
         ("recommendations.books", "Books"),
         ("recommendations.novels", "Novels"),
@@ -113,6 +115,7 @@ def _web_strings() -> dict[str, str]:
         ("recommendations.loading", "Loading recommendations..."),
         ("detail.empty", "Select an item to see its details."),
         ("detail.author", "Author"),
+        ("detail.series", "Series"),
         ("detail.publisher", "Publisher"),
         ("detail.tags", "Tags"),
         ("detail.collections", "Collections"),
@@ -177,6 +180,8 @@ def _web_strings() -> dict[str, str]:
         ("text_novel.sort.tags_desc", "Tags: Z-A"),
         ("text_novel.sort.path_asc", "Path: A-Z"),
         ("text_novel.sort.path_desc", "Path: Z-A"),
+        ("text_novel.sort.series_asc", "Series: A-Z"),
+        ("text_novel.sort.series_desc", "Series: Z-A"),
         ("favorites.sort.label", "Sort"),
         ("favorites.sort.added_desc", "Added Time: Newest First"),
         ("favorites.sort.added_asc", "Added Time: Oldest First"),
@@ -241,6 +246,14 @@ def _web_strings() -> dict[str, str]:
         ("collection_rules.remove_condition", "Remove condition"),
         ("collection_rules.no_conditions", "Add at least one condition to enable this rule."),
         ("collection_rules.operator_label", "Operator"),
+        ("collection_rules.field_label", "Match field"),
+        ("collection_rules.field.source_name", "Source name"),
+        ("collection_rules.field.title", "Title"),
+        ("collection_rules.field.author", "Author"),
+        ("collection_rules.field.publisher", "Publisher"),
+        ("collection_rules.field.language", "Language"),
+        ("collection_rules.field.tags", "Tags"),
+        ("collection_rules.field.series", "Series"),
         ("collection_rules.operator.contains", "Contains"),
         ("collection_rules.operator.not_contains", "Does not contain"),
         ("collection_rules.operator.starts_with", "Starts with"),
@@ -272,6 +285,7 @@ def _web_strings() -> dict[str, str]:
         ("collection_rules.error.stale_preview", "The preview is outdated. Preview again."),
         ("collection_rules.error.disable_mode_required", "Choose how to handle automatic members."),
         ("collection_rules.error.storage_error", "The rule could not be saved. Try again."),
+        ("collection_rules.error.invalid_field", "This field is not available for this collection type."),
         ("settings.collection_rules.scan_summary", "\nCollection Rules - status:{status} collections:{collections} matched:{matched} added:{added} removed:{removed} excluded:{excluded}"),
         ("shortcut.section.navigation", "Navigation"),
         ("shortcut.section.resource", "Current selected resource"),
@@ -563,6 +577,7 @@ class UiBridge(QObject):
             resource_id=record.get("resource_id", ""),
             title=record.get("title") or record.get("file_name") or "",
             author=record.get("author") or "",
+            series=record.get("series") or "",
             tags=list(record.get("tags") or []),
             resource_type=record.get("resource_type") or "book",
             path=record.get("path") or "",
@@ -637,6 +652,7 @@ class UiBridge(QObject):
             "id": row.get("resource_id", ""),
             "title": row.get("title") or row.get("file_name") or "",
             "author": author,
+            "series": row.get("series") or "",
             "publisher": publisher,
             "language": row.get("language") or "",
             "tags": tags,
@@ -689,6 +705,7 @@ class UiBridge(QObject):
             "id": item.resource_id,
             "title": item.title,
             "author": author,
+            "series": item.series or "",
             "publisher": item.publisher or "",
             "language": item.language or "",
             "tags": list(item.tags or []),
@@ -1217,7 +1234,12 @@ class UiBridge(QObject):
 
     @Slot(str, str, str, result=bool)
     def addResourceTag(self, page: str, resource_id: str, tag: str) -> bool:
-        changed = self._repo.add_resource_tag(page, resource_id, tag)
+        try:
+            changed = self._repo.add_resource_tag(page, resource_id, tag)
+        except (sqlite3.Error, ValueError):
+            self.emit_toast(tr("tags.save_failed_title", "Tag update failed"),
+                            tr("tags.save_failed_message", "The tag and collection changes were rolled back."), "warning")
+            return False
         if changed:
             self.reload_data()
             self.push_resources(tag_catalog_invalidated=True)
@@ -1225,7 +1247,12 @@ class UiBridge(QObject):
 
     @Slot(str, str, str, result=bool)
     def removeResourceTag(self, page: str, resource_id: str, tag: str) -> bool:
-        changed = self._repo.remove_resource_tag(page, resource_id, tag)
+        try:
+            changed = self._repo.remove_resource_tag(page, resource_id, tag)
+        except (sqlite3.Error, ValueError):
+            self.emit_toast(tr("tags.save_failed_title", "Tag update failed"),
+                            tr("tags.save_failed_message", "The tag and collection changes were rolled back."), "warning")
+            return False
         if changed:
             self.reload_data()
             self.push_resources(tag_catalog_invalidated=True)

@@ -28,12 +28,12 @@
   "module_name": "collection_rules",
   "owner_agent": "parser-agent + indexer-agent + ui-agent",
   "status": "active",
-  "purpose": "按来源原名为书籍、Text Novel、Comic 的独立合集执行可预览、可排除、可回滚的自动归档",
-  "input": ["collection kind", "source original name", "versioned rule JSON", "manual/rule member source", "exclusions"],
+  "purpose": "按来源原名与已存元数据为书籍、Text Novel、Comic 的独立合集执行可预览、可排除、可回滚的自动归档",
+  "input": ["collection kind", "source original name", "stored metadata fields", "versioned rule JSON", "manual/rule member source", "exclusions"],
   "output": ["match result", "impact preview", "atomic member delta", "scan summary", "targeted collection page data"],
   "upstream": ["LibraryRepository", "ScanWorker", "UiBridge"],
   "downstream": ["collection_rule_editor", "collection pages", "scan_report.json"],
-  "notes": "独立于 Text Rules；规则默认关闭；同资源可命中多个合集；手动来源与规则来源可重叠；排除只在持续命中时有效；保存和成员变更同一 SQLite 事务"
+  "notes": "独立于 Text Rules；v1 名称条件升级读取为 v2 source_name；按 kind 限定字段，空值不命中且标签逐项判断；规则默认关闭；同资源可命中多个合集；手动来源与规则来源可重叠；排除只在持续命中时有效；规则保存及手动标签变更分别与对应成员变更同一 SQLite 事务"
 }
 ```
 
@@ -155,7 +155,7 @@
   "output": ["render_plan", "interaction_events"],
   "upstream": ["filename_parser", "thumbnail_generator"],
   "downstream": ["external_open_action"],
-  "notes": "UI 仅消费数据，不执行扫描；Text Novel 独立持久化 Grid/List，主页与小说合集 List 的四个文本表头和十档下拉共享 setPageSort；Library List 保留封面列并复用同一字段排序 seam，总书库与书籍合集分别持久化，合集额外支持加入时间升降序"
+  "notes": "UI 仅消费数据，不执行扫描；Text Novel 独立持久化 Grid/List，主页第四列表头为系列且提供十二档下拉，小说合集仍为路径及十档；Library List 保留封面列并复用同一字段排序 seam，总书库与书籍合集分别持久化，合集额外支持加入时间升降序"
 }
 ```
 

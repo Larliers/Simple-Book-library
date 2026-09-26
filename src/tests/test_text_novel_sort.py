@@ -223,6 +223,7 @@ class TextNovelSortTests(unittest.TestCase):
                     "extension": ".txt",
                     "title": "Alpha",
                     "author": "Same",
+                    "series": "Zeta",
                     "tags_json": '["beta"]',
                     "resource_type": "text_novel",
                 },
@@ -232,6 +233,7 @@ class TextNovelSortTests(unittest.TestCase):
                     "extension": ".txt",
                     "title": "Beta",
                     "author": "",
+                    "series": "Alpha",
                     "tags_json": "[]",
                     "resource_type": "text_novel",
                 },
@@ -241,6 +243,7 @@ class TextNovelSortTests(unittest.TestCase):
                     "extension": ".txt",
                     "title": "Gamma",
                     "author": "same",
+                    "series": "Beta",
                     "tags_json": '["Alpha", "Omega"]',
                     "resource_type": "text_novel",
                 },
@@ -262,6 +265,10 @@ class TextNovelSortTests(unittest.TestCase):
             self.assertEqual(sorted_titles("tags_desc"), ["Alpha", "Gamma", "Beta"])
             self.assertEqual(sorted_titles("path_asc"), ["Beta", "Gamma", "Alpha"])
             self.assertEqual(sorted_titles("path_desc"), ["Alpha", "Gamma", "Beta"])
+            repo.set_text_novel_sort_order_main("series_asc")
+            self.assertEqual(repo.get_text_novel_sort_order_main(), "series_asc")
+            self.assertEqual(sorted_titles("series_asc"), ["Beta", "Gamma", "Alpha"])
+            self.assertEqual(sorted_titles("series_desc"), ["Alpha", "Gamma", "Beta"])
 
     def test_tag_sort_uses_the_same_joined_text_shown_in_the_list(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

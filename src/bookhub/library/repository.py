@@ -14,6 +14,7 @@ from pypinyin import Style, lazy_pinyin
 
 from bookhub.app_paths import default_db_path, default_scan_report_path
 from bookhub.library.collection_rules import (
+    available_collection_rule_fields,
     matches_collection_rule,
     source_name_for_record,
     validate_collection_rule,
@@ -66,6 +67,7 @@ BOOK_FIELD_SORT_ORDERS = frozenset(
         "path_desc",
     }
 )
+TEXT_NOVEL_FIELD_SORT_ORDERS = BOOK_FIELD_SORT_ORDERS | {"series_asc", "series_desc"}
 COLLECTION_KINDS = frozenset(
     {COLLECTION_KIND_BOOK, COLLECTION_KIND_TEXT_NOVEL, COLLECTION_KIND_COMIC}
 )
@@ -398,9 +400,13 @@ class LibraryRepository:
                     extension TEXT NOT NULL,
                     title TEXT,
                     author TEXT,
+                    series TEXT,
                     publisher TEXT,
                     language TEXT,
                     tags_json TEXT NOT NULL DEFAULT '[]',
+                    import_tags_json TEXT NOT NULL DEFAULT '[]',
+                    manual_tags_json TEXT NOT NULL DEFAULT '[]',
+                    hidden_tags_json TEXT NOT NULL DEFAULT '[]',
                     status TEXT NOT NULL DEFAULT 'UNREAD',
                     resource_type TEXT NOT NULL DEFAULT 'book',
                     path TEXT NOT NULL UNIQUE,
@@ -464,6 +470,24 @@ class LibraryRepository:
                 """
             )
             self._ensure_column(conn, "books", "info_text", "ALTER TABLE books ADD COLUMN info_text TEXT")
+            self._ensure_column(conn, "books", "series", "ALTER TABLE books ADD COLUMN series TEXT")
+            self._ensure_column(
+                conn, "books", "import_tags_json",
+                "ALTER TABLE books ADD COLUMN import_tags_json TEXT NOT NULL DEFAULT '[]'",
+            )
+            legacy_tags = self._ensure_column(
+                conn, "books", "manual_tags_json",
+                "ALTER TABLE books ADD COLUMN manual_tags_json TEXT NOT NULL DEFAULT '[]'",
+            )
+            self._ensure_column(
+                conn, "books", "hidden_tags_json",
+                "ALTER TABLE books ADD COLUMN hidden_tags_json TEXT NOT NULL DEFAULT '[]'",
+            )
+            if legacy_tags:
+                conn.execute(
+                    "UPDATE books SET manual_tags_json = tags_json "
+                    "WHERE COALESCE(resource_type, '') = 'text_novel'"
+                )
             self._ensure_column(conn, "books", "cover_source", "ALTER TABLE books ADD COLUMN cover_source TEXT")
             self._ensure_column(conn, "books", "cover_fingerprint", "ALTER TABLE books ADD COLUMN cover_fingerprint TEXT")
             self._ensure_column(conn, "books", "cover_image_path", "ALTER TABLE books ADD COLUMN cover_image_path TEXT")
@@ -507,12 +531,13 @@ class LibraryRepository:
             )
 
     @staticmethod
-    def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, ddl_sql: str) -> None:
+    def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, ddl_sql: str) -> bool:
         columns = conn.execute(f"PRAGMA table_info({table_name})").fetchall()  # noqa: S608
         names = {str(row["name"]) for row in columns}
         if column_name in names:
-            return
+            return False
         conn.execute(ddl_sql)
+        return True
 
     def _ensure_defaults(self) -> None:
         if self.get_setting("scan_depth", None) is None:
@@ -962,7 +987,7 @@ class LibraryRepository:
     @staticmethod
     def _normalize_text_novel_sort_order(value: str | None) -> str:
         normalized = str(value or "").strip().lower()
-        return normalized if normalized in BOOK_FIELD_SORT_ORDERS else "file_mtime_desc"
+        return normalized if normalized in TEXT_NOVEL_FIELD_SORT_ORDERS else "file_mtime_desc"
 
     @staticmethod
     def _text_novel_order_clause(order_by: str | None, *, table_alias: str = "") -> str:
@@ -989,10 +1014,11 @@ class LibraryRepository:
     ) -> str:
         prefix = f"{table_alias}." if table_alias else ""
         candidate = str(order_by or "").strip().lower()
-        normalized = candidate if candidate in BOOK_FIELD_SORT_ORDERS else default_order
+        normalized = candidate if candidate in TEXT_NOVEL_FIELD_SORT_ORDERS else default_order
         mtime_expr = f"COALESCE({prefix}file_mtime, 0)"
         title_expr = f"lower(COALESCE({prefix}title, {prefix}file_name))"
         author_expr = f"lower(COALESCE({prefix}author, ''))"
+        series_expr = f"lower(COALESCE({prefix}series, ''))"
         tags_json_expr = f"{prefix}tags_json"
         tags_expr = (
             f"lower(CASE WHEN json_valid({tags_json_expr}) THEN "
@@ -1012,6 +1038,8 @@ class LibraryRepository:
         field_orders = {
             "author_asc": f"{author_expr} ASC",
             "author_desc": f"{author_expr} DESC",
+            "series_asc": f"{series_expr} ASC",
+            "series_desc": f"{series_expr} DESC",
             "tags_asc": f"{tags_expr} ASC",
             "tags_desc": f"{tags_expr} DESC",
             "path_asc": f"{path_expr} ASC",
@@ -1544,7 +1572,7 @@ class LibraryRepository:
         with self._connection() as conn:
             rows = conn.execute(
                 """
-                SELECT path, title, author, tags_json, info_text, thumbnail_path, cover_source, cover_fingerprint,
+                SELECT path, title, author, series, tags_json, info_text, thumbnail_path, cover_source, cover_fingerprint,
                        fingerprint_sha256, fingerprint_size_mtime, fingerprint_quick
                 FROM books
                 WHERE is_missing = 0
@@ -1560,6 +1588,7 @@ class LibraryRepository:
                 "path": path_value,
                 "title": row["title"] or "",
                 "author": row["author"] or "",
+                "series": row["series"] or "",
                 "tags_json": row["tags_json"] or "[]",
                 "info_text": row["info_text"] or "",
                 "thumbnail_path": row["thumbnail_path"],
@@ -1577,17 +1606,21 @@ class LibraryRepository:
         *,
         title: str,
         author: str | None,
+        series: str | None,
         tags: list[str],
         info_text: str | None,
     ) -> bool:
-        tags_json = json.dumps([str(item) for item in tags], ensure_ascii=False)
+        imported = self._normalized_tag_values(tags)
+        import_tags_json = json.dumps(imported, ensure_ascii=False)
         title_text = str(title or "")
         author_text = str(author or "")
+        series_text = str(series or "")
         info_value = str(info_text or "")
         with self._connection() as conn:
             existing = conn.execute(
                 """
-                SELECT id, title, author, tags_json, info_text
+                SELECT id, title, author, series, tags_json, import_tags_json,
+                       manual_tags_json, hidden_tags_json, info_text
                 FROM books
                 WHERE path = ? AND COALESCE(resource_type, '') = 'text_novel'
                 """,
@@ -1595,26 +1628,28 @@ class LibraryRepository:
             ).fetchone()
             if not existing:
                 return False
-            existing_tags = existing["tags_json"] or "[]"
-            try:
-                parsed_existing = json.loads(existing_tags)
-            except json.JSONDecodeError:
-                parsed_existing = None
-            same_tags = parsed_existing == tags if isinstance(parsed_existing, list) else existing_tags == tags_json
+            tags_json = json.dumps(
+                self._effective_text_tags(imported, existing["manual_tags_json"], existing["hidden_tags_json"]),
+                ensure_ascii=False,
+            )
             if (
                 str(existing["title"] or "") == title_text
                 and str(existing["author"] or "") == author_text
-                and same_tags
+                and str(existing["series"] or "") == series_text
+                and self._normalized_tag_values(existing["import_tags_json"]) == imported
+                and self._normalized_tag_values(existing["tags_json"]) == self._normalized_tag_values(tags_json)
                 and str(existing["info_text"] or "") == info_value
             ):
                 return False
             conn.execute(
                 """
                 UPDATE books
-                SET title = ?, author = ?, tags_json = ?, info_text = ?, updated_at = ?
+                SET title = ?, author = ?, series = ?, tags_json = ?, import_tags_json = ?,
+                    info_text = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                (title_text, author_text or None, tags_json, info_value or None, now_utc_iso(), int(existing["id"])),
+                (title_text, author_text or None, series_text or None, tags_json, import_tags_json,
+                 info_value or None, now_utc_iso(), int(existing["id"])),
             )
         return True
 
@@ -1632,9 +1667,23 @@ class LibraryRepository:
         )
         with self._connection() as conn:
             existing = conn.execute(
-                "SELECT id, resource_id, cover_image_path, cover_source, cover_fingerprint FROM books WHERE path = ?",
+                "SELECT id, resource_id, cover_image_path, cover_source, cover_fingerprint, "
+                "manual_tags_json, hidden_tags_json FROM books WHERE path = ?",
                 (path,),
             ).fetchone()
+            resource_type = payload.get("resource_type", "book")
+            tags_json = payload["tags_json"]
+            import_tags_json = "[]"
+            manual_tags_json = "[]"
+            hidden_tags_json = "[]"
+            if resource_type == COLLECTION_KIND_TEXT_NOVEL:
+                imported = self._normalized_tag_values(tags_json)
+                manual = self._normalized_tag_values(existing["manual_tags_json"]) if existing else []
+                hidden = self._normalized_tag_values(existing["hidden_tags_json"]) if existing else []
+                tags_json = json.dumps(self._effective_text_tags(imported, manual, hidden), ensure_ascii=False)
+                import_tags_json = json.dumps(imported, ensure_ascii=False)
+                manual_tags_json = json.dumps(manual, ensure_ascii=False)
+                hidden_tags_json = json.dumps(hidden, ensure_ascii=False)
             if existing:
                 cover_source = incoming_cover_source if "cover_source" in payload else existing["cover_source"]
                 cover_fingerprint = (
@@ -1650,8 +1699,9 @@ class LibraryRepository:
                 conn.execute(
                     """
                     UPDATE books
-                    SET file_name = ?, extension = ?, title = ?, author = ?, publisher = ?, language = ?,
-                        tags_json = ?, status = ?, resource_type = ?, thumbnail_path = ?,
+                    SET file_name = ?, extension = ?, title = ?, author = ?, series = ?, publisher = ?, language = ?,
+                        tags_json = ?, import_tags_json = ?, manual_tags_json = ?, hidden_tags_json = ?,
+                        status = ?, resource_type = ?, thumbnail_path = ?,
                         cover_image_path = ?, cover_source = ?, cover_fingerprint = ?, info_text = ?,
                         is_missing = 0, missing_reason = NULL,
                         fingerprint_sha256 = COALESCE(?, fingerprint_sha256),
@@ -1666,9 +1716,13 @@ class LibraryRepository:
                         payload["extension"],
                         payload.get("title"),
                         payload.get("author"),
+                        payload.get("series"),
                         payload.get("publisher"),
                         payload.get("language"),
-                        payload["tags_json"],
+                        tags_json,
+                        import_tags_json,
+                        manual_tags_json,
+                        hidden_tags_json,
                         payload.get("status", "UNREAD"),
                         payload.get("resource_type", "book"),
                         payload.get("thumbnail_path"),
@@ -1691,12 +1745,13 @@ class LibraryRepository:
             conn.execute(
                 """
                 INSERT INTO books(
-                    resource_id, file_name, extension, title, author, publisher, language, tags_json,
+                    resource_id, file_name, extension, title, author, series, publisher, language,
+                    tags_json, import_tags_json, manual_tags_json, hidden_tags_json,
                     status, resource_type, path, thumbnail_path, cover_image_path, cover_source, cover_fingerprint,
                     info_text, is_missing, missing_reason,
                     fingerprint_sha256, fingerprint_size_mtime, fingerprint_quick, file_mtime, created_at, updated_at
                 )
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     resource_id,
@@ -1704,9 +1759,13 @@ class LibraryRepository:
                     payload["extension"],
                     payload.get("title"),
                     payload.get("author"),
+                    payload.get("series"),
                     payload.get("publisher"),
                     payload.get("language"),
-                    payload["tags_json"],
+                    tags_json,
+                    import_tags_json,
+                    manual_tags_json,
+                    hidden_tags_json,
                     payload.get("status", "UNREAD"),
                     payload.get("resource_type", "book"),
                     path,
@@ -1752,7 +1811,7 @@ class LibraryRepository:
             order_clause = "lower(COALESCE(title, file_name))"
 
         query = f"""
-            SELECT resource_id, file_name, extension, title, author, publisher, language, tags_json, status,
+            SELECT resource_id, file_name, extension, title, author, series, publisher, language, tags_json, status,
                    resource_type, path, thumbnail_path, cover_image_path, cover_source, cover_fingerprint,
                    info_text, is_missing, missing_reason, file_mtime
             FROM books
@@ -1778,6 +1837,7 @@ class LibraryRepository:
                     "extension": row["extension"],
                     "title": row["title"] or Path(row["file_name"]).stem,
                     "author": row["author"] or "",
+                    "series": row["series"] or "",
                     "publisher": row["publisher"],
                     "language": row["language"],
                     "tags": [str(item) for item in tags],
@@ -2246,7 +2306,7 @@ class LibraryRepository:
                     kind        TEXT    NOT NULL DEFAULT 'book',
                     created_at  TEXT    NOT NULL DEFAULT '',
                     rule_enabled INTEGER NOT NULL DEFAULT 0,
-                    rule_json TEXT NOT NULL DEFAULT '{"version":1,"matchMode":"all","conditions":[]}',
+                    rule_json TEXT NOT NULL DEFAULT '{"version":2,"matchMode":"all","conditions":[]}',
                     rule_updated_at TEXT
                 );
                 CREATE TABLE IF NOT EXISTS collection_books (
@@ -2304,7 +2364,7 @@ class LibraryRepository:
                 conn,
                 "collections",
                 "rule_json",
-                "ALTER TABLE collections ADD COLUMN rule_json TEXT NOT NULL DEFAULT '{\"version\":1,\"matchMode\":\"all\",\"conditions\":[]}'",
+                "ALTER TABLE collections ADD COLUMN rule_json TEXT NOT NULL DEFAULT '{\"version\":2,\"matchMode\":\"all\",\"conditions\":[]}'",
             )
             self._ensure_column(
                 conn,
@@ -2454,17 +2514,19 @@ class LibraryRepository:
     ) -> list[dict[str, Any]]:
         if kind == COLLECTION_KIND_COMIC:
             rows = conn.execute(
-                "SELECT id, resource_id, title, path FROM comics WHERE is_missing = 0 ORDER BY id"
+                "SELECT id, resource_id, title, tags_json, path FROM comics WHERE is_missing = 0 ORDER BY id"
             ).fetchall()
         elif kind == COLLECTION_KIND_TEXT_NOVEL:
             rows = conn.execute(
-                "SELECT id, resource_id, file_name, extension, title, path FROM books "
+                "SELECT id, resource_id, file_name, extension, title, author, publisher, language, "
+                "series, tags_json, path FROM books "
                 "WHERE is_missing = 0 AND COALESCE(resource_type, '') = ? ORDER BY id",
                 (COLLECTION_KIND_TEXT_NOVEL,),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT id, resource_id, file_name, extension, title, path FROM books "
+                "SELECT id, resource_id, file_name, extension, title, author, publisher, language, "
+                "tags_json, path FROM books "
                 "WHERE is_missing = 0 AND COALESCE(resource_type, '') != ? ORDER BY id",
                 (COLLECTION_KIND_TEXT_NOVEL,),
             ).fetchall()
@@ -2500,7 +2562,7 @@ class LibraryRepository:
             [
                 item
                 for item in resources
-                if matches_collection_rule(source_name_for_record(item, kind), rule)
+                if matches_collection_rule(item, rule, kind=kind)
             ]
             if enabled
             else []
@@ -2576,7 +2638,6 @@ class LibraryRepository:
         rule: dict[str, Any],
         disable_mode: str = "",
     ) -> dict[str, Any]:
-        normalized_rule = validate_collection_rule(rule, enabled=bool(enabled))
         normalized_disable_mode = str(disable_mode or "").strip().lower()
         if normalized_disable_mode not in {"", "remove", "convert"}:
             raise ValueError("invalid_disable_mode")
@@ -2584,6 +2645,9 @@ class LibraryRepository:
             row = conn.execute("SELECT * FROM collections WHERE id = ?", (int(collection_id),)).fetchone()
             if not row:
                 raise ValueError("collection_not_found")
+            normalized_rule = validate_collection_rule(
+                rule, enabled=bool(enabled), kind=normalize_collection_kind(row["kind"]),
+            )
             if bool(row["rule_enabled"]) and not enabled and not normalized_disable_mode:
                 raise ValueError("disable_mode_required")
             preview = self._collection_rule_preview_in_connection(
@@ -2648,6 +2712,61 @@ class LibraryRepository:
                 )
         return preview
 
+    def _reconcile_resource_collection_rules(
+        self, conn: sqlite3.Connection, kind: str, resource_db_id: int,
+    ) -> None:
+        """Apply every enabled same-kind rule to one changed resource, inside its write transaction."""
+        resource_table, link_table, resource_column, exclusion_table = self._collection_rule_storage(kind)
+        resource_row = conn.execute(
+            f"SELECT * FROM {resource_table} WHERE id = ?", (int(resource_db_id),),  # noqa: S608
+        ).fetchone()
+        if not resource_row:
+            return
+        resource = dict(resource_row)
+        rows = conn.execute(
+            "SELECT id, rule_json FROM collections WHERE kind = ? AND rule_enabled = 1 ORDER BY id",
+            (kind,),
+        ).fetchall()
+        for collection in rows:
+            collection_id = int(collection["id"])
+            rule = validate_collection_rule(json.loads(collection["rule_json"]), enabled=True, kind=kind)
+            matched = not resource["is_missing"] and matches_collection_rule(resource, rule, kind=kind)
+            exclusion = conn.execute(
+                f"SELECT 1 FROM {exclusion_table} WHERE collection_id = ? AND {resource_column} = ?",  # noqa: S608
+                (collection_id, resource_db_id),
+            ).fetchone()
+            if exclusion and not matched:
+                conn.execute(
+                    f"DELETE FROM {exclusion_table} WHERE collection_id = ? AND {resource_column} = ?",  # noqa: S608
+                    (collection_id, resource_db_id),
+                )
+            effective = matched and not exclusion
+            link = conn.execute(
+                f"SELECT manual_source, rule_source FROM {link_table} "  # noqa: S608
+                f"WHERE collection_id = ? AND {resource_column} = ?",  # noqa: S608
+                (collection_id, resource_db_id),
+            ).fetchone()
+            if effective:
+                conn.execute(
+                    f"INSERT INTO {link_table} "  # noqa: S608
+                    f"(collection_id, {resource_column}, added_at, manual_source, rule_source) "
+                    "VALUES (?, ?, ?, 0, 1) "
+                    f"ON CONFLICT(collection_id, {resource_column}) DO UPDATE SET rule_source = 1",  # noqa: S608
+                    (collection_id, resource_db_id, now_utc_iso()),
+                )
+            elif link and int(link["rule_source"] or 0):
+                if int(link["manual_source"] or 0):
+                    conn.execute(
+                        f"UPDATE {link_table} SET rule_source = 0 "  # noqa: S608
+                        f"WHERE collection_id = ? AND {resource_column} = ?",  # noqa: S608
+                        (collection_id, resource_db_id),
+                    )
+                else:
+                    conn.execute(
+                        f"DELETE FROM {link_table} WHERE collection_id = ? AND {resource_column} = ?",  # noqa: S608
+                        (collection_id, resource_db_id),
+                    )
+
     def save_collection_rule(
         self,
         collection_id: int,
@@ -2656,7 +2775,6 @@ class LibraryRepository:
         rule: dict[str, Any],
         disable_mode: str = "",
     ) -> dict[str, Any]:
-        normalized_rule = validate_collection_rule(rule, enabled=bool(enabled))
         normalized_disable_mode = str(disable_mode or "").strip().lower()
         if normalized_disable_mode not in {"", "remove", "convert"}:
             raise ValueError("invalid_disable_mode")
@@ -2666,6 +2784,7 @@ class LibraryRepository:
                 raise ValueError("collection_not_found")
             collection = dict(row)
             kind = normalize_collection_kind(collection.get("kind"))
+            normalized_rule = validate_collection_rule(rule, enabled=bool(enabled), kind=kind)
             _resource_table, link_table, resource_column, exclusion_table = self._collection_rule_storage(kind)
             if bool(collection.get("rule_enabled")) and not enabled and not normalized_disable_mode:
                 raise ValueError("disable_mode_required")
@@ -2741,6 +2860,7 @@ class LibraryRepository:
                 rule = validate_collection_rule(
                     json.loads(str(collection.get("rule_json") or "{}")),
                     enabled=True,
+                    kind=normalize_collection_kind(collection.get("kind")),
                 )
                 preview = self._reconcile_enabled_collection_rule(
                     conn,
@@ -2767,9 +2887,9 @@ class LibraryRepository:
             resource_table, link_table, resource_column, exclusion_table = self._collection_rule_storage(kind)
             try:
                 raw_rule = json.loads(str(collection.get("rule_json") or "{}"))
-                rule = validate_collection_rule(raw_rule, enabled=bool(collection.get("rule_enabled")))
+                rule = validate_collection_rule(raw_rule, enabled=bool(collection.get("rule_enabled")), kind=kind)
             except (json.JSONDecodeError, ValueError):
-                rule = {"version": 1, "matchMode": "all", "conditions": []}
+                rule = {"version": 2, "matchMode": "all", "conditions": []}
             if kind == COLLECTION_KIND_COMIC:
                 rows = conn.execute(
                     f"SELECT r.id, r.resource_id, r.title, r.path FROM {exclusion_table} e "  # noqa: S608
@@ -2795,6 +2915,7 @@ class LibraryRepository:
             "kind": kind,
             "enabled": bool(collection.get("rule_enabled")),
             "rule": rule,
+            "availableFields": list(available_collection_rule_fields(kind)),
             "updatedAt": collection.get("rule_updated_at"),
             "autoMemberCount": int(auto_row["count"] if auto_row else 0),
             "excludedCount": len(exclusions),
@@ -2837,10 +2958,11 @@ class LibraryRepository:
                     rule = validate_collection_rule(
                         json.loads(str(collection.get("rule_json") or "{}")),
                         enabled=True,
+                        kind=kind,
                     )
                 except (json.JSONDecodeError, ValueError):
                     rule = None
-                if rule and matches_collection_rule(source_name_for_record(dict(resource), kind), rule):
+                if rule and matches_collection_rule(dict(resource), rule, kind=kind):
                     conn.execute(
                         f"INSERT INTO {link_table} "  # noqa: S608
                         f"(collection_id, {resource_column}, added_at, manual_source, rule_source) "
@@ -3090,7 +3212,8 @@ class LibraryRepository:
                     table = "comics"
                 else:
                     row = conn.execute(
-                        "SELECT id, resource_type, tags_json FROM books WHERE resource_id = ?",
+                        "SELECT id, resource_type, tags_json, import_tags_json, manual_tags_json, "
+                        "hidden_tags_json FROM books WHERE resource_id = ?",
                         (resource_id,),
                     ).fetchone()
                     table = "books"
@@ -3107,6 +3230,9 @@ class LibraryRepository:
                         "table": table,
                         "db_id": int(row["id"]),
                         "tags": self._normalized_tag_values(row["tags_json"]),
+                        "import_tags": row["import_tags_json"] if kind == COLLECTION_KIND_TEXT_NOVEL else "[]",
+                        "manual_tags": row["manual_tags_json"] if kind == COLLECTION_KIND_TEXT_NOVEL else "[]",
+                        "hidden_tags": row["hidden_tags_json"] if kind == COLLECTION_KIND_TEXT_NOVEL else "[]",
                     }
                 )
 
@@ -3178,10 +3304,26 @@ class LibraryRepository:
                         final_tags.append(tag)
                 added_for_resource = len(final_tags) - before_count
                 if added_for_resource:
-                    conn.execute(
-                        f"UPDATE {resource['table']} SET tags_json = ?, updated_at = ? WHERE id = ?",  # noqa: S608
-                        (json.dumps(final_tags, ensure_ascii=False), now_utc_iso(), db_id),
-                    )
+                    if kind == COLLECTION_KIND_TEXT_NOVEL:
+                        manual = self._normalized_tag_values(resource["manual_tags"])
+                        hidden = self._normalized_tag_values(resource["hidden_tags"])
+                        for tag in normalized_tags:
+                            if tag not in resource["tags"] and tag not in manual:
+                                manual.append(tag)
+                            hidden = [value for value in hidden if value != tag]
+                        final_tags = self._effective_text_tags(resource["import_tags"], manual, hidden)
+                        conn.execute(
+                            "UPDATE books SET tags_json = ?, manual_tags_json = ?, hidden_tags_json = ?, "
+                            "updated_at = ? WHERE id = ?",
+                            (json.dumps(final_tags, ensure_ascii=False), json.dumps(manual, ensure_ascii=False),
+                             json.dumps(hidden, ensure_ascii=False), now_utc_iso(), db_id),
+                        )
+                    else:
+                        conn.execute(
+                            f"UPDATE {resource['table']} SET tags_json = ?, updated_at = ? WHERE id = ?",  # noqa: S608
+                            (json.dumps(final_tags, ensure_ascii=False), now_utc_iso(), db_id),
+                        )
+                    self._reconcile_resource_collection_rules(conn, kind, db_id)
                     tags_added += added_for_resource
                 resource_tags.append(
                     {
@@ -3563,6 +3705,15 @@ class LibraryRepository:
                 values.append(tag)
         return values
 
+    @classmethod
+    def _effective_text_tags(cls, imported: Any, manual: Any, hidden: Any) -> list[str]:
+        hidden_set = set(cls._normalized_tag_values(hidden))
+        return [
+            tag for tag in cls._normalized_tag_values(
+                cls._normalized_tag_values(imported) + cls._normalized_tag_values(manual)
+            ) if tag not in hidden_set
+        ]
+
     @staticmethod
     def _is_legacy_field_tag(tag: str) -> bool:
         return bool(_LEGACY_FIELD_TAG_RE.match(str(tag or "").strip()))
@@ -3669,25 +3820,49 @@ class LibraryRepository:
         if target is None or not normalized_tag:
             return False
         table, kind_clause = target
+        kind = (
+            COLLECTION_KIND_TEXT_NOVEL if page in {"text_novel", "novel_collections"}
+            else COLLECTION_KIND_COMIC if page in {"comic", "comic_collections"}
+            else COLLECTION_KIND_BOOK
+        )
         with self._connection() as conn:
             row = conn.execute(
-                f"SELECT id, tags_json FROM {table} WHERE resource_id = ? AND {kind_clause}",  # noqa: S608
+                f"SELECT id, tags_json, import_tags_json, manual_tags_json, hidden_tags_json "  # noqa: S608
+                f"FROM {table} WHERE resource_id = ? AND {kind_clause}" if kind == COLLECTION_KIND_TEXT_NOVEL
+                else f"SELECT id, tags_json FROM {table} WHERE resource_id = ? AND {kind_clause}",  # noqa: S608
                 (str(resource_id),),
             ).fetchone()
             if not row:
                 return False
             tags = self._normalized_tag_values(row["tags_json"])
             before = list(tags)
-            if present and normalized_tag not in tags:
-                tags.append(normalized_tag)
-            elif not present:
-                tags = [value for value in tags if value != normalized_tag]
-            if tags == before:
+            if (present and normalized_tag in tags) or (not present and normalized_tag not in tags):
                 return False
-            conn.execute(
-                f"UPDATE {table} SET tags_json = ?, updated_at = ? WHERE id = ?",  # noqa: S608
-                (json.dumps(tags, ensure_ascii=False), now_utc_iso(), int(row["id"])),
-            )
+            if kind == COLLECTION_KIND_TEXT_NOVEL:
+                manual = self._normalized_tag_values(row["manual_tags_json"])
+                hidden = self._normalized_tag_values(row["hidden_tags_json"])
+                if present:
+                    manual.append(normalized_tag)
+                    hidden = [value for value in hidden if value != normalized_tag]
+                else:
+                    manual = [value for value in manual if value != normalized_tag]
+                    hidden.append(normalized_tag)
+                tags = self._effective_text_tags(row["import_tags_json"], manual, hidden)
+                conn.execute(
+                    "UPDATE books SET tags_json = ?, manual_tags_json = ?, hidden_tags_json = ?, updated_at = ? "
+                    "WHERE id = ?",
+                    (
+                        json.dumps(tags, ensure_ascii=False), json.dumps(manual, ensure_ascii=False),
+                        json.dumps(hidden, ensure_ascii=False), now_utc_iso(), int(row["id"]),
+                    ),
+                )
+            else:
+                tags = before + [normalized_tag] if present else [value for value in before if value != normalized_tag]
+                conn.execute(
+                    f"UPDATE {table} SET tags_json = ?, updated_at = ? WHERE id = ?",  # noqa: S608
+                    (json.dumps(tags, ensure_ascii=False), now_utc_iso(), int(row["id"])),
+                )
+            self._reconcile_resource_collection_rules(conn, kind, int(row["id"]))
         return True
 
     def add_resource_tag(self, page: str, resource_id: str, tag: str) -> bool:
@@ -3708,46 +3883,26 @@ class LibraryRepository:
 
     def add_tag_to_book(self, book_id: int, tag: str) -> None:
         """Add a tag to a book's tag list (idempotent)."""
-        tag = tag.strip()
-        if not tag:
-            return
         with self._connection() as conn:
             row = conn.execute(
-                "SELECT tags_json FROM books WHERE id = ?", (book_id,)
+                "SELECT resource_id, resource_type FROM books WHERE id = ?", (book_id,)
             ).fetchone()
-            if not row:
-                return
-            try:
-                tags: list = json.loads(row[0] or "[]")
-            except Exception:
-                tags = []
-            if not isinstance(tags, list):
-                tags = []
-            if tag not in tags:
-                tags.append(tag)
-                conn.execute(
-                    "UPDATE books SET tags_json = ?, updated_at = ? WHERE id = ?",
-                    (json.dumps(tags, ensure_ascii=False), now_utc_iso(), book_id),
-                )
+        if row:
+            self.add_resource_tag(
+                "text_novel" if book_collection_kind(row["resource_type"]) == COLLECTION_KIND_TEXT_NOVEL else "library",
+                row["resource_id"], tag,
+            )
 
     def remove_tag_from_book(self, book_id: int, tag: str) -> None:
         """Remove a specific tag from a book."""
         with self._connection() as conn:
             row = conn.execute(
-                "SELECT tags_json FROM books WHERE id = ?", (book_id,)
+                "SELECT resource_id, resource_type FROM books WHERE id = ?", (book_id,)
             ).fetchone()
-            if not row:
-                return
-            try:
-                tags: list = json.loads(row[0] or "[]")
-            except Exception:
-                tags = []
-            if not isinstance(tags, list):
-                tags = []
-            tags = [t for t in tags if t != tag]
-            conn.execute(
-                "UPDATE books SET tags_json = ?, updated_at = ? WHERE id = ?",
-                (json.dumps(tags, ensure_ascii=False), now_utc_iso(), book_id),
+        if row:
+            self.remove_resource_tag(
+                "text_novel" if book_collection_kind(row["resource_type"]) == COLLECTION_KIND_TEXT_NOVEL else "library",
+                row["resource_id"], tag,
             )
 
     def get_book_tags(self, book_id: int) -> list[str]:

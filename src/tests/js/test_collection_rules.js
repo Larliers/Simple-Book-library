@@ -116,6 +116,7 @@ const detail = {
   id: 7,
   name: "Design",
   kind: "book",
+  availableFields: ["source_name", "title", "author", "publisher", "language", "tags"],
   enabled: true,
   rule: { version: 1, matchMode: "all", conditions: [{ operator: "contains", value: "Alpha", caseSensitive: false }] },
   exclusions: [{ resourceId: "book-9", title: "Excluded", sourceName: "Excluded" }],
@@ -132,8 +133,16 @@ byText("Add condition").dispatch("click");
 assert.strictEqual(controller.draft.conditions.length, 2);
 preview.dispatch("click");
 assert.strictEqual(previewPayload.rule.conditions[0].value, "Alpha");
+assert.strictEqual(previewPayload.rule.version, 2);
+assert.strictEqual(previewPayload.rule.conditions[0].field, "source_name");
 assert.strictEqual(previewPayload.rule.conditions.length, 1, "blank draft rows must be omitted from the saved rule payload");
 assert.strictEqual(save.disabled, false, "current preview must unlock save");
+const fieldSelect = walk(host, (node) => node.tagName === "SELECT" && node.attributes["aria-label"] === "Match field")[0];
+fieldSelect.value = "author";
+fieldSelect.dispatch("change");
+assert.strictEqual(save.disabled, true, "changing a field must invalidate the preview token");
+preview.dispatch("click");
+assert.strictEqual(previewPayload.rule.conditions[0].field, "author");
 const keyword = walk(host, (node) => node.tagName === "INPUT" && node.value === "Alpha")[0];
 keyword.value = "Beta";
 keyword.dispatch("input");

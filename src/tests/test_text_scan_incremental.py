@@ -508,6 +508,7 @@ class TextScanIncrementalTests(unittest.TestCase):
 
             record = repository.list_books(include_missing=False, resource_type="text_novel")[0]
             self.assertEqual(record["tags"], ["玄幻", "爽文"])
+            self.assertEqual(record["series"], "龙族")
             self.assertFalse(any(str(item).startswith("series:") for item in record["tags"]))
 
 
