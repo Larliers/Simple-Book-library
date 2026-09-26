@@ -1,0 +1,2684 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Simple Book Library - Glassmorphism UI Prototype</title>
+  <style>
+    :root {
+      --theme-transition-duration: 180s;
+      --active-theme-transition-duration: 420ms;
+      --bg-0: #eef5f7;
+      --bg-1: #dfeaf3;
+      --ink: #1a2533;
+      --muted: #607085;
+      --faint: #8795a8;
+      --line: rgba(255, 255, 255, 0.68);
+      --line-dark: rgba(100, 126, 154, 0.22);
+      --glass: rgba(255, 255, 255, 0.58);
+      --glass-strong: rgba(255, 255, 255, 0.78);
+      --glass-soft: rgba(255, 255, 255, 0.34);
+      --accent: #3977c2;
+      --accent-2: #11a5a2;
+      --danger: #bc4545;
+      --shadow: 0 22px 70px rgba(56, 76, 100, 0.18);
+      --shadow-soft: 0 12px 32px rgba(60, 82, 105, 0.12);
+      --radius: 8px;
+      --font: Inter, "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+      --body-background:
+        radial-gradient(circle at 14% 9%, rgba(255, 255, 255, 0.92) 0 10%, transparent 24%),
+        radial-gradient(circle at 90% 18%, rgba(154, 205, 224, 0.46) 0 9%, transparent 26%),
+        radial-gradient(circle at 72% 86%, rgba(255, 218, 160, 0.48) 0 8%, transparent 26%),
+        linear-gradient(135deg, var(--bg-0), var(--bg-1) 52%, #f6efe5);
+      --control-bg: rgba(255, 255, 255, 0.7);
+      --card-bg: rgba(255, 255, 255, 0.42);
+      --card-bg-soft: rgba(255, 255, 255, 0.3);
+      --hover-bg: rgba(255, 255, 255, 0.56);
+    }
+
+    body[data-theme="night"] {
+      --bg-0: #101925;
+      --bg-1: #162332;
+      --ink: #ede3d3;
+      --muted: #b8ad9f;
+      --faint: #8f9aad;
+      --line: rgba(255, 242, 221, 0.16);
+      --line-dark: rgba(255, 226, 190, 0.12);
+      --glass: rgba(19, 28, 40, 0.68);
+      --glass-strong: rgba(29, 39, 54, 0.82);
+      --glass-soft: rgba(24, 34, 48, 0.52);
+      --accent: #d2a45f;
+      --accent-2: #8fb8ac;
+      --danger: #e39a8f;
+      --shadow: 0 22px 70px rgba(0, 0, 0, 0.34);
+      --shadow-soft: 0 12px 32px rgba(0, 0, 0, 0.24);
+      --body-background:
+        radial-gradient(circle at 12% 8%, rgba(120, 98, 74, 0.34) 0 10%, transparent 24%),
+        radial-gradient(circle at 92% 18%, rgba(64, 90, 106, 0.36) 0 10%, transparent 27%),
+        radial-gradient(circle at 72% 88%, rgba(97, 70, 44, 0.28) 0 9%, transparent 26%),
+        linear-gradient(135deg, var(--bg-0), var(--bg-1) 54%, #1e1a16);
+      --control-bg: rgba(27, 38, 52, 0.78);
+      --card-bg: rgba(26, 37, 51, 0.62);
+      --card-bg-soft: rgba(20, 30, 43, 0.56);
+      --hover-bg: rgba(255, 231, 190, 0.1);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: var(--font);
+      background: var(--body-background);
+      background-attachment: fixed;
+      transition: background var(--active-theme-transition-duration) ease, color var(--active-theme-transition-duration) ease;
+    }
+
+    button, input, select, textarea { font: inherit; }
+
+    button {
+      cursor: pointer;
+      color: inherit;
+      border: 1px solid transparent;
+      border-radius: var(--radius);
+      background: transparent;
+    }
+
+    .page {
+      width: min(1540px, calc(100vw - 28px));
+      margin: 14px auto;
+    }
+
+    .app-shell {
+      min-height: calc(100vh - 28px);
+      display: grid;
+      grid-template-columns: 236px minmax(0, 1fr) 318px;
+      grid-template-rows: 76px minmax(640px, calc(100vh - 116px)) auto;
+      gap: 12px;
+    }
+
+    .glass {
+      border: 1px solid var(--line);
+      background: var(--glass);
+      box-shadow: var(--shadow-soft);
+      backdrop-filter: blur(24px) saturate(1.28);
+      -webkit-backdrop-filter: blur(24px) saturate(1.28);
+      transition:
+        background-color var(--active-theme-transition-duration) ease,
+        background var(--active-theme-transition-duration) ease,
+        border-color var(--active-theme-transition-duration) ease,
+        box-shadow var(--active-theme-transition-duration) ease,
+        color var(--active-theme-transition-duration) ease;
+    }
+
+    .sidebar {
+      grid-column: 1;
+      grid-row: 1 / span 2;
+      padding: 14px;
+      border-radius: var(--radius);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      box-shadow: var(--shadow);
+    }
+
+    .brand {
+      padding: 2px 4px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand-title {
+      font-size: 27px;
+      line-height: 1;
+      font-weight: 760;
+    }
+
+    .brand-subtitle {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .side-list {
+      min-height: 0;
+      flex: 1;
+      margin-top: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .nav-btn {
+      width: 100%;
+      min-height: 39px;
+      padding: 0 10px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      text-align: left;
+      color: var(--ink);
+      border-color: transparent;
+    }
+
+    .nav-btn::before {
+      content: "";
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+      background: linear-gradient(135deg, rgba(57, 119, 194, 0.34), rgba(17, 165, 162, 0.22));
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.62);
+      flex: 0 0 auto;
+    }
+
+    .nav-btn:hover,
+    .nav-btn.active {
+      background: var(--hover-bg);
+      border-color: rgba(255, 255, 255, 0.76);
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    .side-actions {
+      margin-top: 12px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .primary-btn,
+    .ghost-btn,
+    .danger-btn {
+      min-height: 36px;
+      padding: 0 13px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .primary-btn {
+      color: white;
+      border-color: rgba(57, 119, 194, 0.44);
+      background: linear-gradient(135deg, #3977c2, #2f90bf);
+      box-shadow: 0 10px 22px rgba(57, 119, 194, 0.22);
+    }
+
+    .ghost-btn {
+      color: var(--ink);
+      border-color: var(--line);
+      background: var(--card-bg);
+    }
+
+    .danger-btn {
+      color: var(--danger);
+      border-color: rgba(188, 69, 69, 0.24);
+      background: rgba(255, 244, 244, 0.68);
+    }
+
+    .topbar {
+      grid-column: 2 / span 2;
+      grid-row: 1;
+      border-radius: var(--radius);
+      padding: 12px;
+      display: grid;
+      grid-template-columns: minmax(320px, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      position: relative;
+      z-index: 3;
+    }
+
+    .search-box {
+      min-height: 50px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--control-bg);
+    }
+
+    .search-symbol {
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--accent);
+      border-radius: 50%;
+      position: relative;
+      flex: 0 0 auto;
+    }
+
+    .search-symbol::after {
+      content: "";
+      width: 8px;
+      height: 2px;
+      position: absolute;
+      right: -6px;
+      bottom: -3px;
+      border-radius: 2px;
+      background: var(--accent);
+      transform: rotate(45deg);
+    }
+
+    .search-box input {
+      width: 100%;
+      min-width: 0;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: var(--ink);
+      font-size: 17px;
+    }
+
+    .top-tools {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .floating-lang-toggle {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      z-index: 20;
+      min-width: 74px;
+      min-height: 42px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      background: var(--control-bg);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(22px) saturate(1.22);
+      -webkit-backdrop-filter: blur(22px) saturate(1.22);
+      font-weight: 800;
+    }
+
+    .segmented {
+      display: inline-flex;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--card-bg);
+      gap: 2px;
+    }
+
+    .segmented button {
+      min-width: 36px;
+      height: 30px;
+      padding: 0 10px;
+      color: var(--muted);
+    }
+
+    .segmented button.active {
+      color: var(--ink);
+      background: var(--control-bg);
+      box-shadow: 0 6px 16px rgba(74, 95, 120, 0.12);
+    }
+
+    .suggestions {
+      position: absolute;
+      left: 12px;
+      top: 68px;
+      width: min(620px, calc(100% - 24px));
+      padding: 8px;
+      border-radius: var(--radius);
+      display: none;
+      box-shadow: var(--shadow);
+    }
+
+    .suggestions.open { display: block; }
+
+    .suggestion-row {
+      display: grid;
+      grid-template-columns: 92px 1fr;
+      gap: 10px;
+      padding: 9px 10px;
+      border-radius: 6px;
+    }
+
+    .suggestion-row:hover { background: var(--hover-bg); }
+    .suggestion-kind { color: var(--accent); font-weight: 760; font-size: 12px; }
+    .suggestion-text { color: var(--ink); font-size: 13px; }
+
+    .main-stage {
+      grid-column: 2;
+      grid-row: 2;
+      min-width: 0;
+      min-height: 0;
+      border-radius: var(--radius);
+      padding: 14px;
+      overflow: hidden;
+      transition: background var(--active-theme-transition-duration) ease, border-color var(--active-theme-transition-duration) ease, color var(--active-theme-transition-duration) ease;
+    }
+
+    .detail-panel {
+      grid-column: 3;
+      grid-row: 2;
+      min-width: 0;
+      min-height: 0;
+      border-radius: var(--radius);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .bottom-preview-workspace {
+      grid-column: 1 / span 3;
+      grid-row: 3;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      padding-bottom: 14px;
+    }
+
+    .preview-panel {
+      min-width: 0;
+      border-radius: var(--radius);
+      padding: 14px;
+      overflow: visible;
+      scroll-margin-top: 14px;
+    }
+
+    .preview-panel.preview-focus {
+      box-shadow: 0 0 0 2px rgba(57, 119, 194, 0.34), var(--shadow);
+    }
+
+    .preview-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .preview-head h2 {
+      margin: 0;
+      font-size: 23px;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    .window-tools {
+      display: flex;
+      gap: 6px;
+      flex: 0 0 auto;
+    }
+
+    .tool-dot {
+      width: 24px;
+      height: 24px;
+      display: inline-grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--card-bg);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .view {
+      height: 100%;
+      display: none;
+      min-height: 0;
+      overflow: auto;
+      padding-right: 2px;
+    }
+
+    .view.active { display: block; }
+
+    .page-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .title-stack h1,
+    .title-stack h2 {
+      margin: 0;
+      letter-spacing: 0;
+    }
+
+    .title-stack h1 { font-size: 40px; line-height: 1; }
+    .title-stack h2 { font-size: 28px; line-height: 1.1; }
+    .subtitle { margin-top: 6px; color: var(--muted); font-size: 13px; }
+
+    .content-split {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      min-height: 0;
+      height: calc(100% - 72px);
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--card-bg-soft);
+      padding: 12px;
+    }
+
+    .cover-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+      gap: 16px;
+      align-content: start;
+    }
+
+    .cover-grid.library-cover-only {
+      grid-template-columns: repeat(auto-fill, minmax(118px, 142px));
+      gap: 18px;
+    }
+
+    .book-card {
+      min-width: 0;
+      border-radius: var(--radius);
+      padding: 8px;
+      background: var(--card-bg);
+      border: 1px solid rgba(255, 255, 255, 0.52);
+      box-shadow: 0 8px 20px rgba(65, 84, 107, 0.08);
+    }
+
+    .book-card.selected {
+      outline: 2px solid rgba(57, 119, 194, 0.62);
+      background: var(--hover-bg);
+    }
+
+    .library-cover-only .book-card {
+      padding: 0;
+      background: transparent;
+      border: 0;
+      box-shadow: none;
+    }
+
+    .library-cover-only .book-card.selected {
+      outline: 0;
+      background: transparent;
+    }
+
+    .library-cover-only .book-card.selected .cover {
+      outline: 2px solid rgba(57, 119, 194, 0.72);
+      outline-offset: 4px;
+    }
+
+    .cover {
+      width: 100%;
+      aspect-ratio: 2 / 3;
+      display: block;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.6);
+      background: #e8eef5;
+    }
+
+    .card-title {
+      margin-top: 8px;
+      color: var(--ink);
+      font-weight: 760;
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    .card-meta {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .chip {
+      min-height: 22px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: var(--card-bg);
+      border: 1px solid var(--line);
+      color: var(--ink);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0 8px;
+      font-size: 13px;
+    }
+
+    .table th {
+      color: var(--muted);
+      text-align: left;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      padding: 0 10px 4px;
+    }
+
+    .table td {
+      padding: 10px;
+      background: var(--card-bg);
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      vertical-align: middle;
+    }
+
+    .table td:first-child {
+      border-left: 1px solid var(--line);
+      border-radius: var(--radius) 0 0 var(--radius);
+    }
+
+    .table td:last-child {
+      border-right: 1px solid var(--line);
+      border-radius: 0 var(--radius) var(--radius) 0;
+    }
+
+    .mini-cover {
+      width: 30px;
+      height: 44px;
+      border-radius: 4px;
+      object-fit: cover;
+      vertical-align: middle;
+    }
+
+    .detail-cover {
+      width: 190px;
+      max-width: 82%;
+      aspect-ratio: 2 / 3;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      align-self: center;
+      box-shadow: 0 16px 34px rgba(36, 55, 78, 0.18);
+    }
+
+    .detail-panel h2 {
+      margin: 14px 0 8px;
+      font-size: 19px;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+
+    .detail-meta {
+      display: grid;
+      gap: 8px;
+      color: var(--ink);
+      font-size: 13px;
+      line-height: 1.5;
+      overflow: auto;
+      padding-right: 3px;
+    }
+
+    .detail-block {
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--card-bg);
+    }
+
+    .settings-grid {
+      display: grid;
+      grid-template-columns: 210px minmax(0, 1fr);
+      gap: 12px;
+      min-height: 620px;
+    }
+
+    .settings-nav,
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--card-bg);
+      padding: 12px;
+    }
+
+    .settings-nav button {
+      width: 100%;
+      min-height: 38px;
+      padding: 0 10px;
+      text-align: left;
+      color: var(--ink);
+    }
+
+    .settings-nav button.active,
+    .settings-nav button:hover {
+      background: var(--hover-bg);
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(132px, 1fr));
+      gap: 10px;
+    }
+
+    .field,
+    .path-row,
+    .task-row {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--card-bg);
+      padding: 10px;
+    }
+
+    .field label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    .field input,
+    .field select,
+    .field textarea,
+    .dialog-card input,
+    .dialog-card select,
+    .dialog-card textarea {
+      width: 100%;
+      min-height: 34px;
+      border: 1px solid rgba(109, 134, 163, 0.26);
+      border-radius: var(--radius);
+      background: var(--control-bg);
+      padding: 7px 9px;
+      color: var(--ink);
+      outline: none;
+    }
+
+    .path-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .path-row {
+      display: grid;
+      grid-template-columns: auto auto 1fr;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .path-text {
+      color: #405068;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .progress {
+      height: 11px;
+      overflow: hidden;
+      border-radius: 99px;
+      background: rgba(126, 148, 173, 0.18);
+      border: 1px solid rgba(255, 255, 255, 0.58);
+    }
+
+    .progress span {
+      display: block;
+      height: 100%;
+      width: 68%;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    }
+
+    .dialog-gallery {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(320px, 1fr));
+      gap: 14px;
+      align-items: start;
+    }
+
+    .dialog-card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--card-bg);
+      box-shadow: var(--shadow-soft);
+      padding: 14px;
+      min-width: 0;
+    }
+
+    .dialog-card.wide { grid-column: 1 / -1; }
+
+    .dialog-card h3 {
+      margin: 0 0 10px;
+      font-size: 18px;
+    }
+
+    .dialog-titlebar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: -14px -14px 12px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      background: var(--card-bg-soft);
+      border-radius: var(--radius) var(--radius) 0 0;
+    }
+
+    .rule-layout {
+      display: grid;
+      grid-template-columns: 220px minmax(360px, 1fr) minmax(300px, 0.8fr);
+      gap: 12px;
+    }
+
+    .rule-card {
+      min-height: 88px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--card-bg);
+      margin-bottom: 8px;
+    }
+
+    .list-stack {
+      display: grid;
+      gap: 8px;
+    }
+
+    .list-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 9px 10px;
+      border-radius: var(--radius);
+      background: var(--card-bg);
+      border: 1px solid var(--line);
+      color: var(--ink);
+    }
+
+    .context-menu {
+      width: 230px;
+      padding: 6px;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: var(--control-bg);
+      box-shadow: var(--shadow);
+    }
+
+    .context-menu button {
+      width: 100%;
+      min-height: 34px;
+      padding: 0 10px;
+      text-align: left;
+    }
+
+    .context-menu button:hover { background: rgba(57, 119, 194, 0.1); }
+
+    .toast {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      max-width: 360px;
+      padding: 12px;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: var(--control-bg);
+      box-shadow: var(--shadow);
+    }
+
+    .toast-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--accent-2);
+      box-shadow: 0 0 0 5px rgba(17, 165, 162, 0.14);
+      flex: 0 0 auto;
+    }
+
+    .empty-state {
+      min-height: 220px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      color: var(--muted);
+      border: 1px dashed rgba(105, 130, 160, 0.34);
+      border-radius: var(--radius);
+      background: var(--card-bg-soft);
+      padding: 24px;
+    }
+
+    /* --- Sort demo controls (page-head tools) · demo only, pending wire-up --- */
+    .page-head-tools {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .sort-control {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 6px 4px 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--card-bg);
+      backdrop-filter: blur(18px) saturate(1.2);
+      -webkit-backdrop-filter: blur(18px) saturate(1.2);
+      box-shadow: var(--shadow-soft);
+      transition: background var(--active-theme-transition-duration) ease,
+        border-color var(--active-theme-transition-duration) ease,
+        box-shadow var(--active-theme-transition-duration) ease;
+    }
+
+    .sort-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .sort-control .segmented {
+      background: transparent;
+      border: none;
+      padding: 0;
+    }
+
+    .sort-select {
+      min-width: 220px;
+      min-height: 30px;
+      border: 1px solid var(--line-dark);
+      border-radius: 6px;
+      background: var(--control-bg);
+      color: var(--ink);
+      padding: 0 10px;
+      outline: none;
+      transition: background var(--active-theme-transition-duration) ease,
+        color var(--active-theme-transition-duration) ease,
+        border-color var(--active-theme-transition-duration) ease;
+    }
+
+    .sort-select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(57, 119, 194, 0.16);
+    }
+
+    .demo-note {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--faint);
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    /* --- Text Rules glass panel · match sibling dialog-card palette --- */
+    .dialog-card.wide.tr-host {
+      padding: 0;
+      overflow: hidden;
+      /* keep same tokens as .dialog-card: card-bg / line / shadow-soft */
+      background: var(--card-bg);
+      box-shadow: var(--shadow-soft);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+
+    .tr-panel {
+      min-height: min(760px, 78vh);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: transparent;
+    }
+
+    .tr-panel.flash {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+      transition: outline-color 600ms ease;
+    }
+
+    .tr-header,
+    .tr-footer {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      background: var(--card-bg-soft);
+      flex: 0 0 auto;
+    }
+
+    .tr-footer {
+      border-bottom: none;
+      border-top: 1px solid var(--line);
+      align-items: center;
+      justify-content: flex-end;
+      background: var(--card-bg-soft);
+    }
+
+    .tr-header h2 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.15;
+      font-weight: 700;
+    }
+
+    .tr-path {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      word-break: break-all;
+    }
+
+    .tr-header-actions,
+    .tr-footer-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .tr-body {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 240px minmax(0, 1.35fr) minmax(300px, 1fr);
+      gap: 12px;
+      padding: 12px 14px 14px;
+      overflow: hidden;
+      background: transparent;
+    }
+
+    .tr-col {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--card-bg-soft);
+      overflow: auto;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      box-shadow: none;
+    }
+
+    .tr-field-tabs {
+      display: grid;
+      gap: 6px;
+    }
+
+    .tr-field-tabs button,
+    .tr-rule-item {
+      width: 100%;
+      min-height: 34px;
+      text-align: left;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--card-bg);
+      color: var(--ink);
+      transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+    }
+
+    .tr-field-tabs button:hover,
+    .tr-rule-item:hover,
+    .tr-step-card:hover {
+      background: var(--hover-bg);
+    }
+
+    .tr-field-tabs button.active,
+    .tr-rule-item.active {
+      border-color: var(--accent);
+      background: var(--hover-bg);
+      box-shadow: inset 3px 0 0 var(--accent);
+      font-weight: 700;
+    }
+
+    .tr-rule-list {
+      display: grid;
+      gap: 6px;
+      flex: 1;
+      align-content: start;
+    }
+
+    .tr-actions-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .tr-actions-row > .grow {
+      flex: 1;
+      min-width: 120px;
+    }
+
+    .tr-steps {
+      display: grid;
+      gap: 8px;
+      flex: 1;
+      align-content: start;
+    }
+
+    .tr-step-card {
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--card-bg);
+      transition: background 160ms ease, border-color 160ms ease;
+    }
+
+    .tr-step-card.selected {
+      border-color: rgba(57, 119, 194, 0.45);
+      background: var(--hover-bg);
+      box-shadow: none;
+    }
+
+    .tr-step-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .tr-step-head strong {
+      font-size: 13px;
+    }
+
+    .tr-step-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .tr-subtle {
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--card-bg);
+    }
+
+    .tr-preview-result {
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--card-bg);
+      min-height: 72px;
+    }
+
+    .tr-preview-result.ok { border-color: rgba(17, 165, 162, 0.4); background: rgba(17, 165, 162, 0.08); }
+    .tr-preview-result.fail { border-color: rgba(188, 69, 69, 0.4); background: rgba(188, 69, 69, 0.08); }
+
+    .tr-multi-list {
+      display: grid;
+      gap: 6px;
+      max-height: 140px;
+      overflow: auto;
+    }
+
+    .tr-multi-list button {
+      text-align: left;
+      min-height: 32px;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--card-bg-soft);
+      color: var(--ink);
+      font-size: 12px;
+    }
+
+    .tr-multi-list button.active {
+      border-color: var(--accent);
+      background: var(--control-bg);
+    }
+
+    .tr-col .field input,
+    .tr-col .field select,
+    .tr-col .field textarea,
+    .tr-step-card select,
+    .tr-step-card input,
+    .tr-subtle select {
+      width: 100%;
+      min-height: 32px;
+      border: 1px solid var(--line-dark);
+      border-radius: var(--radius);
+      background: var(--control-bg);
+      padding: 6px 8px;
+      color: var(--ink);
+      outline: none;
+    }
+
+    .tr-col .field textarea {
+      min-height: 88px;
+      resize: vertical;
+    }
+
+    body[data-theme="night"] .sort-select:focus,
+    body[data-theme="night"] .tr-field-tabs button.active,
+    body[data-theme="night"] .tr-rule-item.active,
+    body[data-theme="night"] .tr-step-card.selected {
+      box-shadow: 0 0 0 2px rgba(210, 164, 95, 0.2);
+    }
+
+    @media (max-width: 1100px) {
+      .tr-body {
+        grid-template-columns: 1fr;
+        overflow: auto;
+      }
+      .tr-modal {
+        height: auto;
+        max-height: calc(100vh - 36px);
+      }
+    }
+
+    .kicker {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 760;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      margin-bottom: 8px;
+    }
+
+    .swatch {
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      vertical-align: middle;
+      border: 1px solid var(--line);
+      background: var(--accent);
+    }
+
+    .split-cols {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .small-note { color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .mt { margin-top: 12px; }
+    .hidden { display: none !important; }
+
+    @media (max-width: 1120px) {
+      .page { width: calc(100vw - 16px); margin: 8px; }
+      .app-shell {
+        height: auto;
+        min-height: 100vh;
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto auto auto;
+      }
+      .sidebar,
+      .topbar,
+      .main-stage,
+      .detail-panel,
+      .bottom-preview-workspace {
+        grid-column: 1;
+        grid-row: auto;
+      }
+      .sidebar { min-height: auto; }
+      .side-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .side-actions { margin-top: 10px; }
+      .topbar { grid-template-columns: 1fr; }
+      .floating-lang-toggle { right: 14px; bottom: 14px; }
+      .main-stage { min-height: 760px; }
+      .detail-panel { min-height: 520px; }
+      .bottom-preview-workspace { padding-bottom: 8px; }
+      .settings-grid,
+      .rule-layout,
+      .dialog-gallery,
+      .split-cols,
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+      .dialog-card.wide { grid-column: auto; }
+      .view { height: auto; overflow: visible; }
+      .content-split { height: auto; min-height: 520px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page app-shell">
+    <aside class="sidebar glass">
+      <div class="brand">
+        <div class="brand-title">Bookshelf</div>
+        <div class="brand-subtitle">Local Database</div>
+      </div>
+      <nav class="side-list" aria-label="Primary">
+        <button class="nav-btn active" data-view="library">Library</button>
+        <button class="nav-btn" data-view="text">Text Novel</button>
+        <button class="nav-btn" data-view="collections">Collections</button>
+        <button class="nav-btn" data-view="favorites">Favorites</button>
+        <button class="nav-btn" data-view="comic">Comic</button>
+        <button class="nav-btn" data-view="comicFav">Comic Fav</button>
+      </nav>
+      <div class="side-actions">
+        <button class="ghost-btn" data-board="settings">Settings</button>
+      </div>
+    </aside>
+
+    <header class="topbar glass">
+      <div class="search-box" role="search">
+        <span class="search-symbol" aria-hidden="true"></span>
+        <input id="searchInput" value="tag:design local library" aria-label="Search library" placeholder="Search library, text novel, tag, author, path...">
+      </div>
+      <div class="top-tools">
+        <div class="segmented" aria-label="View mode">
+          <button class="active" data-mode="grid">Grid</button>
+          <button data-mode="list">List</button>
+        </div>
+        <button class="ghost-btn">Sort: Recent</button>
+        <button class="primary-btn">Scan</button>
+      </div>
+      <div id="suggestions" class="suggestions glass open">
+        <div class="suggestion-row"><span class="suggestion-kind">TAG</span><span class="suggestion-text">tag:design - 16 matched resources</span></div>
+        <div class="suggestion-row"><span class="suggestion-kind">AUTHOR</span><span class="suggestion-text">author:Don Norman - usability books</span></div>
+        <div class="suggestion-row"><span class="suggestion-kind">TEXT</span><span class="suggestion-text">title:银河 - Text Novel roots only</span></div>
+      </div>
+    </header>
+
+    <section class="main-stage glass">
+      <section id="board-main" class="view active">
+        <div id="view-library" class="subview">
+          <div class="page-head">
+            <div class="title-stack">
+              <h1>Library</h1>
+              <div class="subtitle">128 books in your local collection</div>
+            </div>
+            <div class="segmented">
+              <button class="active">Grid</button>
+              <button>List</button>
+            </div>
+          </div>
+          <div class="content-split">
+            <div class="cover-grid library-cover-only">
+              <article class="book-card selected">
+                <img class="cover" src="https://dummyimage.com/300x450/8da5c2/ffffff.png&text=Design+Systems" alt="Design Systems cover">
+              </article>
+              <article class="book-card">
+                <img class="cover" src="https://dummyimage.com/300x450/517ca6/ffffff.png&text=Clean+Code" alt="Clean Code cover">
+              </article>
+              <article class="book-card">
+                <img class="cover" src="https://dummyimage.com/300x450/77a789/ffffff.png&text=UX+Methods" alt="UX Methods cover">
+              </article>
+              <article class="book-card">
+                <img class="cover" src="https://dummyimage.com/300x450/c99b6a/ffffff.png&text=Typography" alt="Typography cover">
+              </article>
+              <article class="book-card">
+                <img class="cover" src="https://dummyimage.com/300x450/766f9d/ffffff.png&text=Python" alt="Python cover">
+              </article>
+              <article class="book-card">
+                <img class="cover" src="https://dummyimage.com/300x450/5b9ca0/ffffff.png&text=Database" alt="Database cover">
+              </article>
+            </div>
+          </div>
+        </div>
+
+        <div id="view-text" class="subview hidden">
+          <div class="page-head">
+            <div class="title-stack">
+              <h1>Text Novel</h1>
+              <div class="subtitle">42 txt files, filtered by title / author / tag / path</div>
+            </div>
+          </div>
+          <div class="content-split">
+            <table class="table">
+              <thead><tr><th>Title</th><th>Author</th><th>Tags</th><th>Path</th></tr></thead>
+              <tbody>
+                <tr><td>银河书店夜航</td><td>烟烬先生</td><td>科幻, 连载</td><td>F:\Books\Text\银河书店夜航.txt</td></tr>
+                <tr><td>玻璃城市笔记</td><td>林北川</td><td>都市, 设计</td><td>F:\Books\Text\玻璃城市笔记.txt</td></tr>
+                <tr><td>旧仓库里的目录</td><td>Unknown</td><td>待整理</td><td>F:\Books\Text\old_archive.txt</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="view-collections" class="subview hidden">
+          <div class="page-head">
+            <div class="title-stack">
+              <h1>Collections</h1>
+              <div class="subtitle">Custom shelves for local resources</div>
+            </div>
+            <button class="primary-btn">New List</button>
+          </div>
+          <div class="content-split">
+            <div class="cover-grid">
+              <article class="book-card">
+                <img class="cover" src="https://dummyimage.com/300x260/7b95b4/ffffff.png&text=Design" alt="Design collection">
+                <div class="card-title">Design Reading</div>
+                <div class="card-meta">18 books</div>
+              </article>
+              <article class="book-card">
+                <img class="cover" src="https://dummyimage.com/300x260/5f998c/ffffff.png&text=Reference" alt="Reference collection">
+                <div class="card-title">Professional Reference</div>
+                <div class="card-meta">27 books</div>
+              </article>
+              <article class="book-card selected">
+                <img class="cover" src="https://dummyimage.com/300x260/be9260/ffffff.png&text=Must+Read" alt="Must Read collection">
+                <div class="card-title">Must Read</div>
+                <div class="card-meta">9 books</div>
+              </article>
+            </div>
+          </div>
+        </div>
+
+        <div id="view-favorites" class="subview hidden">
+          <div class="page-head">
+            <div class="title-stack">
+              <h1>Favorites</h1>
+              <div class="subtitle">15 saved books, grid and list supported</div>
+            </div>
+            <!-- 示范排序控件：收藏页标题行右侧 · 待确认后接入 -->
+            <div class="page-head-tools">
+              <div class="sort-control" data-sort-demo="favorites" title="Demo · pending wire-up">
+                <span class="sort-label">Sort</span>
+                <div class="segmented" aria-label="Favorites sort">
+                  <button type="button" class="active" data-sort="desc">Added Time: Newest First</button>
+                  <button type="button" data-sort="asc">Added Time: Oldest First</button>
+                </div>
+              </div>
+              <span class="demo-note">Demo · pending wire-up</span>
+              <div class="segmented"><button class="active">Grid</button><button>List</button></div>
+            </div>
+          </div>
+          <div class="content-split">
+            <table class="table">
+              <thead><tr><th>Cover</th><th>Title</th><th>Author</th><th>Tags</th></tr></thead>
+              <tbody>
+                <tr><td><img class="mini-cover" src="https://dummyimage.com/80x120/8da5c2/ffffff.png&text=DS" alt=""></td><td>Design Systems in Practice</td><td>Alla Kholmatova</td><td>Design, Reference</td></tr>
+                <tr><td><img class="mini-cover" src="https://dummyimage.com/80x120/77a789/ffffff.png&text=UX" alt=""></td><td>UX Research Methods</td><td>NN Group</td><td>UX</td></tr>
+                <tr><td><img class="mini-cover" src="https://dummyimage.com/80x120/517ca6/ffffff.png&text=CC" alt=""></td><td>Clean Code Notes</td><td>Robert C. Martin</td><td>Code</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="view-comic" class="subview hidden">
+          <div class="page-head">
+            <div class="title-stack">
+              <h1>Comic</h1>
+              <div class="subtitle">64 comic folders detected</div>
+            </div>
+            <!-- 示范排序控件：漫画页标题行右侧 · 待确认后接入 -->
+            <div class="page-head-tools top-tools">
+              <div class="sort-control" data-sort-demo="comic" title="Demo · pending wire-up">
+                <span class="sort-label">Sort</span>
+                <select class="sort-select" aria-label="Comic folder sort">
+                  <option value="folder_mtime_desc" selected>Folder Date: Newest First</option>
+                  <option value="folder_mtime_asc">Folder Date: Oldest First</option>
+                  <option value="folder_name_asc">Folder Name: A-Z</option>
+                  <option value="folder_name_desc">Folder Name: Z-A</option>
+                </select>
+              </div>
+              <span class="demo-note">Demo · pending wire-up</span>
+              <button class="ghost-btn" type="button">Prev</button>
+              <span class="chip">Page 1 / 2</span>
+              <button class="ghost-btn" type="button">Next</button>
+            </div>
+          </div>
+          <div class="content-split">
+            <div class="cover-grid">
+              <article class="book-card selected"><img class="cover" src="https://dummyimage.com/300x450/435d7c/ffffff.png&text=Comic+01" alt=""><div class="card-title">北海街角 01</div><div class="card-meta">86 images</div></article>
+              <article class="book-card"><img class="cover" src="https://dummyimage.com/300x450/7f695a/ffffff.png&text=Comic+02" alt=""><div class="card-title">北海街角 02</div><div class="card-meta">91 images</div></article>
+              <article class="book-card"><img class="cover" src="https://dummyimage.com/300x450/6c8b74/ffffff.png&text=Comic+03" alt=""><div class="card-title">夜行短篇集</div><div class="card-meta">42 images</div></article>
+              <article class="book-card"><img class="cover" src="https://dummyimage.com/300x450/927390/ffffff.png&text=Comic+04" alt=""><div class="card-title">星港旅行日志</div><div class="card-meta">64 images</div></article>
+            </div>
+          </div>
+        </div>
+
+        <div id="view-comicFav" class="subview hidden">
+          <div class="page-head">
+            <div class="title-stack">
+              <h1>Comic Fav</h1>
+              <div class="subtitle">8 comic folders in favorites</div>
+            </div>
+            <!-- 示范排序控件：漫画收藏同样放在 page-head 工具区 · 待确认后接入 -->
+            <div class="page-head-tools">
+              <div class="sort-control" data-sort-demo="comicFav" title="Demo · pending wire-up">
+                <span class="sort-label">Sort</span>
+                <select class="sort-select" aria-label="Comic favorites folder sort">
+                  <option value="folder_mtime_desc" selected>Folder Date: Newest First</option>
+                  <option value="folder_mtime_asc">Folder Date: Oldest First</option>
+                  <option value="folder_name_asc">Folder Name: A-Z</option>
+                  <option value="folder_name_desc">Folder Name: Z-A</option>
+                </select>
+              </div>
+              <span class="demo-note">Demo · pending wire-up</span>
+            </div>
+          </div>
+          <div class="content-split"><div class="empty-state">No layout change here: Comic Fav keeps the same comic grid and detail panel.</div></div>
+        </div>
+      </section>
+    </section>
+
+    <aside class="detail-panel glass">
+      <img class="detail-cover" src="https://dummyimage.com/300x450/8da5c2/ffffff.png&text=Design+Systems" alt="Selected book cover">
+      <h2>Design Systems in Practice</h2>
+      <div class="detail-meta">
+        <div class="detail-block"><strong>作者：</strong>Alla Kholmatova</div>
+        <div class="detail-block"><strong>出版社：</strong>Smashing Media</div>
+        <div class="detail-block"><strong>标签：</strong>Design、Reference、UI</div>
+        <div class="detail-block"><strong>所属书单：</strong>Design Reading、Must Read</div>
+        <div class="detail-block"><strong>文件：</strong>F:\Books\Library\Design Systems in Practice.epub</div>
+        <div class="detail-block"><strong>Text Preview:</strong><br>Glass panels are used as surfaces, not decoration. Tables and long text keep high contrast to preserve utility.</div>
+      </div>
+    </aside>
+
+    <section class="bottom-preview-workspace">
+      <section id="board-settings" class="preview-panel glass">
+        <div class="preview-head">
+          <div>
+            <h2>Settings Preview</h2>
+            <div class="subtitle">这是Bookshelf底部settings点击后展示的区域，占在搜索栏下方的俩列大区域中。</div>
+          </div>
+          <div class="window-tools" aria-label="Future window controls">
+            <span class="tool-dot">-</span>
+            <span class="tool-dot">□</span>
+            <span class="tool-dot">↘</span>
+          </div>
+        </div>
+        <div class="settings-grid">
+          <nav class="settings-nav">
+            <button class="active">General</button>
+            <button>Error logs</button>
+            <button>Collection Rules</button>
+          </nav>
+          <div class="panel">
+            <div class="page-head">
+              <div class="title-stack">
+                <h2>General Settings</h2>
+                <div class="subtitle">Local scan, display, typography, and thumbnail tasks</div>
+              </div>
+              <button class="primary-btn">Scan Text Novel Folders</button>
+            </div>
+            <div class="form-grid">
+              <div class="field"><label>Display language</label><select><option>English</option><option>简体中文</option></select></div>
+              <div class="field"><label>Font source</label><select><option>System</option><option>Project fonts</option></select></div>
+              <div class="field"><label>Font family</label><select><option>Inter</option><option>Microsoft YaHei</option></select></div>
+              <div class="field"><label>Search font size</label><select><option>15px</option><option>18px</option><option>20px</option></select></div>
+              <div class="field"><label>Scan depth</label><select><option>3</option><option>5</option><option>Unlimited</option></select></div>
+              <div class="field"><label>Missed hash matching</label><select><option>Fast</option><option>Strict</option></select></div>
+              <div class="field"><label>Card spacing</label><select><option>16px</option><option>20px</option></select></div>
+              <div class="field"><label>Cover selected border</label><span class="swatch"></span> 2px</div>
+            </div>
+            <div class="task-row mt">
+              <div class="page-head">
+                <div class="title-stack">
+                  <h2>Night mode</h2>
+                  <div class="subtitle">Read local time every few minutes and slowly transition between day and night UI.</div>
+                </div>
+                <div class="segmented" aria-label="Night mode preview">
+                  <button class="active" type="button" data-theme-mode="auto">Auto</button>
+                  <button type="button" data-theme-mode="day">Day</button>
+                  <button type="button" data-theme-mode="night">Night</button>
+                </div>
+              </div>
+              <div class="form-grid">
+                <div class="field"><label>Current local time</label><div id="themeLocalTime">--:--</div></div>
+                <div class="field"><label>Current theme</label><div id="themeCurrent">Auto</div></div>
+                <div class="field"><label>Next check</label><div id="themeNextCheck">--:--</div></div>
+                <div class="field"><label>Auto by local time</label><input id="themeAutoEnabled" type="checkbox" checked></div>
+                <div class="field"><label>Check frequency (minutes)</label><select id="themeCheckFrequency"><option value="1">1</option><option value="5" selected>5</option><option value="15">15</option><option value="30">30</option></select></div>
+                <div class="field"><label>Night starts</label><input id="themeNightStart" type="time" value="22:00"></div>
+                <div class="field"><label>Day resumes</label><input id="themeDayResume" type="time" value="07:00"></div>
+                <div class="field"><label>Auto transition duration (minutes)</label><select id="themeTransitionMinutes"><option value="1">1</option><option value="3" selected>3</option><option value="5">5</option><option value="10">10</option></select></div>
+              </div>
+              <p class="small-note">Preview-only schedule logic: no location, no network, no sunrise lookup.</p>
+            </div>
+            <div class="path-list">
+              <!-- Rules 跳转到 Dialogs Preview 内嵌 Text Rules 玻璃示范 · 待确认后接入 -->
+              <div class="path-row"><button class="danger-btn" type="button">Delete</button><button class="ghost-btn" type="button" data-open-text-rules data-rules-path="F:\Books\Library">Rules</button><span class="path-text">F:\Books\Library</span></div>
+              <div class="path-row"><button class="danger-btn" type="button">Delete</button><button class="ghost-btn" type="button" data-open-text-rules data-rules-path="F:\Books\Text Novel">Rules</button><span class="path-text">F:\Books\Text Novel</span></div>
+              <div class="path-row"><button class="danger-btn" type="button">Delete</button><button class="ghost-btn" type="button" data-open-text-rules data-rules-path="F:\Books\Comics">Rules</button><span class="path-text">F:\Books\Comics</span></div>
+            </div>
+            <div class="mt">
+              <span class="demo-note">Text Rules demo lives in Dialogs Preview below · pending wire-up</span>
+            </div>
+            <div class="task-row mt" data-reference="collection-rules">
+              <div class="kicker">Collection Rules · production reference</div>
+              <div class="split-cols">
+                <div>
+                  <strong>Design References</strong>
+                  <p class="small-note">Books · Enabled · Auto 12 · Excluded 1</p>
+                </div>
+                <div>
+                  <strong>Match all conditions</strong>
+                  <p class="small-note">Field: Title · Contains “Design” · Case insensitive</p>
+                  <p class="small-note">Each condition chooses a field; Text Novel also supports Series and imported/manual Tags.</p>
+                  <p class="small-note">Preview: matched 12 · add 3 · remove 1 · manual kept 2</p>
+                </div>
+              </div>
+              <p class="small-note">Formal interaction also lives in the collection-card context menu. Changing a field invalidates the preview. The Settings manager becomes one column below 740px and condition rows collapse again below 600px.</p>
+            </div>
+            <div class="split-cols mt">
+              <div class="task-row">
+                <div class="kicker">Thumbnail task</div>
+                <div class="progress"><span></span></div>
+                <p class="small-note">Regenerating comic thumbnails, 68 percent complete.</p>
+              </div>
+              <div class="task-row">
+                <div class="kicker">Error logs</div>
+                <p class="small-note">Latest scan conflict log is shown in the Error logs tab. Keep this panel dense and readable.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="board-dialogs" class="preview-panel glass">
+        <div class="preview-head">
+          <div>
+            <h2>Dialogs Preview</h2>
+            <div class="subtitle">所有弹窗集中铺开，方便逐个拆成可拖拽窗口。</div>
+          </div>
+          <div class="window-tools" aria-label="Future window controls">
+            <span class="tool-dot">-</span>
+            <span class="tool-dot">□</span>
+            <span class="tool-dot">↘</span>
+          </div>
+        </div>
+        <div class="dialog-gallery">
+          <div class="dialog-card">
+            <div class="dialog-titlebar"><strong>Import Books</strong><span class="small-note">File / Home / Share / View</span></div>
+            <div class="split-cols">
+              <div class="list-stack">
+                <div class="list-item"><span>Quick access</span></div>
+                <div class="list-item"><span>This PC</span></div>
+                <div class="list-item"><span>Documents</span></div>
+              </div>
+              <div>
+                <input value="This PC > Documents > Books">
+                <table class="table">
+                  <tbody>
+                    <tr><td>Introduction_to_AI.pdf</td><td>PDF</td></tr>
+                    <tr><td>Design_Patterns.epub</td><td>EPUB</td></tr>
+                    <tr><td>Cloud_Native_Apps.mobi</td><td>MOBI</td></tr>
+                  </tbody>
+                </table>
+                <button class="primary-btn">Open</button>
+                <button class="ghost-btn">Cancel</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="dialog-card">
+            <div class="dialog-titlebar"><strong>Quick Add</strong><button class="ghost-btn">X</button></div>
+            <p class="small-note">Design Systems in Practice</p>
+            <input placeholder="输入标签...">
+            <div class="chip-row"><span class="chip">Design</span><span class="chip">Reference</span><span class="chip">To Buy</span></div>
+            <hr>
+            <input placeholder="搜索书单...">
+            <div class="list-stack mt">
+              <div class="list-item"><span>Must Read</span><button class="ghost-btn">已添加</button></div>
+              <div class="list-item"><span>Professional</span><button class="ghost-btn">添加</button></div>
+            </div>
+            <div class="mt"><button class="ghost-btn">取消</button> <button class="primary-btn">确认添加</button></div>
+          </div>
+
+          <div class="dialog-card">
+            <h3>Add Tag</h3>
+            <input placeholder="Type tag...">
+            <div class="split-cols mt">
+              <div><div class="kicker">Recent tags</div><div class="list-stack"><div class="list-item">Psychology</div><div class="list-item">Technology</div></div></div>
+              <div><div class="kicker">Add to custom list</div><div class="list-stack"><div class="list-item">Must Read</div><div class="list-item">References</div></div></div>
+            </div>
+            <div class="mt"><button class="primary-btn">Confirm</button> <button class="ghost-btn">Cancel</button></div>
+          </div>
+
+          <div class="dialog-card">
+            <h3>Add to Collection</h3>
+            <p class="small-note">Book: Design Systems in Practice</p>
+            <input placeholder="Search collections...">
+            <div class="list-stack mt">
+              <div class="list-item"><span>Design Reading</span><input type="checkbox" checked></div>
+              <div class="list-item"><span>Professional Reference</span><input type="checkbox"></div>
+            </div>
+            <div class="mt"><input placeholder="Collection name..."></div>
+            <div class="mt"><button class="ghost-btn">Cancel</button> <button class="primary-btn">Confirm</button></div>
+          </div>
+
+          <!-- Text Rules 玻璃风示范 · 替换原扁平脚手架 · 假数据可交互 · 待确认后接入 -->
+          <div class="dialog-card wide tr-host" id="textRulesPanel">
+            <div class="tr-panel">
+<header class="tr-header">
+        <div>
+          <h2 id="trTitle">Text Rules</h2>
+          <div class="tr-path" id="trPathLabel">Path: F:\Books\Text Novel</div>
+          <div class="demo-note mt">Demo · pending wire-up · fake data only</div>
+        </div>
+        <div class="tr-header-actions">
+          <button class="ghost-btn" type="button" id="trRegexBtn">Common Regex</button>
+          <button class="ghost-btn" type="button" id="trHelpBtn">Usage Guide</button>
+        </div>
+      </header>
+
+      <div class="tr-body">
+        <aside class="tr-col" aria-label="Field and rule chain">
+          <div>
+            <div class="kicker">Field</div>
+            <div class="tr-field-tabs" id="trFieldTabs">
+              <button type="button" class="active" data-field="title">Title</button>
+              <button type="button" data-field="author">Author</button>
+              <button type="button" data-field="series">Series</button>
+              <button type="button" data-field="tag">Tags</button>
+            </div>
+          </div>
+          <div class="kicker">Rule Chain</div>
+          <div class="tr-rule-list" id="trRuleList"></div>
+          <div class="tr-actions-row">
+            <button class="ghost-btn" type="button" id="trAddRuleBtn">Add Rule</button>
+            <button class="danger-btn" type="button" id="trDeleteRuleBtn">Delete Rule</button>
+          </div>
+        </aside>
+
+        <section class="tr-col" aria-label="Step editor">
+          <div class="field">
+            <label for="trSource">Source</label>
+            <select id="trSource">
+              <option value="txt_first_line">txt_first_line</option>
+              <option value="txt_head_text">txt_head_text</option>
+              <option value="stem">stem</option>
+              <option value="filename">filename</option>
+              <option value="full_path">full_path</option>
+              <option value="parent_folder">parent_folder</option>
+            </select>
+          </div>
+          <div class="tr-actions-row">
+            <strong style="font-size:13px">Steps</strong>
+            <span class="grow"></span>
+            <button class="ghost-btn" type="button" id="trImportPresetBtn">Import Preset</button>
+            <button class="ghost-btn" type="button" id="trSavePresetBtn">Save Preset</button>
+            <button class="ghost-btn" type="button" id="trAddStepBtn">Add Step</button>
+          </div>
+          <div class="tr-steps" id="trSteps"></div>
+          <div class="tr-subtle">
+            <div class="kicker">Template Rules</div>
+            <div class="tr-actions-row">
+              <button class="ghost-btn" type="button" data-template="title">Title from first line</button>
+              <button class="ghost-btn" type="button" data-template="author">Author from bracket</button>
+              <button class="ghost-btn" type="button" data-template="fallback">Fallback from stem</button>
+            </div>
+            <div class="field mt">
+              <label for="trPreset">My Presets</label>
+              <div class="tr-actions-row">
+                <select id="trPreset" class="grow">
+                  <option value="title_line">Title from first line</option>
+                  <option value="author_bracket">Author from bracket</option>
+                </select>
+                <button class="ghost-btn" type="button" id="trImportPresetCurrentBtn">Import to current rule</button>
+                <button class="danger-btn" type="button" id="trDeletePresetBtn">Delete Preset</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="tr-col" aria-label="Preview and diagnostics">
+          <div class="tr-actions-row">
+            <strong style="font-size:13px">Preview</strong>
+            <span class="grow"></span>
+            <button class="ghost-btn" type="button" id="trAutoSampleBtn">Auto sample</button>
+            <button class="ghost-btn" type="button" id="trRefreshPreviewBtn">Refresh preview</button>
+          </div>
+          <div class="field">
+            <label for="trSamplePath">Sample file</label>
+            <input id="trSamplePath" value="F:\Books\Text\玻璃城市笔记.txt">
+          </div>
+          <div class="field">
+            <label for="trFirstLine">First line</label>
+            <input id="trFirstLine" value="Title: 玻璃城市笔记">
+          </div>
+          <div class="field">
+            <label for="trHeadText">Head text</label>
+            <textarea id="trHeadText" rows="5">Title: 玻璃城市笔记
+Author: 林北川
+#[都市] #[设计]
+—— chapter one ——</textarea>
+          </div>
+          <div class="tr-preview-result ok" id="trPreviewResult">
+            <div class="kicker" id="trPreviewResultTitle">Matched</div>
+            <div id="trPreviewResultBody">玻璃城市笔记</div>
+          </div>
+          <div class="tr-subtle">
+            <div class="tr-actions-row">
+              <div class="kicker" style="margin:0">Format diagnostics</div>
+              <span class="grow"></span>
+              <button class="ghost-btn" type="button" id="trDiagRefreshBtn">Refresh</button>
+            </div>
+            <p class="small-note" id="trDiagBody">Signature: title_line + author_line + hash_tags · 3 blocks detected · OK</p>
+          </div>
+          <div class="tr-subtle">
+            <div class="tr-actions-row">
+              <div class="kicker" style="margin:0">Multi-sample preview</div>
+              <span class="grow"></span>
+              <button class="ghost-btn" type="button" id="trMultiRunBtn">Run</button>
+            </div>
+            <div class="tr-multi-list" id="trMultiList"></div>
+          </div>
+        </section>
+      </div>
+
+      <footer class="tr-footer">
+        <div class="tr-footer-actions">
+          <button class="ghost-btn" type="button" id="trCancelBtn">Cancel</button>
+          <button class="primary-btn" type="button" id="trSaveBtn">Save</button>
+        </div>
+      </footer>
+            </div>
+          </div>
+
+          <div class="dialog-card">
+            <h3>Common Regex</h3>
+            <div class="list-stack">
+              <div class="list-item"><span>Extract author</span><code>作者[:：]\s*(.+)</code></div>
+              <div class="list-item"><span>Extract #[tag]</span><code>#\[(.+?)\]</code></div>
+              <div class="list-item"><span>Extract title</span><code>《(.+?)》</code></div>
+            </div>
+          </div>
+
+          <div class="dialog-card">
+            <h3>Usage Guide</h3>
+            <p class="small-note">1. Select target field. 2. Add a rule and pick a source. 3. Add steps from top to bottom, then save.</p>
+            <p class="small-note">Line and marker steps should use txt_head_text. Invalid regex returns structured failure and does not crash.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="board-states" class="preview-panel glass">
+        <div class="preview-head">
+          <div>
+            <h2>Component States</h2>
+            <div class="subtitle">右键菜单、toast、empty、loading 等状态独立查看。</div>
+          </div>
+          <div class="window-tools" aria-label="Future window controls">
+            <span class="tool-dot">-</span>
+            <span class="tool-dot">□</span>
+            <span class="tool-dot">↘</span>
+          </div>
+        </div>
+        <div class="dialog-gallery">
+          <div class="dialog-card">
+            <h3>Context Menu</h3>
+            <div class="context-menu">
+              <button>Open External</button>
+              <button>Quick Add Tag / Collection</button>
+              <button>Add to Favorites</button>
+              <button class="danger-btn">Remove from Collection</button>
+            </div>
+          </div>
+          <div class="dialog-card">
+            <h3>Toast</h3>
+            <div class="toast"><span class="toast-dot"></span><div><strong>Scan completed</strong><div class="small-note">Library 12, Comic 8, Text 5 imported.</div></div></div>
+          </div>
+          <div class="dialog-card">
+            <h3>Empty State</h3>
+            <div class="empty-state">No favorite comics yet. Use the context menu on a comic cover to add one.</div>
+          </div>
+          <div class="dialog-card">
+            <h3>Loading / Task</h3>
+            <div class="task-row"><div class="progress"><span></span></div><p class="small-note">Scanning text roots. UI remains responsive.</p></div>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <!-- Preview-only i18n switch. Do not carry this floating control into later app development. -->
+  <button class="floating-lang-toggle" id="langToggle" type="button">EN</button>
+
+  <script>
+    const previewBoards = ["settings", "dialogs", "states"];
+    const views = ["library", "text", "collections", "favorites", "comic", "comicFav"];
+    const translations = {
+      "Bookshelf": "书架",
+      "Local Database": "本地书库",
+      "Library": "书库",
+      "Text Novel": "文本小说",
+      "Collections": "书单",
+      "Series": "系列",
+      "Favorites": "收藏",
+      "Comic": "漫画",
+      "Comic Fav": "漫画收藏",
+      "Import Books": "导入书籍",
+      "Settings": "设置",
+      "Grid": "网格",
+      "List": "列表",
+      "Sort: Recent": "排序：最近",
+      "Scan": "扫描",
+      "128 books in your local collection": "本地书库中有 128 本书",
+      "Design Systems in Practice": "设计系统实践",
+      "Clean Code Notes": "整洁代码笔记",
+      "UX Research Methods": "UX 研究方法",
+      "Typography 101": "字体排印入门",
+      "Python Tools for Readers": "读者的 Python 工具",
+      "SQLite Pocket Guide": "SQLite 口袋指南",
+      "Design": "设计",
+      "Reference": "参考",
+      "Code": "代码",
+      "Visual": "视觉",
+      "Tooling": "工具",
+      "Database": "数据库",
+      "42 txt files, filtered by title / author / tag / path": "42 个 TXT 文件，可按标题 / 作者 / 标签 / 路径筛选",
+      "Title": "标题",
+      "Author": "作者",
+      "Tags": "标签",
+      "Path": "路径",
+      "Custom shelves for local resources": "本地资源的自定义书单",
+      "New List": "新建书单",
+      "Design Reading": "设计阅读",
+      "Professional Reference": "专业参考",
+      "Must Read": "必读",
+      "18 books": "18 本书",
+      "27 books": "27 本书",
+      "9 books": "9 本书",
+      "15 saved books, grid and list supported": "15 本收藏书籍，支持网格和列表",
+      "Sort": "排序",
+      "Added Time: Newest First": "添加时间：新→旧",
+      "Added Time: Oldest First": "添加时间：旧→新",
+      "Demo · pending wire-up": "示范，待确认后接入",
+      "Demo · pending wire-up · fake data only": "示范，待确认后接入 · 仅假数据",
+      "Cover": "封面",
+      "64 comic folders detected": "检测到 64 个漫画文件夹",
+      "Folder Date: Newest First": "文件夹日期：最新优先",
+      "Folder Date: Oldest First": "文件夹日期：最旧优先",
+      "Folder Name: A-Z": "文件夹名：A-Z",
+      "Folder Name: Z-A": "文件夹名：Z-A",
+      "Prev": "上一页",
+      "Next": "下一页",
+      "Page 1 / 2": "第 1 / 2 页",
+      "86 images": "86 张图片",
+      "91 images": "91 张图片",
+      "42 images": "42 张图片",
+      "64 images": "64 张图片",
+      "8 comic folders in favorites": "收藏中有 8 个漫画文件夹",
+      "No layout change here: Comic Fav keeps the same comic grid and detail panel.": "这里不改变布局：漫画收藏沿用漫画网格和详情栏。",
+      "Close": "关闭",
+      "Add Rule": "新增规则",
+      "Delete Rule": "删除规则",
+      "Source": "来源",
+      "Steps": "步骤",
+      "Import Preset": "导入预设",
+      "Save Preset": "保存预设",
+      "Add Step": "新增步骤",
+      "Template Rules": "示例模板",
+      "Title from first line": "从首行取标题",
+      "Author from bracket": "从括号取作者",
+      "Fallback from stem": "文件名回退",
+      "My Presets": "我的预设",
+      "Import to current rule": "导入到当前规则",
+      "Delete Preset": "删除预设",
+      "Auto sample": "自动抽样",
+      "Refresh preview": "刷新预览",
+      "Sample file": "示例文件",
+      "First line": "首行",
+      "Head text": "文首文本",
+      "Matched": "匹配成功",
+      "No match": "未匹配",
+      "Format diagnostics": "格式诊断",
+      "Multi-sample preview": "多样本预览",
+      "Run": "运行",
+      "Refresh": "刷新",
+      "Move up": "上移",
+      "Move down": "下移",
+      "Delete step": "删除步骤",
+      "No steps yet.": "尚无步骤。",
+      "Category": "类别",
+      "Type": "类型",
+      "Path: F:\\Books\\Text Novel": "路径：F:\\Books\\Text Novel",
+      "Path: F:\\Books\\Library": "路径：F:\\Books\\Library",
+      "Path: F:\\Books\\Comics": "路径：F:\\Books\\Comics",
+      "Signature: title_line + author_line + hash_tags · 3 blocks detected · OK": "签名：title_line + author_line + hash_tags · 检测到 3 个块 · 正常",
+      "Author:": "作者：",
+      "Publisher:": "出版社：",
+      "Tags:": "标签：",
+      "Collections:": "所属书单：",
+      "File:": "文件：",
+      "Text Preview:": "文本预览：",
+      "Glass panels are used as surfaces, not decoration. Tables and long text keep high contrast to preserve utility.": "玻璃面板作为功能表面使用，而不是纯装饰。表格和长文本保持高对比，确保工具可用性。",
+      "Settings Preview": "设置预览",
+      "这是Bookshelf底部settings点击后展示的区域，占在搜索栏下方的俩列大区域中。": "这是点击 Bookshelf 底部 Settings 后展示的区域，位于搜索栏下方的大预览区中。",
+      "General": "通用",
+      "Error logs": "错误日志",
+      "General Settings": "通用设置",
+      "Local scan, display, typography, and thumbnail tasks": "本地扫描、显示、字体与缩略图任务",
+      "Scan Text Novel Folders": "扫描文本小说目录",
+      "Night mode": "夜间模式",
+      "Read local time every few minutes and slowly transition between day and night UI.": "每隔几分钟读取本地时间，并在日间与夜间 UI 之间缓慢过渡。",
+      "Auto": "自动",
+      "Day": "白天",
+      "Night": "夜间",
+      "Current local time": "当前本地时间",
+      "Current theme": "当前主题",
+      "Next check": "下次检查",
+      "Auto by local time": "按本地时间自动切换",
+      "Check frequency (minutes)": "检查频率（分钟）",
+      "Night starts": "夜间开始",
+      "Day resumes": "白天恢复",
+      "Auto transition duration (minutes)": "自动过渡时长（分钟）",
+      "Preview-only schedule logic: no location, no network, no sunrise lookup.": "仅用于范本预览：不读取位置、不联网、不查询日出日落。",
+      "Day UI": "白天 UI",
+      "Night UI": "夜间 UI",
+      "Auto (Day)": "自动（白天）",
+      "Auto (Night)": "自动（夜间）",
+      "Manual preview": "手动预览",
+      "Paused": "已暂停",
+      "Display language": "显示语言",
+      "Font source": "字体来源",
+      "Font family": "字体族",
+      "Search font size": "搜索字号",
+      "Scan depth": "扫描深度",
+      "Missed hash matching": "缺失项哈希匹配",
+      "Card spacing": "卡片间距",
+      "Cover selected border": "封面选中边框",
+      "Delete": "删除",
+      "Rules": "规则",
+      "Thumbnail task": "缩略图任务",
+      "Regenerating comic thumbnails, 68 percent complete.": "正在重建漫画缩略图，已完成 68%。",
+      "Latest scan conflict log is shown in the Error logs tab. Keep this panel dense and readable.": "最新扫描冲突日志显示在错误日志页。该面板保持紧凑并保证可读性。",
+      "Dialogs Preview": "弹窗预览",
+      "所有弹窗集中铺开，方便逐个拆成可拖拽窗口。": "所有弹窗集中铺开，方便逐个拆成可拖拽窗口。",
+      "File / Home / Share / View": "文件 / 主页 / 分享 / 查看",
+      "Open": "打开",
+      "Cancel": "取消",
+      "Quick Add": "快速添加",
+      "Add Tag": "添加标签",
+      "Type tag...": "输入标签...",
+      "Recent tags": "最近标签",
+      "Add to custom list": "加入自定义书单",
+      "Confirm": "确认",
+      "Add to Collection": "加入书单",
+      "Book: Design Systems in Practice": "书籍：设计系统实践",
+      "Search collections...": "搜索书单...",
+      "Collection name...": "书单名称...",
+      "Text Rules": "文本规则",
+      "Common Regex": "常用正则",
+      "Usage Guide": "使用文档",
+      "Field": "字段",
+      "Rule Chain": "规则链",
+      "Step 1": "步骤 1",
+      "Step 2": "步骤 2",
+      "Step": "步骤",
+      "Preview": "预览",
+      "Result": "结果",
+      "Save": "保存",
+      "Extract author": "提取作者",
+      "Extract #[tag]": "提取 #[标签]",
+      "Extract title": "提取标题",
+      "1. Select target field. 2. Add a rule and pick a source. 3. Add steps from top to bottom, then save.": "1. 选择目标字段。2. 添加规则并选择来源。3. 从上到下添加步骤，然后保存。",
+      "Line and marker steps should use txt_head_text. Invalid regex returns structured failure and does not crash.": "行处理和标记步骤建议使用 txt_head_text。非法正则会返回结构化失败，不会崩溃。",
+      "Component States": "组件状态",
+      "右键菜单、toast、empty、loading 等状态独立查看。": "右键菜单、toast、empty、loading 等状态独立查看。",
+      "Context Menu": "右键菜单",
+      "Open External": "外部打开",
+      "Quick Add Tag / Collection": "快速添加标签 / 书单",
+      "Add to Favorites": "加入收藏",
+      "Remove from Collection": "从书单移除",
+      "Toast": "提示条",
+      "Scan completed": "扫描完成",
+      "Library 12, Comic 8, Text 5 imported.": "已导入书库 12、本地漫画 8、文本 5。",
+      "Empty State": "空状态",
+      "No favorite comics yet. Use the context menu on a comic cover to add one.": "还没有收藏漫画。可在漫画封面右键菜单中添加。",
+      "Loading / Task": "加载 / 任务",
+      "Scanning text roots. UI remains responsive.": "正在扫描文本目录，界面保持响应。",
+      "Future window controls": "未来窗口控制"
+    };
+    const reverseTranslations = Object.fromEntries(
+      Object.entries(translations).map(([english, chinese]) => [chinese, english])
+    );
+    const inputTranslations = {
+      searchInput: {
+        en: {
+          aria: "Search library",
+          placeholder: "Search library, text novel, tag, author, path...",
+          value: "tag:design local library"
+        },
+        zh: {
+          aria: "搜索书库",
+          placeholder: "搜索书库、文本小说、标签、作者、路径...",
+          value: "tag:设计 本地书库"
+        }
+      }
+    };
+    const placeholderTranslations = {
+      "Type tag...": "输入标签...",
+      "Search collections...": "搜索书单...",
+      "Collection name...": "书单名称..."
+    };
+    const reversePlaceholderTranslations = Object.fromEntries(
+      Object.entries(placeholderTranslations).map(([english, chinese]) => [chinese, english])
+    );
+    let currentLang = "zh";
+    let themeTimerId = null;
+    let themePreviewMode = "auto";
+    let nextThemeCheckAt = null;
+
+    function t(englishText) {
+      return currentLang === "zh" ? translations[englishText] || englishText : englishText;
+    }
+
+    function parseTimeToMinutes(value, fallback) {
+      const normalized = String(value || "").trim();
+      const match = normalized.match(/^(\d{1,2}):(\d{2})$/);
+      if (!match) {
+        return fallback;
+      }
+      const hours = Math.max(0, Math.min(23, Number(match[1])));
+      const minutes = Math.max(0, Math.min(59, Number(match[2])));
+      return hours * 60 + minutes;
+    }
+
+    function getLocalMinutes(date = new Date()) {
+      return date.getHours() * 60 + date.getMinutes();
+    }
+
+    function isNightNow(start, end, now) {
+      if (start === end) {
+        return false;
+      }
+      if (start < end) {
+        return now >= start && now < end;
+      }
+      return now >= start || now < end;
+    }
+
+    function formatClock(date) {
+      return date.toLocaleTimeString(currentLang === "zh" ? "zh-CN" : "en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      });
+    }
+
+    function themeSettings() {
+      const frequency = Math.max(1, Number(document.getElementById("themeCheckFrequency")?.value || 5));
+      const transition = Math.max(1, Number(document.getElementById("themeTransitionMinutes")?.value || 3));
+      const nightStart = parseTimeToMinutes(document.getElementById("themeNightStart")?.value, 22 * 60);
+      const dayResume = parseTimeToMinutes(document.getElementById("themeDayResume")?.value, 7 * 60);
+      const autoEnabled = Boolean(document.getElementById("themeAutoEnabled")?.checked);
+      return { frequency, transition, nightStart, dayResume, autoEnabled };
+    }
+
+    function calculatedLocalTheme() {
+      const settings = themeSettings();
+      return isNightNow(settings.nightStart, settings.dayResume, getLocalMinutes()) ? "night" : "day";
+    }
+
+    function syncTransitionDuration(reason = "manual") {
+      const { transition } = themeSettings();
+      const autoDuration = `${transition * 60}s`;
+      const activeDuration = reason === "scheduled-auto" ? autoDuration : reason === "init" ? "0s" : "420ms";
+      document.documentElement.style.setProperty("--theme-transition-duration", autoDuration);
+      document.documentElement.style.setProperty("--active-theme-transition-duration", activeDuration);
+    }
+
+    function updateThemeButtons() {
+      document.querySelectorAll("[data-theme-mode]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.themeMode === themePreviewMode);
+      });
+    }
+
+    function updateThemeStatus() {
+      const now = new Date();
+      const currentTheme = document.body.dataset.theme === "night" ? "night" : "day";
+      const localTime = document.getElementById("themeLocalTime");
+      const current = document.getElementById("themeCurrent");
+      const next = document.getElementById("themeNextCheck");
+      if (localTime) {
+        localTime.textContent = formatClock(now);
+      }
+      if (current) {
+        if (themePreviewMode === "auto") {
+          current.textContent = t(currentTheme === "night" ? "Auto (Night)" : "Auto (Day)");
+        } else {
+          current.textContent = `${t("Manual preview")}: ${t(currentTheme === "night" ? "Night UI" : "Day UI")}`;
+        }
+      }
+      if (next) {
+        next.textContent = nextThemeCheckAt ? formatClock(nextThemeCheckAt) : t("Paused");
+      }
+    }
+
+    function applyTheme(theme, reason = "auto") {
+      const normalized = theme === "night" ? "night" : "day";
+      syncTransitionDuration(reason);
+      document.body.dataset.theme = normalized;
+      updateThemeButtons();
+      updateThemeStatus();
+      document.body.dataset.themeReason = reason;
+    }
+
+    function scheduleThemeCheck() {
+      if (themeTimerId) {
+        clearInterval(themeTimerId);
+        themeTimerId = null;
+      }
+      syncTransitionDuration("schedule");
+      const settings = themeSettings();
+      if (settings.autoEnabled && themePreviewMode === "auto") {
+        nextThemeCheckAt = new Date(Date.now() + settings.frequency * 60000);
+        themeTimerId = setInterval(() => {
+          nextThemeCheckAt = new Date(Date.now() + themeSettings().frequency * 60000);
+          applyTheme(calculatedLocalTheme(), "scheduled-auto");
+        }, settings.frequency * 60000);
+      } else {
+        nextThemeCheckAt = null;
+      }
+      updateThemeStatus();
+    }
+
+    function setThemeMode(mode) {
+      themePreviewMode = mode === "day" || mode === "night" ? mode : "auto";
+      if (themePreviewMode === "auto") {
+        const autoToggle = document.getElementById("themeAutoEnabled");
+        if (autoToggle) {
+          autoToggle.checked = true;
+        }
+        applyTheme(calculatedLocalTheme(), "auto-preview");
+      } else {
+        applyTheme(themePreviewMode, "manual");
+      }
+      scheduleThemeCheck();
+    }
+
+    function initThemeControls() {
+      document.querySelectorAll("[data-theme-mode]").forEach((button) => {
+        button.addEventListener("click", () => setThemeMode(button.dataset.themeMode));
+      });
+      ["themeCheckFrequency", "themeNightStart", "themeDayResume", "themeTransitionMinutes"].forEach((id) => {
+        document.getElementById(id)?.addEventListener("change", () => {
+          if (themePreviewMode === "auto") {
+            applyTheme(calculatedLocalTheme(), "settings");
+          } else {
+            syncTransitionDuration("manual");
+            updateThemeStatus();
+          }
+          scheduleThemeCheck();
+        });
+      });
+      document.getElementById("themeAutoEnabled")?.addEventListener("change", (event) => {
+        if (event.target.checked) {
+          setThemeMode("auto");
+          return;
+        }
+        scheduleThemeCheck();
+      });
+      applyTheme(calculatedLocalTheme(), "init");
+      scheduleThemeCheck();
+    }
+
+    function replaceTextNodes(root, lang) {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          const parent = node.parentElement;
+          if (!parent || ["SCRIPT", "STYLE", "CODE"].includes(parent.tagName)) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return node.nodeValue.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+        }
+      });
+      const nodes = [];
+      while (walker.nextNode()) {
+        nodes.push(walker.currentNode);
+      }
+      nodes.forEach((node) => {
+        const value = node.nodeValue;
+        const trimmed = value.trim();
+        const leading = value.match(/^\s*/)[0];
+        const trailing = value.match(/\s*$/)[0];
+        const translated = lang === "zh" ? translations[trimmed] : reverseTranslations[trimmed];
+        if (translated) {
+          node.nodeValue = `${leading}${translated}${trailing}`;
+        }
+      });
+    }
+
+    function replacePlaceholders(lang) {
+      document.querySelectorAll("input[placeholder], textarea[placeholder]").forEach((field) => {
+        const current = field.getAttribute("placeholder");
+        const next = lang === "zh" ? placeholderTranslations[current] : reversePlaceholderTranslations[current];
+        if (next) {
+          field.setAttribute("placeholder", next);
+        }
+      });
+      Object.entries(inputTranslations).forEach(([id, map]) => {
+        const field = document.getElementById(id);
+        if (!field) {
+          return;
+        }
+        field.setAttribute("aria-label", map[lang].aria);
+        field.setAttribute("placeholder", map[lang].placeholder);
+        if (field.dataset.touchedByUser !== "true") {
+          field.value = map[lang].value;
+        }
+      });
+    }
+
+    function applyLanguage(lang) {
+      currentLang = lang;
+      replaceTextNodes(document.body, lang);
+      replacePlaceholders(lang);
+      document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+      document.getElementById("langToggle").textContent = lang === "zh" ? "EN" : "中文";
+      updateThemeStatus();
+    }
+
+    function showBoard(name) {
+      document.querySelectorAll("[data-board]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.board === name);
+      });
+      document.querySelectorAll(".preview-panel").forEach((panel) => {
+        panel.classList.toggle("preview-focus", panel.id === `board-${name}`);
+      });
+      if (previewBoards.includes(name)) {
+        document.querySelectorAll(".nav-btn").forEach((button) => button.classList.remove("active"));
+        document.getElementById(`board-${name}`).scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
+    }
+
+    function showView(name) {
+      showBoard("main");
+      views.forEach((view) => {
+        document.getElementById(`view-${view}`).classList.toggle("hidden", view !== name);
+      });
+      document.querySelectorAll(".nav-btn").forEach((button) => {
+        button.classList.toggle("active", button.dataset.view === name);
+      });
+    }
+
+    document.querySelectorAll("[data-board]").forEach((button) => {
+      button.addEventListener("click", () => showBoard(button.dataset.board));
+    });
+
+    document.querySelectorAll("[data-view]").forEach((button) => {
+      button.addEventListener("click", () => showView(button.dataset.view));
+    });
+
+    document.querySelectorAll("[data-mode]").forEach((button) => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll("[data-mode]").forEach((item) => item.classList.remove("active"));
+        button.classList.add("active");
+      });
+    });
+
+    /* --- Sort demo (favorites segmented / comic select) --- */
+    document.querySelectorAll('[data-sort-demo="favorites"] .segmented button').forEach((button) => {
+      button.addEventListener("click", () => {
+        const group = button.closest(".segmented");
+        group.querySelectorAll("button").forEach((item) => item.classList.remove("active"));
+        button.classList.add("active");
+      });
+    });
+
+    document.querySelectorAll(".sort-select").forEach((select) => {
+      select.addEventListener("change", () => {
+        select.classList.add("active");
+        window.setTimeout(() => select.classList.remove("active"), 220);
+      });
+    });
+
+    /* --- Text Rules glass panel · in-place Dialogs Preview · fake interactive demo --- */
+    const trPanel = document.getElementById("textRulesPanel");
+    const trPanelInner = trPanel ? trPanel.querySelector(".tr-panel") : null;
+    const trPathLabel = document.getElementById("trPathLabel");
+    const trRuleList = document.getElementById("trRuleList");
+    const trSteps = document.getElementById("trSteps");
+    const trSource = document.getElementById("trSource");
+    const trPreviewResult = document.getElementById("trPreviewResult");
+    const trPreviewResultTitle = document.getElementById("trPreviewResultTitle");
+    const trPreviewResultBody = document.getElementById("trPreviewResultBody");
+    const trMultiList = document.getElementById("trMultiList");
+    const trDiagBody = document.getElementById("trDiagBody");
+
+    const trState = {
+      field: "title",
+      selectedRule: 0,
+      selectedStep: 0,
+      rulesByField: {
+        title: [
+          { name: "1. txt_first_line → Title", source: "txt_first_line", steps: [
+            { category: "extract", type: "take_after_text", param: "Title:" },
+            { category: "clean", type: "trim", param: "" }
+          ]},
+          { name: "2. stem fallback", source: "stem", steps: [
+            { category: "filename", type: "remove_extension", param: "" },
+            { category: "clean", type: "trim", param: "" }
+          ]}
+        ],
+        author: [
+          { name: "1. bracket author", source: "txt_head_text", steps: [
+            { category: "extract", type: "take_after_text", param: "Author:" },
+            { category: "clean", type: "trim", param: "" }
+          ]}
+        ],
+        series: [
+          { name: "1. parent folder", source: "parent_folder", steps: [
+            { category: "clean", type: "trim", param: "" }
+          ]}
+        ],
+        tag: [
+          { name: "1. hash tags", source: "txt_head_text", steps: [
+            { category: "regex", type: "regex_extract", param: "#\\[(.+?)\\]" }
+          ]}
+        ]
+      },
+      previewByField: {
+        title: { ok: true, title: "Matched", body: "玻璃城市笔记" },
+        author: { ok: true, title: "Matched", body: "林北川" },
+        series: { ok: false, title: "No match", body: "(empty)" },
+        tag: { ok: true, title: "Matched", body: "都市, 设计" }
+      },
+      samples: [
+        { path: "玻璃城市笔记.txt", result: "玻璃城市笔记" },
+        { path: "银河书店夜航.txt", result: "银河书店夜航" },
+        { path: "old_archive.txt", result: "old_archive" }
+      ]
+    };
+
+    function trT(en) {
+      if (currentLang !== "zh") return en;
+      return translations[en] || en;
+    }
+
+    function currentRules() {
+      return trState.rulesByField[trState.field] || [];
+    }
+
+    function currentRule() {
+      return currentRules()[trState.selectedRule] || null;
+    }
+
+    function renderTrRules() {
+      const rules = currentRules();
+      trRuleList.innerHTML = "";
+      rules.forEach((rule, index) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = `tr-rule-item${index === trState.selectedRule ? " active" : ""}`;
+        btn.textContent = rule.name;
+        btn.addEventListener("click", () => {
+          trState.selectedRule = index;
+          trState.selectedStep = 0;
+          renderTrRules();
+          renderTrSteps();
+          renderTrPreview();
+        });
+        trRuleList.appendChild(btn);
+      });
+    }
+
+    function renderTrSteps() {
+      const rule = currentRule();
+      trSteps.innerHTML = "";
+      if (!rule) {
+        const empty = document.createElement("p");
+        empty.className = "small-note";
+        empty.textContent = trT("No steps yet.");
+        trSteps.appendChild(empty);
+        return;
+      }
+      trSource.value = rule.source;
+      rule.steps.forEach((step, index) => {
+        const card = document.createElement("div");
+        card.className = `tr-step-card${index === trState.selectedStep ? " selected" : ""}`;
+        card.innerHTML = `
+          <div class="tr-step-head">
+            <strong>${trT("Step")} ${index + 1}</strong>
+            <div class="tr-actions-row">
+              <button class="ghost-btn" type="button" data-act="up">${trT("Move up")}</button>
+              <button class="ghost-btn" type="button" data-act="down">${trT("Move down")}</button>
+              <button class="danger-btn" type="button" data-act="del">${trT("Delete step")}</button>
+            </div>
+          </div>
+          <div class="tr-step-grid">
+            <div class="field"><label>${trT("Category")}</label>
+              <select data-key="category">
+                <option value="clean"${step.category === "clean" ? " selected" : ""}>clean</option>
+                <option value="extract"${step.category === "extract" ? " selected" : ""}>extract</option>
+                <option value="filename"${step.category === "filename" ? " selected" : ""}>filename</option>
+                <option value="regex"${step.category === "regex" ? " selected" : ""}>regex</option>
+              </select>
+            </div>
+            <div class="field"><label>${trT("Type")}</label>
+              <select data-key="type">
+                <option value="trim"${step.type === "trim" ? " selected" : ""}>trim</option>
+                <option value="take_after_text"${step.type === "take_after_text" ? " selected" : ""}>take_after_text</option>
+                <option value="remove_extension"${step.type === "remove_extension" ? " selected" : ""}>remove_extension</option>
+                <option value="regex_extract"${step.type === "regex_extract" ? " selected" : ""}>regex_extract</option>
+              </select>
+            </div>
+          </div>
+          <div class="field mt"><label>param</label><input data-key="param" value="${step.param || ""}"></div>
+        `;
+        card.addEventListener("click", (event) => {
+          if (event.target.closest("button, select, input")) return;
+          trState.selectedStep = index;
+          renderTrSteps();
+        });
+        card.querySelectorAll("[data-act]").forEach((btn) => {
+          btn.addEventListener("click", (event) => {
+            event.stopPropagation();
+            const act = btn.getAttribute("data-act");
+            const steps = rule.steps;
+            if (act === "up" && index > 0) {
+              [steps[index - 1], steps[index]] = [steps[index], steps[index - 1]];
+              trState.selectedStep = index - 1;
+            } else if (act === "down" && index < steps.length - 1) {
+              [steps[index + 1], steps[index]] = [steps[index], steps[index + 1]];
+              trState.selectedStep = index + 1;
+            } else if (act === "del") {
+              steps.splice(index, 1);
+              trState.selectedStep = Math.max(0, index - 1);
+            }
+            renderTrSteps();
+            renderTrPreview();
+          });
+        });
+        card.querySelectorAll("[data-key]").forEach((field) => {
+          field.addEventListener("change", () => {
+            step[field.getAttribute("data-key")] = field.value;
+            renderTrPreview();
+          });
+          field.addEventListener("input", () => {
+            step[field.getAttribute("data-key")] = field.value;
+          });
+        });
+        trSteps.appendChild(card);
+      });
+    }
+
+    function renderTrPreview() {
+      const preview = trState.previewByField[trState.field] || { ok: false, title: "No match", body: "(empty)" };
+      trPreviewResult.classList.toggle("ok", preview.ok);
+      trPreviewResult.classList.toggle("fail", !preview.ok);
+      trPreviewResultTitle.textContent = trT(preview.title);
+      trPreviewResultBody.textContent = preview.body;
+      const rule = currentRule();
+      if (rule && rule.steps.length) {
+        trDiagBody.textContent = currentLang === "zh"
+          ? `签名：${rule.source} · ${rule.steps.length} 步 · 示范`
+          : `Signature: ${rule.source} · ${rule.steps.length} steps · demo OK`;
+      }
+    }
+
+    function renderTrMulti(force) {
+      if (!force && trMultiList.children.length) return;
+      trMultiList.innerHTML = "";
+      trState.samples.forEach((sample, index) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = index === 0 ? "active" : "";
+        btn.textContent = `${sample.path} → ${sample.result}`;
+        btn.addEventListener("click", () => {
+          trMultiList.querySelectorAll("button").forEach((item) => item.classList.remove("active"));
+          btn.classList.add("active");
+          document.getElementById("trSamplePath").value = `F:\\Books\\Text\\${sample.path}`;
+          document.getElementById("trFirstLine").value = `Title: ${sample.result}`;
+          trPreviewResultBody.textContent = sample.result;
+          trPreviewResultTitle.textContent = trT("Matched");
+          trPreviewResult.classList.add("ok");
+          trPreviewResult.classList.remove("fail");
+        });
+        trMultiList.appendChild(btn);
+      });
+    }
+
+    function openTextRules(path) {
+      const resolved = path || "F:\\Books\\Text Novel";
+      trPathLabel.textContent = currentLang === "zh" ? `路径：${resolved}` : `Path: ${resolved}`;
+      showBoard("dialogs");
+      if (trPanel) {
+        trPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      if (trPanelInner) {
+        trPanelInner.classList.add("flash");
+        window.setTimeout(() => trPanelInner.classList.remove("flash"), 900);
+      }
+      renderTrRules();
+      renderTrSteps();
+      renderTrPreview();
+      renderTrMulti(true);
+    }
+
+    document.querySelectorAll("[data-open-text-rules]").forEach((button) => {
+      button.addEventListener("click", () => openTextRules(button.getAttribute("data-rules-path")));
+    });
+    document.getElementById("trCancelBtn").addEventListener("click", () => {
+      trDiagBody.textContent = currentLang === "zh" ? "已取消（示范，未写回）" : "Cancelled (demo, not persisted)";
+    });
+    document.getElementById("trSaveBtn").addEventListener("click", () => {
+      trDiagBody.textContent = currentLang === "zh" ? "已保存（示范，未写回）" : "Saved (demo, not persisted)";
+    });
+
+    document.querySelectorAll("#trFieldTabs button").forEach((button) => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll("#trFieldTabs button").forEach((item) => item.classList.remove("active"));
+        button.classList.add("active");
+        trState.field = button.getAttribute("data-field");
+        trState.selectedRule = 0;
+        trState.selectedStep = 0;
+        renderTrRules();
+        renderTrSteps();
+        renderTrPreview();
+      });
+    });
+
+    trSource.addEventListener("change", () => {
+      const rule = currentRule();
+      if (rule) rule.source = trSource.value;
+      renderTrPreview();
+    });
+
+    document.getElementById("trAddRuleBtn").addEventListener("click", () => {
+      const rules = currentRules();
+      rules.push({
+        name: `${rules.length + 1}. new rule`,
+        source: "txt_first_line",
+        steps: [{ category: "clean", type: "trim", param: "" }]
+      });
+      trState.selectedRule = rules.length - 1;
+      renderTrRules();
+      renderTrSteps();
+    });
+
+    document.getElementById("trDeleteRuleBtn").addEventListener("click", () => {
+      const rules = currentRules();
+      if (!rules.length) return;
+      rules.splice(trState.selectedRule, 1);
+      trState.selectedRule = Math.max(0, trState.selectedRule - 1);
+      renderTrRules();
+      renderTrSteps();
+      renderTrPreview();
+    });
+
+    document.getElementById("trAddStepBtn").addEventListener("click", () => {
+      const rule = currentRule();
+      if (!rule) return;
+      rule.steps.push({ category: "clean", type: "trim", param: "" });
+      trState.selectedStep = rule.steps.length - 1;
+      renderTrSteps();
+    });
+
+    document.querySelectorAll("[data-template]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const kind = button.getAttribute("data-template");
+        const rules = currentRules();
+        const templates = {
+          title: { name: `${rules.length + 1}. Title from first line`, source: "txt_first_line", steps: [
+            { category: "extract", type: "take_after_text", param: "Title:" },
+            { category: "clean", type: "trim", param: "" }
+          ]},
+          author: { name: `${rules.length + 1}. Author from bracket`, source: "txt_head_text", steps: [
+            { category: "extract", type: "take_after_text", param: "Author:" },
+            { category: "clean", type: "trim", param: "" }
+          ]},
+          fallback: { name: `${rules.length + 1}. Fallback from stem`, source: "stem", steps: [
+            { category: "filename", type: "remove_extension", param: "" },
+            { category: "clean", type: "trim", param: "" }
+          ]}
+        };
+        rules.push(templates[kind]);
+        trState.selectedRule = rules.length - 1;
+        renderTrRules();
+        renderTrSteps();
+        renderTrPreview();
+      });
+    });
+
+    document.getElementById("trImportPresetBtn").addEventListener("click", () => {
+      document.querySelector('[data-template="title"]').click();
+    });
+    document.getElementById("trImportPresetCurrentBtn").addEventListener("click", () => {
+      const preset = document.getElementById("trPreset").value;
+      document.querySelector(`[data-template="${preset === "author_bracket" ? "author" : "title"}"]`).click();
+    });
+    document.getElementById("trSavePresetBtn").addEventListener("click", () => {
+      trDiagBody.textContent = currentLang === "zh" ? "已保存当前规则为预设（示范，未写入磁盘）" : "Preset saved (demo only, not written to disk)";
+    });
+    document.getElementById("trDeletePresetBtn").addEventListener("click", () => {
+      trDiagBody.textContent = currentLang === "zh" ? "预设已删除（示范）" : "Preset deleted (demo)";
+    });
+    document.getElementById("trAutoSampleBtn").addEventListener("click", () => {
+      document.getElementById("trSamplePath").value = "F:\\Books\\Text\\玻璃城市笔记.txt";
+      document.getElementById("trFirstLine").value = "Title: 玻璃城市笔记";
+      renderTrPreview();
+    });
+    document.getElementById("trRefreshPreviewBtn").addEventListener("click", renderTrPreview);
+    document.getElementById("trDiagRefreshBtn").addEventListener("click", renderTrPreview);
+    document.getElementById("trMultiRunBtn").addEventListener("click", () => renderTrMulti(true));
+    document.getElementById("trRegexBtn").addEventListener("click", () => {
+      trDiagBody.textContent = currentLang === "zh"
+        ? "常用正则：作者[:：]\\s*(.+) · #\\[(.+?)\\] · 《(.+?)》"
+        : "Common regex: 作者[:：]\\s*(.+) · #\\[(.+?)\\] · 《(.+?)》";
+    });
+    document.getElementById("trHelpBtn").addEventListener("click", () => {
+      trDiagBody.textContent = trT("1. Select target field. 2. Add a rule and pick a source. 3. Add steps from top to bottom, then save.");
+    });
+
+    const input = document.getElementById("searchInput");
+    const suggestions = document.getElementById("suggestions");
+    input.addEventListener("input", () => { input.dataset.touchedByUser = "true"; });
+    input.addEventListener("focus", () => suggestions.classList.add("open"));
+    input.addEventListener("input", () => suggestions.classList.toggle("open", input.value.trim().length > 0));
+    document.getElementById("langToggle").addEventListener("click", () => {
+      applyLanguage(currentLang === "zh" ? "en" : "zh");
+      renderTrRules();
+      renderTrSteps();
+      renderTrPreview();
+      renderTrMulti(true);
+      if (trPathLabel && trPathLabel.textContent) {
+        const raw = trPathLabel.textContent.replace(/^路径：|^Path:\s*/i, "");
+        trPathLabel.textContent = currentLang === "zh" ? `路径：${raw}` : `Path: ${raw}`;
+      }
+    });
+    initThemeControls();
+    applyLanguage("zh");
+    renderTrRules();
+    renderTrSteps();
+    renderTrPreview();
+    renderTrMulti(true);
+  </script>
+</body>
+</html>
