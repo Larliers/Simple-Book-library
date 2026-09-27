@@ -37,6 +37,21 @@
 }
 ```
 
+### text_novel_author_archive
+```json
+{
+  "module_name": "text_novel_author_archive",
+  "owner_agent": "indexer-agent + ui-agent",
+  "status": "active",
+  "purpose": "按非空作者跨路径归档文本小说，并在后续文本扫描中同步",
+  "input": ["text_novel author", "app_settings preset switch", "collection archive marker", "manual/rule member source", "exclusions", "preview token and snapshot"],
+  "output": ["paged preview and conflicts", "atomic archive delta", "scan summary", "novel collection page data"],
+  "upstream": ["LibraryRepository", "ScanWorker", "UiBridge"],
+  "downstream": ["auto archive settings", "novel_collections", "scan_report.json"],
+  "notes": "预设 ID 固定 text_novel_author，默认关闭；作者键 trim + casefold，空作者跳过，多作者字段整体处理；普通同名集合可复用，自定义规则或重名歧义跳过；受管集合启用期间禁止重命名、删除与单集合规则编辑；关闭保留集合和排除记录"
+}
+```
+
 ### text_novel_sidecar_cover
 ```json
 {

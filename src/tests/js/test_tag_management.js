@@ -66,9 +66,12 @@ const nodes = {
   detailContent: new FakeNode(),
   contextMenu: new FakeNode(),
   toastStack: new FakeNode(),
+  settingsBtn: new FakeNode("button"),
+  detailPanel: new FakeNode(),
 };
 
 const document = {
+  body: { dataset: {} },
   createElement: (tag) => new FakeNode(tag),
   createDocumentFragment: () => new FakeNode("fragment"),
   createTextNode: (text) => ({ textContent: text, parentElement: null, contains: () => false }),
@@ -224,6 +227,51 @@ State.currentPage = TAG_MANAGER_PAGE;
 assert.strictEqual(exitCurrentCollection(), true);
 State.recentTag = null;
 assert.strictEqual(reopenRecentCollection(), false);
+
+// The directory and tag detail share contentArea, but must keep separate scroll state.
+const scrollCatalog = {
+  mode: "tag_index", order: "desc", tagCount: 1,
+  groups: [{ letter: "B", tagCount: 1, items: [{ name: "白色", resourceCount: 2 }] }],
+};
+State.tagCatalog = scrollCatalog;
+State.tagDetail = null;
+State.tagLoading = false;
+catalogArea.scrollTop = 600;
+openTagFromCatalog("白色");
+assert.strictEqual(State.tagCatalogScrollTop, 600, "opening a tag remembers directory scroll");
+catalogArea.scrollTop = 0; // Replacing directory content clamps the browser scroll position.
+resourceCallbacks[resourceCallbacks.length - 1][1](JSON.stringify({ mode: "tag_detail", tag: "白色", items: [] }));
+catalogArea.scrollTop = 125;
+savePageScroll(TAG_MANAGER_PAGE);
+assert.strictEqual(State.scrollPos[TAG_MANAGER_PAGE], 125, "detail keeps its own scroll position");
+assert.strictEqual(State.tagCatalogScrollTop, 600, "detail scrolling does not replace directory position");
+assert.strictEqual(exitCurrentCollection(), true);
+clear(catalogArea);
+renderTagCatalog(catalogArea, scrollCatalog);
+assert.strictEqual(catalogArea.scrollTop, 600, "Back restores the directory position");
+
+catalogArea.scrollTop = 420;
+selectPage("library");
+assert.strictEqual(State.tagCatalogScrollTop, 420, "leaving the directory remembers its position");
+catalogArea.scrollTop = 0;
+selectPage(TAG_MANAGER_PAGE);
+clear(catalogArea);
+renderTagCatalog(catalogArea, scrollCatalog);
+assert.strictEqual(catalogArea.scrollTop, 420, "sidebar return restores the directory position");
+
+setTagOrder("asc");
+assert.strictEqual(State.tagCatalogScrollTop, 0, "sorting resets the directory position");
+catalogCallbacks[catalogCallbacks.length - 1][1](JSON.stringify(scrollCatalog));
+catalogArea.scrollTop = 350;
+savePageScroll(TAG_MANAGER_PAGE);
+assert.strictEqual(State.tagCatalogScrollTop, 350);
+State.settings.tagManagerScopes = { library: true, text_novel: true, comic: true };
+setTagManagerScope("comic", false);
+assert.strictEqual(State.tagCatalogScrollTop, 0, "changing sources resets the directory position");
+catalogCallbacks[catalogCallbacks.length - 1][1](JSON.stringify(scrollCatalog));
+State.tagCatalogScrollTop = 250;
+invalidateTagManager(false);
+assert.strictEqual(State.tagCatalogScrollTop, 0, "catalog invalidation resets the directory position");
 `;
 
 vm.runInContext(fs.readFileSync(appPath, "utf8") + "\n" + assertions, context, { filename: appPath });

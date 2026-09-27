@@ -44,8 +44,8 @@ _Captured from the real Qt WebEngine interface with anonymous demo records and p
 
 | Status | Included capabilities |
 |--------|-----------------------|
-| **Stable v2.5.0** | Three resource scanners and collection types, standalone tag management, in-place Quick Add, batch organization, persistent Library/Text Novel sorting, Library image-folder books, automatic collection rules, random recommendations, configurable shortcuts, and Glass/Vaporwave skins |
-| **Current main** | Adds metadata-field collection rules, stored Text Novel series, and preservation of manual novel tags on top of v2.5.0 |
+| **Stable v2.6.0** | Everything in v2.5.0, plus rules on stored metadata fields, Text Novel series and manual tag management, author-based auto archive, and restored tag-directory scroll position |
+| **Current main** | Ongoing development after v2.6.0; unpublished capabilities are listed separately from the stable release |
 
 The Releases page contains the remotely built Windows package; choose the stable release if you simply want to use the app.
 
@@ -81,7 +81,11 @@ Library can also import a folder as one regular book when it is within levels 1 
 - Each Book, Text Novel, or Comic collection can independently match source filenames or folder names with contains, excludes, starts-with, ends-with, and exact conditions. One resource may enter every matching collection.
 - Open **Edit collection rule…** from a collection card's context menu, or manage all rules under **Settings → Collection Rules**. A required preview shows additions, removals, manual keeps, and exclusions before saving.
 - These rules organize resources already imported into the local library. They neither browse nor download content.
-- **Current main only:** Each condition can target the source name or stored metadata. Books support title, author, publisher, language, and tags; Text Novels also support series; Comics support title and tags. Manual tag changes update matching collections immediately, and rescans preserve manual novel tags. Existing novels gain a series on their next text scan. The Text Novel main list shows a sortable Series column instead of Path; the path remains in details.
+- Each rule condition can target the source name or stored metadata fields available for that resource type, including title, author, publisher, language, tags, and series. Manual tag changes update matching collections immediately, and rescans preserve manually managed novel tags.
+- The Text Novel main list has a sortable Series column; paths remain available in details. Existing novels gain a series on their next text scan.
+- Open **Auto Archive** from Novel Collections or Settings. Preview, then enable **Archive by Author** to group novels across paths. Later text scans keep groups updated.
+- Empty authors are skipped. Custom-rule and duplicate-name conflicts appear in the preview and are skipped. Turning the preset off can remove automatic members or convert them to manual; collections and exclusions remain.
+- Returning from a tag detail restores the directory position, including after switching to another page during the current app session.
 
 ## Local data and privacy
 
@@ -93,6 +97,7 @@ The core workflow does not require an online service. Simple Book Library does n
 | **From source** | `src/sql/library.db`, root-level `img_preview/`, and `src/Scan_error_logs/` |
 
 When upgrading a packaged copy, keep those three user-data directories and replace only `main.exe` and the bundled program files.
+Before running a version with author auto archive, back up `sql/library.db`. To return to an older version, restore the matching pre-upgrade database backup too.
 
 ## Limitations
 
@@ -112,6 +117,8 @@ python -m venv .venv
 pip install -r requirements.txt
 .\.venv\Scripts\pythonw.exe src\main.py
 ```
+
+After setting up the environment, you can also double-click `启动书库.cmd` in the project root.
 
 ### Developer checks and packaging
 

@@ -196,6 +196,30 @@ assert.strictEqual(collectionRuleListRequests, 1, "an empty collection list must
 assert.strictEqual(State.collectionRules.loaded, true);
 assert.strictEqual(settingsRenders, 1);
 renderSettings = originalRenderSettings;
+let archivePreviewPayload = null;
+let archiveSavePayload = null;
+State.archivePreset = { loaded: true, loading: false, enabled: false, draftEnabled: true, disableMode: "remove", preview: null, token: "", page: 1 };
+State._settingsSection = "auto_archive";
+State.bridge.previewArchivePreset = (json, callback) => {
+  archivePreviewPayload = JSON.parse(json);
+  callback(JSON.stringify({ ok: true, previewToken: "archive-token", preview: {
+    summary: { authorCount: 1, create: 1, conflict: 0 }, rows: { total: 1, page: 1, pageSize: 20, items: [] }
+  } }));
+};
+State.bridge.saveArchivePreset = (json, callback) => {
+  archiveSavePayload = JSON.parse(json);
+  callback(JSON.stringify({ ok: true, preset: { enabled: true }, collectionPage: "novel_collections",
+    collectionPageData: { mode: "collections", items: [{ id: "1" }] } }));
+};
+renderSettings = () => {};
+previewArchivePreset(1);
+assert.strictEqual(archivePreviewPayload.id, "text_novel_author");
+assert.strictEqual(State.archivePreset.token, "archive-token");
+saveArchivePreset();
+assert.strictEqual(archiveSavePayload.previewToken, "archive-token");
+assert.strictEqual(State.archivePreset.token, "");
+assert.strictEqual(State.pages.novel_collections.items.length, 1, "save must update only the novel collection cache");
+renderSettings = originalRenderSettings;
 console.log("COLLECTION_RULES_BEHAVIOR_OK");
 `;
 

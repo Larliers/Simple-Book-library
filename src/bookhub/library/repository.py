@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import sqlite3
@@ -53,6 +54,8 @@ DEFAULT_COVER_SELECTED_BORDER_COLOR = "#8EA7C6"
 COLLECTION_KIND_BOOK = "book"
 COLLECTION_KIND_TEXT_NOVEL = "text_novel"
 COLLECTION_KIND_COMIC = "comic"
+ARCHIVE_PRESET_TEXT_NOVEL_AUTHOR = "text_novel_author"
+AUTHOR_ARCHIVE_ENABLED_SETTING = "text_novel_author_archive_enabled"
 BOOK_FIELD_SORT_ORDERS = frozenset(
     {
         "file_mtime_asc",
@@ -1609,6 +1612,7 @@ class LibraryRepository:
         series: str | None,
         tags: list[str],
         info_text: str | None,
+        defer_archive: bool = False,
     ) -> bool:
         imported = self._normalized_tag_values(tags)
         import_tags_json = json.dumps(imported, ensure_ascii=False)
@@ -1651,6 +1655,9 @@ class LibraryRepository:
                 (title_text, author_text or None, series_text or None, tags_json, import_tags_json,
                  info_value or None, now_utc_iso(), int(existing["id"])),
             )
+            if (not defer_archive and str(existing["author"] or "") != author_text
+                    and self._author_archive_enabled(conn)):
+                self._reconcile_author_archive(conn)
         return True
 
     def upsert_book(self, payload: dict[str, Any]) -> bool:
@@ -2308,6 +2315,8 @@ class LibraryRepository:
                     rule_enabled INTEGER NOT NULL DEFAULT 0,
                     rule_json TEXT NOT NULL DEFAULT '{"version":2,"matchMode":"all","conditions":[]}',
                     rule_updated_at TEXT
+                    ,archive_preset TEXT NOT NULL DEFAULT ''
+                    ,archive_key TEXT NOT NULL DEFAULT ''
                 );
                 CREATE TABLE IF NOT EXISTS collection_books (
                     collection_id INTEGER NOT NULL,
@@ -2371,6 +2380,13 @@ class LibraryRepository:
                 "collections",
                 "rule_updated_at",
                 "ALTER TABLE collections ADD COLUMN rule_updated_at TEXT",
+            )
+            self._ensure_column(conn, "collections", "archive_preset", "ALTER TABLE collections ADD COLUMN archive_preset TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "collections", "archive_key", "ALTER TABLE collections ADD COLUMN archive_key TEXT NOT NULL DEFAULT ''")
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_collections_archive_key "
+                "ON collections(archive_preset, archive_key) "
+                "WHERE archive_preset = 'text_novel_author' AND archive_key != ''"
             )
             for table_name in ("collection_books", "collection_comics"):
                 self._ensure_column(
@@ -2724,7 +2740,7 @@ class LibraryRepository:
             return
         resource = dict(resource_row)
         rows = conn.execute(
-            "SELECT id, rule_json FROM collections WHERE kind = ? AND rule_enabled = 1 ORDER BY id",
+            "SELECT id, rule_json FROM collections WHERE kind = ? AND rule_enabled = 1 AND archive_preset = '' ORDER BY id",
             (kind,),
         ).fetchall()
         for collection in rows:
@@ -2767,6 +2783,211 @@ class LibraryRepository:
                         (collection_id, resource_db_id),
                     )
 
+    @staticmethod
+    def _author_archive_enabled(conn: sqlite3.Connection) -> bool:
+        row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (AUTHOR_ARCHIVE_ENABLED_SETTING,)).fetchone()
+        if not row:
+            return False
+        try:
+            return bool(json.loads(row["value"]))
+        except (TypeError, ValueError):
+            return False
+
+    @staticmethod
+    def _author_archive_rule(author: str) -> dict[str, Any]:
+        return {"version": 2, "matchMode": "all", "conditions": [
+            {"field": "author", "operator": "equals", "value": author, "caseSensitive": False}
+        ]}
+
+    @staticmethod
+    def _has_custom_collection_rule(collection: dict[str, Any]) -> bool:
+        if bool(collection["rule_enabled"]):
+            return True
+        try:
+            rule = json.loads(str(collection["rule_json"] or "{}"))
+            return not isinstance(rule, dict) or bool(rule.get("conditions"))
+        except (TypeError, ValueError):
+            return True
+
+    def _author_archive_snapshot(self, conn: sqlite3.Connection) -> str:
+        """Hash all data that can change this preset's preview or resulting membership."""
+        statements = (
+            ("SELECT id, path, title, author, is_missing, updated_at FROM books WHERE resource_type = ? ORDER BY id", (COLLECTION_KIND_TEXT_NOVEL,)),
+            ("SELECT id, name, description, kind, created_at, rule_enabled, rule_json, archive_preset, archive_key FROM collections ORDER BY id", ()),
+            ("SELECT cb.collection_id, cb.book_id, cb.added_at, cb.manual_source, cb.rule_source FROM collection_books cb "
+             "JOIN collections c ON c.id = cb.collection_id WHERE c.kind = ? ORDER BY cb.collection_id, cb.book_id", (COLLECTION_KIND_TEXT_NOVEL,)),
+            ("SELECT e.collection_id, e.book_id, e.excluded_at FROM collection_rule_book_exclusions e "
+             "JOIN collections c ON c.id = e.collection_id WHERE c.kind = ? ORDER BY e.collection_id, e.book_id", (COLLECTION_KIND_TEXT_NOVEL,)),
+            ("SELECT value FROM app_settings WHERE key = ?", (AUTHOR_ARCHIVE_ENABLED_SETTING,)),
+        )
+        digest = hashlib.sha256()
+        for query, params in statements:
+            rows = [tuple(row) for row in conn.execute(query, params).fetchall()]
+            digest.update(json.dumps(rows, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+        return digest.hexdigest()
+
+    def _author_archive_plan(self, conn: sqlite3.Connection) -> dict[str, Any]:
+        books = conn.execute(
+            "SELECT id, author, path FROM books WHERE resource_type = ? AND is_missing = 0 ORDER BY id",
+            (COLLECTION_KIND_TEXT_NOVEL,),
+        ).fetchall()
+        groups: dict[str, dict[str, Any]] = {}
+        missing = 0
+        for book in books:
+            name = str(book["author"] or "").strip()
+            if not name:
+                missing += 1
+                continue
+            key = name.casefold()
+            group = groups.setdefault(key, {"author": name, "key": key, "bookIds": [], "examples": []})
+            group["bookIds"].append(int(book["id"]))
+            if len(group["examples"]) < 3:
+                group["examples"].append(str(book["path"] or ""))
+        collections = [dict(row) for row in conn.execute(
+            "SELECT * FROM collections WHERE kind = ? ORDER BY id", (COLLECTION_KIND_TEXT_NOVEL,)
+        ).fetchall()]
+        by_name: dict[str, list[dict[str, Any]]] = {}
+        managed: dict[str, dict[str, Any]] = {}
+        for collection in collections:
+            by_name.setdefault(str(collection["name"] or "").strip().casefold(), []).append(collection)
+            if collection["archive_preset"] == ARCHIVE_PRESET_TEXT_NOVEL_AUTHOR:
+                managed[str(collection["archive_key"])] = collection
+        rows = []
+        for key, group in sorted(groups.items(), key=lambda item: item[0]):
+            same = by_name.get(key, [])
+            owner = managed.get(key)
+            if len(same) > 1 or (owner and any(int(c["id"]) != int(owner["id"]) for c in same)):
+                action, reason, collection = "conflict", "duplicate_name", None
+            elif owner:
+                action, reason, collection = "existing", "", owner
+            elif same:
+                candidate = same[0]
+                if candidate["archive_preset"] or self._has_custom_collection_rule(candidate):
+                    action, reason, collection = "conflict", "custom_rule", None
+                else:
+                    action, reason, collection = "reuse", "", candidate
+            else:
+                action, reason, collection = "create", "", None
+            rows.append({**group, "count": len(group["bookIds"]), "action": action,
+                         "reason": reason, "collectionId": int(collection["id"]) if collection else None})
+        return {"rows": rows, "managed": managed, "missingAuthorCount": missing,
+                "summary": {action: sum(row["action"] == action for row in rows)
+                            for action in ("create", "reuse", "existing", "conflict")}}
+
+    def preview_archive_preset(self, *, enabled: bool, disable_mode: str = "", page: int = 1, page_size: int = 20) -> dict[str, Any]:
+        if disable_mode not in {"", "remove", "convert"} or (enabled and disable_mode) or (not enabled and disable_mode not in {"remove", "convert"}):
+            raise ValueError("invalid_disable_mode")
+        self._init_collections_tables()
+        with self._connection() as conn:
+            conn.execute("BEGIN")
+            plan = self._author_archive_plan(conn)
+            active = self._author_archive_enabled(conn)
+            auto_counts = {int(row[0]): int(row[1]) for row in conn.execute(
+                "SELECT cb.collection_id, COUNT(*) FROM collection_books cb "
+                "JOIN collections c ON c.id = cb.collection_id "
+                "WHERE c.archive_preset = ? AND cb.rule_source = 1 GROUP BY cb.collection_id",
+                (ARCHIVE_PRESET_TEXT_NOVEL_AUTHOR,)).fetchall()} if not enabled else {}
+            rows = plan["rows"] if enabled else [
+                {"author": c["name"], "key": key, "collectionId": int(c["id"]), "action": disable_mode,
+                 "count": auto_counts.get(int(c["id"]), 0)}
+                for key, c in sorted(plan["managed"].items())
+            ]
+            fingerprint = self._author_archive_snapshot(conn)
+        size = max(1, min(100, int(page_size)))
+        number = max(1, int(page))
+        return {"id": ARCHIVE_PRESET_TEXT_NOVEL_AUTHOR, "enabled": active, "targetEnabled": bool(enabled),
+                "disableMode": disable_mode, "fingerprint": fingerprint,
+                "summary": {**plan["summary"], "missingAuthorCount": plan["missingAuthorCount"],
+                            "authorCount": len(plan["rows"]), "managedCount": len(plan["managed"]),
+                            "affectedMembers": sum(int(r["count"]) for r in rows if r["action"] != "conflict")},
+                "rows": {"total": len(rows), "page": number, "pageSize": size,
+                         "items": [{k: v for k, v in row.items() if k != "bookIds"} for row in rows[(number-1)*size:number*size]]}}
+
+    def _reconcile_author_archive(self, conn: sqlite3.Connection) -> dict[str, int]:
+        plan = self._author_archive_plan(conn)
+        now = now_utc_iso()
+        managed = dict(plan["managed"])
+        frozen_ids = {int(managed[row["key"]]["id"]) for row in plan["rows"]
+                      if row["action"] == "conflict" and row["key"] in managed}
+        desired: set[tuple[int, int]] = set()
+        matched: set[tuple[int, int]] = set()
+        for row in plan["rows"]:
+            if row["action"] == "conflict":
+                continue
+            key = row["key"]
+            collection = managed.get(key)
+            if collection is None:
+                if row["action"] == "reuse":
+                    conn.execute("UPDATE collections SET archive_preset = ?, archive_key = ? WHERE id = ?",
+                                 (ARCHIVE_PRESET_TEXT_NOVEL_AUTHOR, key, row["collectionId"]))
+                    collection_id = int(row["collectionId"])
+                else:
+                    cursor = conn.execute(
+                        "INSERT INTO collections(name, kind, created_at, archive_preset, archive_key) VALUES (?, ?, ?, ?, ?)",
+                        (row["author"], COLLECTION_KIND_TEXT_NOVEL, now, ARCHIVE_PRESET_TEXT_NOVEL_AUTHOR, key))
+                    collection_id = int(cursor.lastrowid)
+                managed[key] = {"id": collection_id, "name": row["author"], "archive_key": key}
+            else:
+                collection_id = int(collection["id"])
+            rule_json = json.dumps(self._author_archive_rule(row["author"]), ensure_ascii=False, separators=(",", ":"))
+            conn.execute("UPDATE collections SET rule_enabled = 1, rule_json = ?, rule_updated_at = ? "
+                         "WHERE id = ? AND (rule_enabled != 1 OR rule_json != ?)",
+                         (rule_json, now, collection_id, rule_json))
+            matched.update((collection_id, book_id) for book_id in row["bookIds"])
+        managed_ids = [int(c["id"]) for c in managed.values() if int(c["id"]) not in frozen_ids]
+        if not managed_ids:
+            return {"collectionsEvaluated": 0, "matched": 0, "added": 0, "removed": 0, "manualKept": 0, "excluded": 0}
+        excluded = {(int(r[0]), int(r[1])) for r in conn.execute(
+            "SELECT e.collection_id, e.book_id FROM collection_rule_book_exclusions e "
+            "JOIN collections c ON c.id = e.collection_id WHERE c.archive_preset = ?",
+            (ARCHIVE_PRESET_TEXT_NOVEL_AUTHOR,)).fetchall() if int(r[0]) not in frozen_ids}
+        stale_exclusions = excluded - matched
+        conn.executemany("DELETE FROM collection_rule_book_exclusions WHERE collection_id = ? AND book_id = ?", stale_exclusions)
+        desired = matched - excluded
+        links = {(int(r[0]), int(r[1])): (int(r[2]), int(r[3])) for r in conn.execute(
+            "SELECT cb.collection_id, cb.book_id, cb.manual_source, cb.rule_source FROM collection_books cb "
+            "JOIN collections c ON c.id = cb.collection_id WHERE c.archive_preset = ?",
+            (ARCHIVE_PRESET_TEXT_NOVEL_AUTHOR,)).fetchall() if int(r[0]) not in frozen_ids}
+        to_add = desired - {key for key, value in links.items() if value[1]}
+        to_remove = {key for key, value in links.items() if value[1]} - desired
+        conn.executemany(
+            "INSERT INTO collection_books(collection_id, book_id, added_at, manual_source, rule_source) VALUES (?, ?, ?, 0, 1) "
+            "ON CONFLICT(collection_id, book_id) DO UPDATE SET rule_source = 1",
+            [(cid, bid, now) for cid, bid in to_add])
+        conn.executemany("UPDATE collection_books SET rule_source = 0 WHERE collection_id = ? AND book_id = ? AND manual_source = 1",
+                         [key for key in to_remove if links[key][0]])
+        conn.executemany("DELETE FROM collection_books WHERE collection_id = ? AND book_id = ? AND manual_source = 0",
+                         [key for key in to_remove if not links[key][0]])
+        return {"collectionsEvaluated": len(managed_ids), "matched": len(matched), "added": len(to_add),
+                "removed": len(to_remove), "manualKept": sum(links[key][0] for key in to_remove), "excluded": len(excluded & matched)}
+
+    def save_archive_preset(self, *, enabled: bool, disable_mode: str, fingerprint: str) -> dict[str, Any]:
+        if disable_mode not in {"", "remove", "convert"} or (enabled and disable_mode) or (not enabled and disable_mode not in {"remove", "convert"}):
+            raise ValueError("invalid_disable_mode")
+        self._init_collections_tables()
+        with self._connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if fingerprint != self._author_archive_snapshot(conn):
+                raise ValueError("stale_preview")
+            if enabled:
+                summary = self._reconcile_author_archive(conn)
+            else:
+                ids = [int(row[0]) for row in conn.execute(
+                    "SELECT id FROM collections WHERE archive_preset = ?", (ARCHIVE_PRESET_TEXT_NOVEL_AUTHOR,)).fetchall()]
+                for cid in ids:
+                    if disable_mode == "convert":
+                        conn.execute("UPDATE collection_books SET manual_source = 1, rule_source = 0 WHERE collection_id = ? AND rule_source = 1", (cid,))
+                    else:
+                        conn.execute("UPDATE collection_books SET rule_source = 0 WHERE collection_id = ? AND rule_source = 1", (cid,))
+                        conn.execute("DELETE FROM collection_books WHERE collection_id = ? AND manual_source = 0 AND rule_source = 0", (cid,))
+                    conn.execute("UPDATE collections SET rule_enabled = 0 WHERE id = ?", (cid,))
+                summary = {"collectionsEvaluated": len(ids)}
+            conn.execute(
+                "INSERT INTO app_settings(key, value, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                (AUTHOR_ARCHIVE_ENABLED_SETTING, json.dumps(bool(enabled)), now_utc_iso()))
+        return {"id": ARCHIVE_PRESET_TEXT_NOVEL_AUTHOR, "enabled": bool(enabled), "summary": summary}
+
     def save_collection_rule(
         self,
         collection_id: int,
@@ -2783,6 +3004,8 @@ class LibraryRepository:
             if not row:
                 raise ValueError("collection_not_found")
             collection = dict(row)
+            if collection.get("archive_preset") == ARCHIVE_PRESET_TEXT_NOVEL_AUTHOR and self._author_archive_enabled(conn):
+                raise ValueError("archive_preset_managed")
             kind = normalize_collection_kind(collection.get("kind"))
             normalized_rule = validate_collection_rule(rule, enabled=bool(enabled), kind=kind)
             _resource_table, link_table, resource_column, exclusion_table = self._collection_rule_storage(kind)
@@ -2820,7 +3043,7 @@ class LibraryRepository:
                     rule=normalized_rule,
                 )
             conn.execute(
-                "UPDATE collections SET rule_enabled = ?, rule_json = ?, rule_updated_at = ? WHERE id = ?",
+                "UPDATE collections SET rule_enabled = ?, rule_json = ?, rule_updated_at = ?, archive_preset = '', archive_key = '' WHERE id = ?",
                 (
                     1 if enabled else 0,
                     json.dumps(normalized_rule, ensure_ascii=False, separators=(",", ":")),
@@ -2851,8 +3074,12 @@ class LibraryRepository:
         }
         placeholders = ",".join("?" for _ in kind_values)
         with self._connection() as conn:
+            if COLLECTION_KIND_TEXT_NOVEL in kind_values and self._author_archive_enabled(conn):
+                archived = self._reconcile_author_archive(conn)
+                for key in summary:
+                    summary[key] += archived[key]
             rows = conn.execute(
-                f"SELECT * FROM collections WHERE rule_enabled = 1 AND kind IN ({placeholders}) ORDER BY id",  # noqa: S608
+                f"SELECT * FROM collections WHERE rule_enabled = 1 AND archive_preset = '' AND kind IN ({placeholders}) ORDER BY id",  # noqa: S608
                 tuple(sorted(kind_values)),
             ).fetchall()
             for row in rows:
@@ -2920,16 +3147,29 @@ class LibraryRepository:
             "autoMemberCount": int(auto_row["count"] if auto_row else 0),
             "excludedCount": len(exclusions),
             "exclusions": exclusions,
+            "archivePreset": str(collection.get("archive_preset") or ""),
+            "archiveManaged": bool(collection.get("archive_preset") == ARCHIVE_PRESET_TEXT_NOVEL_AUTHOR and self.get_setting(AUTHOR_ARCHIVE_ENABLED_SETTING, False)),
         }
 
     def get_collection_rule_summaries(self) -> list[dict[str, Any]]:
-        return [
-            {
-                key: detail[key]
-                for key in ("id", "name", "kind", "enabled", "updatedAt", "autoMemberCount", "excludedCount")
-            }
-            for detail in (self.get_collection_rule(int(row["id"])) for row in self.get_all_collections())
-        ]
+        self._init_collections_tables()
+        with self._connection() as conn:
+            enabled = self._author_archive_enabled(conn)
+            rows = conn.execute("""
+                SELECT c.id, c.name, c.kind, c.rule_enabled, c.rule_updated_at, c.archive_preset,
+                  COALESCE(b.auto_count, 0) + COALESCE(m.auto_count, 0) AS auto_count,
+                  COALESCE(be.excluded_count, 0) + COALESCE(me.excluded_count, 0) AS excluded_count
+                FROM collections c
+                LEFT JOIN (SELECT collection_id, COUNT(*) auto_count FROM collection_books WHERE rule_source = 1 GROUP BY collection_id) b ON b.collection_id = c.id
+                LEFT JOIN (SELECT collection_id, COUNT(*) auto_count FROM collection_comics WHERE rule_source = 1 GROUP BY collection_id) m ON m.collection_id = c.id
+                LEFT JOIN (SELECT collection_id, COUNT(*) excluded_count FROM collection_rule_book_exclusions GROUP BY collection_id) be ON be.collection_id = c.id
+                LEFT JOIN (SELECT collection_id, COUNT(*) excluded_count FROM collection_rule_comic_exclusions GROUP BY collection_id) me ON me.collection_id = c.id
+                ORDER BY c.created_at DESC
+            """).fetchall()
+        return [{"id": int(r["id"]), "name": r["name"], "kind": r["kind"], "enabled": bool(r["rule_enabled"]),
+                 "updatedAt": r["rule_updated_at"], "autoMemberCount": int(r["auto_count"]),
+                 "excludedCount": int(r["excluded_count"]), "archivePreset": str(r["archive_preset"] or ""),
+                 "archiveManaged": bool(enabled and r["archive_preset"] == ARCHIVE_PRESET_TEXT_NOVEL_AUTHOR)} for r in rows]
 
     def clear_collection_rule_exclusion(self, collection_id: int, resource_db_id: int) -> dict[str, Any]:
         self._init_collections_tables()
@@ -2962,7 +3202,11 @@ class LibraryRepository:
                     )
                 except (json.JSONDecodeError, ValueError):
                     rule = None
-                if rule and matches_collection_rule(dict(resource), rule, kind=kind):
+                if rule and (
+                    (collection.get("archive_preset") == ARCHIVE_PRESET_TEXT_NOVEL_AUTHOR
+                     and str(resource["author"] or "").strip().casefold() == str(collection.get("archive_key") or ""))
+                    or matches_collection_rule(dict(resource), rule, kind=kind)
+                ):
                     conn.execute(
                         f"INSERT INTO {link_table} "  # noqa: S608
                         f"(collection_id, {resource_column}, added_at, manual_source, rule_source) "
@@ -3359,6 +3603,34 @@ class LibraryRepository:
                 ).fetchall()
             return [dict(r) for r in rows]
 
+    def get_collection_card_stats(self, kind: str) -> dict[int, dict[str, Any]]:
+        """Read member counts and ordered cover candidates for one directory in a single query."""
+        kind = normalize_collection_kind(kind)
+        with self._connection() as conn:
+            if kind == COLLECTION_KIND_COMIC:
+                rows = conn.execute("""
+                    SELECT cc.collection_id, c.thumbnail_path, c.cover_image_path
+                    FROM collection_comics cc JOIN collections col ON col.id = cc.collection_id
+                    JOIN comics c ON c.id = cc.comic_id WHERE col.kind = ?
+                    ORDER BY cc.collection_id, cc.added_at DESC
+                """, (kind,)).fetchall()
+            else:
+                type_operator = "=" if kind == COLLECTION_KIND_TEXT_NOVEL else "!="
+                rows = conn.execute(f"""
+                    SELECT cb.collection_id, b.thumbnail_path
+                    FROM collection_books cb JOIN collections col ON col.id = cb.collection_id
+                    JOIN books b ON b.id = cb.book_id
+                    WHERE col.kind = ? AND COALESCE(b.resource_type, '') {type_operator} ?
+                    ORDER BY cb.collection_id, cb.added_at DESC, b.title COLLATE NOCASE, b.id
+                """, (kind, COLLECTION_KIND_TEXT_NOVEL)).fetchall()  # noqa: S608
+        stats: dict[int, dict[str, Any]] = {}
+        for row in rows:
+            item = stats.setdefault(int(row["collection_id"]), {"count": 0, "covers": []})
+            item["count"] += 1
+            if row["thumbnail_path"] or (kind == COLLECTION_KIND_COMIC and row["cover_image_path"]):
+                item["covers"].append((row["thumbnail_path"], row["cover_image_path"] if kind == COLLECTION_KIND_COMIC else None))
+        return stats
+
     def get_collection(self, collection_id: int) -> dict | None:
         self._init_collections_tables()
         with self._connection() as conn:
@@ -3378,6 +3650,9 @@ class LibraryRepository:
         """Delete a collection (and its member links)."""
         self._init_collections_tables()
         with self._connection() as conn:
+            row = conn.execute("SELECT archive_preset FROM collections WHERE id = ?", (int(collection_id),)).fetchone()
+            if row and row["archive_preset"] == ARCHIVE_PRESET_TEXT_NOVEL_AUTHOR and self._author_archive_enabled(conn):
+                raise ValueError("archive_preset_managed")
             conn.execute(
                 "DELETE FROM collection_books WHERE collection_id = ?",
                 (collection_id,),
@@ -3395,8 +3670,11 @@ class LibraryRepository:
         """Rename a collection."""
         self._init_collections_tables()
         with self._connection() as conn:
+            row = conn.execute("SELECT archive_preset FROM collections WHERE id = ?", (int(collection_id),)).fetchone()
+            if row and row["archive_preset"] == ARCHIVE_PRESET_TEXT_NOVEL_AUTHOR and self._author_archive_enabled(conn):
+                raise ValueError("archive_preset_managed")
             conn.execute(
-                "UPDATE collections SET name = ? WHERE id = ?",
+                "UPDATE collections SET name = ?, archive_preset = '', archive_key = '' WHERE id = ?",
                 (new_name, collection_id),
             )
 

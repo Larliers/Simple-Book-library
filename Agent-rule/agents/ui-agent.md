@@ -20,6 +20,7 @@
 - 维护三类资源共用的 Quick Add 合集交互；批量保存成员关系、快捷创建同 kind 合集，并定向回写而不重建当前资源列表。
 - 维护结果视图级资源多选与批量 Quick Add；统一 Grid/List/虚拟列表/标签混合页的鼠标、键盘、焦点及 `aria-selected` 状态。
 - 维护三类合集共用的集合规则编辑器：合集卡片右键模态与 Settings 双栏复用草稿、逐条件字段选择、预览令牌、关闭选择、排除管理和定向页面回写。
+- 维护文本小说作者自动归档预设：小说集合目录与设置共用配置页面，分页预览与失效令牌、关闭方式、冲突提示、受管集合入口和定向缓存回写。
 - 维护 Glass/Vaporwave 运行时皮肤切换：预加载目标 CSS 后原子启用，保留当前页面、滚动、搜索、选择、详情、弹窗和昼夜模式。
 
 ## Out of Scope
@@ -40,6 +41,7 @@
 - `resource_multi_selection`
 - `batch_quick_add`
 - `collection_rule_editor`
+- `text_novel_author_archive`
 
 ## Accepted Input Format
 ```json

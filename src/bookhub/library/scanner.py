@@ -1037,6 +1037,7 @@ def scan_text_roots(
                         series=series,
                         tags=tags,
                         info_text=txt_head_text,
+                        defer_archive=True,
                     ):
                         result.text_updated_count += 1
                     else:

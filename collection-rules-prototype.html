@@ -3,9 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="prototype-status" content="approved-baseline; production-implemented-2026-09-23">
-  <!-- 已批准的交互基线；正式实现位于 src/bookhub/ui/web/，本文件仍保持无依赖演示用途。 -->
-  <title>集合规则交互原型 · Simple Book Library</title>
+  <link rel="icon" href="data:,">
+  <meta name="prototype-status" content="collection-rules-approved; author-archive-implemented-2026-09-26">
+  <!-- 独立演示数据；正式功能已接入 src，真实书库以应用内预览和事务保存为准。 -->
+  <title>自动归档与集合规则交互原型 · Simple Book Library</title>
   <style>
     :root {
       color-scheme: light;
@@ -196,6 +197,7 @@
     @keyframes fade-in { from { opacity: .2; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
     .collection-toolbar { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+    .collection-toolbar-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
     .filter-chips { display: flex; gap: 8px; flex-wrap: wrap; }
     .chip {
       border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted);
@@ -233,6 +235,32 @@
     .collection-open strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .collection-open span { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
     .collection-hint { margin: 18px 0 0; color: var(--muted); font-size: 12px; }
+    .archive-panel { padding: 24px; }
+    .archive-panel h2 { margin: 0; font-size: 22px; }
+    .archive-panel p { color: var(--muted); line-height: 1.65; }
+    .archive-kicker { color: var(--accent-strong); font-size: 11px; font-weight: 750; letter-spacing: .08em; }
+    .archive-head, .archive-preset, .archive-actions, .archive-preview-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+    .archive-head { padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+    .archive-preset { padding: 17px; margin-top: 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-soft); }
+    .archive-preset h3 { margin: 0 0 4px; font-size: 16px; }
+    .archive-preset p { margin: 0; font-size: 12px; }
+    .archive-status { flex: 0 0 auto; padding: 5px 9px; border-radius: 999px; color: var(--muted); background: var(--surface); font-size: 11px; }
+    .archive-status.enabled { color: var(--success); background: var(--success-soft); }
+    .archive-notes { display: grid; gap: 7px; margin: 17px 0; padding: 15px; border-radius: 13px; background: var(--accent-soft); font-size: 12px; line-height: 1.55; }
+    .archive-notes strong { color: var(--accent-strong); }
+    .archive-actions { align-items: center; flex-wrap: wrap; }
+    .archive-actions > div { display: flex; gap: 8px; flex-wrap: wrap; }
+    .archive-preview { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--line); }
+    .archive-preview h3 { margin: 0 0 5px; font-size: 16px; }
+    .archive-preview p { margin: 0; font-size: 12px; }
+    .archive-summary { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 9px; margin: 16px 0; }
+    .archive-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); }
+    .archive-row + .archive-row { margin-top: 8px; }
+    .archive-row strong, .archive-row span { display: block; min-width: 0; overflow-wrap: anywhere; }
+    .archive-row span { margin-top: 4px; color: var(--muted); font-size: 11px; }
+    .archive-row em { flex: 0 0 auto; padding: 4px 7px; border-radius: 8px; background: var(--success-soft); color: var(--success); font-size: 11px; font-style: normal; }
+    .archive-row.conflict em { color: var(--warning); background: var(--warning-soft); }
+    .archive-preview-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 17px; }
 
     .settings-grid { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 24px; align-items: start; }
     .settings-nav {
@@ -433,6 +461,7 @@
     .preview-stage[data-viewport="740"] .condition-row { grid-template-columns: 112px minmax(0,1fr) auto; }
     .preview-stage[data-viewport="740"] .condition-row .switch { grid-column: 2 / 3; justify-self: start; }
     .preview-stage[data-viewport="740"] .stats-grid { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    .preview-stage[data-viewport="740"] .archive-summary { grid-template-columns: repeat(2, minmax(0,1fr)); }
 
     .preview-stage[data-viewport="600"] .app-shell { display: block; }
     .preview-stage[data-viewport="600"] .sidebar { flex-direction: row; align-items: center; gap: 8px; padding: 10px 12px; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -464,6 +493,10 @@
     .preview-stage[data-viewport="600"] .action-group { width: 100%; }
     .preview-stage[data-viewport="600"] .action-group button { flex: 1; }
     .preview-stage[data-viewport="600"] .stats-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .preview-stage[data-viewport="600"] .archive-panel { padding: 16px; }
+    .preview-stage[data-viewport="600"] .archive-head, .preview-stage[data-viewport="600"] .archive-actions, .preview-stage[data-viewport="600"] .archive-preview-head { flex-direction: column; }
+    .preview-stage[data-viewport="600"] .archive-summary { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .preview-stage[data-viewport="600"] .collection-toolbar { align-items: flex-start; flex-direction: column; }
 
     @media (max-width: 760px) {
       .prototype-toolbar { align-items: flex-start; }
@@ -486,13 +519,15 @@
       .condition-row .switch { grid-column: 1; }
       .condition-row .icon-button { grid-column: 2; grid-row: 3; }
       .stats-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .archive-head, .archive-actions, .archive-preview-head, .collection-toolbar { align-items: flex-start; flex-direction: column; }
+      .archive-summary { grid-template-columns: repeat(2, minmax(0,1fr)); }
     }
   </style>
 </head>
 <body data-skin="glass" data-preview-viewport="desktop">
   <header class="prototype-toolbar" aria-label="原型检查工具栏">
     <div class="prototype-label">
-      <strong>集合规则 · 交互原型</strong>
+      <strong>自动归档 · 交互原型</strong>
       <span>仅使用虚构数据，刷新页面即可重置</span>
     </div>
     <div class="prototype-controls">
@@ -518,7 +553,7 @@
           </div>
           <nav class="nav-stack" aria-label="主导航">
             <button type="button" class="nav-button" data-nav="library"><span class="nav-icon">▤</span><span class="nav-label">总书库</span></button>
-            <button type="button" class="nav-button active" data-nav="collections"><span class="nav-icon">▦</span><span class="nav-label">书籍合集</span></button>
+            <button type="button" class="nav-button active" data-nav="collections"><span class="nav-icon">▦</span><span class="nav-label">集合</span></button>
             <button type="button" class="nav-button" data-nav="novels"><span class="nav-icon">T</span><span class="nav-label">文本小说</span></button>
             <button type="button" class="nav-button" data-nav="comics"><span class="nav-icon">▧</span><span class="nav-label">漫画</span></button>
             <button type="button" class="nav-button" data-nav="settings"><span class="nav-icon">⚙</span><span class="nav-label">设置</span></button>
@@ -530,15 +565,19 @@
         <main class="workspace">
           <section class="page active" data-page="collections" id="collectionsPage">
             <header class="page-header">
-              <div class="page-heading"><h1>书籍合集</h1><p>右键任意合集卡片，快速编辑其自动归档规则。</p></div>
+              <div class="page-heading"><h1>文本小说 · 集合</h1><p>相同作者的小说可跨路径自动归档；右键合集仍可编辑单个集合规则。</p></div>
               <div class="header-badge">虚构演示数据</div>
             </header>
             <div class="collection-toolbar">
               <div class="filter-chips" aria-label="合集类型筛选">
-                <button type="button" class="chip active" data-kind-filter="all" aria-pressed="true">全部</button>
+                <button type="button" class="chip" data-kind-filter="all" aria-pressed="false">全部</button>
                 <button type="button" class="chip" data-kind-filter="book" aria-pressed="false">书籍</button>
-                <button type="button" class="chip" data-kind-filter="text_novel" aria-pressed="false">小说</button>
+                <button type="button" class="chip active" data-kind-filter="text_novel" aria-pressed="true">小说</button>
                 <button type="button" class="chip" data-kind-filter="comic" aria-pressed="false">漫画</button>
+              </div>
+              <div class="collection-toolbar-actions">
+                <button type="button" class="ghost-button" id="collectionArchiveButton">自动归档</button>
+                <button type="button" class="primary-button" id="newCollectionButton">新建列表</button>
               </div>
             </div>
             <div class="collection-grid" id="collectionGrid"></div>
@@ -547,7 +586,7 @@
 
           <section class="page" data-page="settings" id="settingsPage">
             <header class="page-header">
-              <div class="page-heading"><h1>设置</h1><p>统一管理应用偏好与每个合集的自动归档规则。</p></div>
+              <div class="page-heading"><h1>设置</h1><p>配置自动归档预设与每个合集的规则。</p></div>
               <div class="header-badge">原型模式</div>
             </header>
             <div class="settings-grid">
@@ -558,6 +597,7 @@
                 <button type="button" data-settings-section="paths">路径与扫描</button>
                 <button type="button" data-settings-section="errors">错误日志</button>
                 <button type="button" class="active" data-settings-section="collection-rules">集合规则</button>
+                <button type="button" data-settings-section="auto-archive">自动归档</button>
               </nav>
               <div class="settings-content" id="settingsContent">
                 <div class="rules-manager" id="ruleManager">
@@ -572,6 +612,7 @@
                   </aside>
                   <section class="rule-editor panel" id="ruleEditor" aria-label="集合规则编辑器"></section>
                 </div>
+                <section class="archive-panel panel hidden" id="authorArchivePanel" aria-label="自动归档配置"></section>
                 <div class="placeholder-card hidden" id="settingsPlaceholder"></div>
               </div>
             </div>
@@ -618,6 +659,25 @@
     </section>
   </div>
 
+  <div class="modal-layer" id="authorDisableModal" aria-hidden="true">
+    <section class="modal compact" role="dialog" aria-modal="true" aria-labelledby="authorDisableTitle">
+      <header class="modal-header">
+        <div><h2 id="authorDisableTitle">关闭根据作者归档</h2><p>作者集合会保留。请选择现有自动成员的处理方式。</p></div>
+        <button type="button" class="close-button" data-close-layer="authorDisableModal" aria-label="关闭">×</button>
+      </header>
+      <div class="modal-body">
+        <div class="choice-grid">
+          <label class="choice-card"><input type="radio" name="authorDisableMode" value="remove"><span><strong>撤销自动成员</strong><span>仅撤销预设自动加入的成员；手动成员与空集合保留。</span></span></label>
+          <label class="choice-card"><input type="radio" name="authorDisableMode" value="convert"><span><strong>转为手动成员</strong><span>保留全部当前成员，之后不再随作者字段自动更新。</span></span></label>
+        </div>
+      </div>
+      <footer class="modal-footer">
+        <button type="button" class="ghost-button" data-close-layer="authorDisableModal">取消</button>
+        <button type="button" class="primary-button" id="confirmAuthorDisableMode" disabled>继续预览</button>
+      </footer>
+    </section>
+  </div>
+
   <div class="modal-layer" id="previewModal" aria-hidden="true">
     <section class="modal" role="dialog" aria-modal="true" aria-labelledby="previewTitle">
       <header class="modal-header">
@@ -656,11 +716,12 @@
         { id: "b-6", kind: "book", name: "摄影构图与视觉语言.docx" },
         { id: "b-7", kind: "book", name: "[陈墨]-现代建筑图鉴-城建出版社.pdf" },
         { id: "b-8", kind: "book", name: "Python 数据处理手册.md" },
-        { id: "n-1", kind: "text_novel", name: "[刘慈欣]-流浪地球-科幻世界.txt" },
-        { id: "n-2", kind: "text_novel", name: "银河边缘-科幻世界.txt" },
-        { id: "n-3", kind: "text_novel", name: "[试读]-星海旅人-未来出版社.txt" },
-        { id: "n-4", kind: "text_novel", name: "城市漫游者-文艺出版社.txt" },
-        { id: "n-5", kind: "text_novel", name: "未来简史-科幻世界.txt" },
+        { id: "n-1", kind: "text_novel", name: "[刘慈欣]-流浪地球-科幻世界.txt", author: "刘慈欣", path: "D:/小说/科幻/流浪地球.txt" },
+        { id: "n-2", kind: "text_novel", name: "银河边缘-科幻世界.txt", author: "刘慈欣", path: "E:/旧书库/银河边缘.txt" },
+        { id: "n-3", kind: "text_novel", name: "[试读]-星海旅人-未来出版社.txt", author: "韩松", path: "F:/下载/星海旅人.txt" },
+        { id: "n-4", kind: "text_novel", name: "城市漫游者-文艺出版社.txt", author: "王一", path: "D:/小说/城市漫游者.txt" },
+        { id: "n-5", kind: "text_novel", name: "未来简史-科幻世界.txt", author: "", path: "E:/旧书库/未来简史.txt" },
+        { id: "n-6", kind: "text_novel", name: "深空回声.txt", author: "韩松", path: "D:/小说/深空回声.txt" },
         { id: "c-1", kind: "comic", name: "人体彩绘练习册" },
         { id: "c-2", kind: "comic", name: "短篇漫画-[山田]-第一季.cbz" },
         { id: "c-3", kind: "comic", name: "城市夜行-短篇集" },
@@ -699,6 +760,17 @@
           cover: ["#e69262", "#c65a55"],
         },
         {
+          id: "novel-hansong", kind: "text_novel", name: "韩松", enabled: false, matchMode: "all",
+          conditions: [], autoMemberIds: [], manualMemberIds: ["n-3"], exclusions: [],
+          cover: ["#6aa8b7", "#366e94"],
+        },
+        {
+          id: "novel-wangyi", kind: "text_novel", name: "王一", enabled: true, matchMode: "all",
+          conditions: [{ operator: "contains", value: "城市", caseSensitive: false }],
+          autoMemberIds: ["n-4"], manualMemberIds: [], exclusions: [],
+          cover: ["#9b75b9", "#634c93"],
+        },
+        {
           id: "comic-short", kind: "comic", name: "短篇漫画", enabled: true, matchMode: "any",
           conditions: [{ operator: "contains", value: "短篇", caseSensitive: false }, { operator: "ends_with", value: "短篇集", caseSensitive: false }],
           autoMemberIds: ["c-2", "c-3", "c-5"], manualMemberIds: ["c-1"], exclusions: [],
@@ -723,6 +795,10 @@
       const layerFocus = new Map();
       let pendingDisableMode = "";
       let pendingPreview = null;
+      let authorPresetEnabled = false;
+      let authorPreview = null;
+      let authorSimulationCount = 0;
+      let archiveOrigin = "settings";
 
       const $ = (id) => document.getElementById(id);
       const qsa = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -752,10 +828,9 @@
       function matchesRule(resource, rule) {
         const valid = rule.conditions.filter((condition) => String(condition.value || "").trim());
         if (!rule.enabled || !valid.length) return false;
-        const name = sourceName(resource);
         return rule.matchMode === "all"
-          ? valid.every((condition) => matchesCondition(name, condition))
-          : valid.some((condition) => matchesCondition(name, condition));
+          ? valid.every((condition) => matchesCondition(condition.field === "author" ? resource.author || "" : sourceName(resource), condition))
+          : valid.some((condition) => matchesCondition(condition.field === "author" ? resource.author || "" : sourceName(resource), condition));
       }
 
       function calculatePreview(rule, disableMode = "") {
@@ -824,6 +899,194 @@
         return String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
       }
 
+      function authorKey(value) { return String(value || "").trim().toLocaleLowerCase().replace(/ß/g, "ss").replace(/ς/g, "σ"); }
+
+      function authorArchivePlan(mode, disableMode = "") {
+        const novels = CATALOG.filter((item) => item.kind === "text_novel");
+        const groups = new Map();
+        const missing = [];
+        novels.forEach((item) => {
+          const author = String(item.author || "").trim();
+          if (!author) { missing.push(item); return; }
+          const key = authorKey(author);
+          if (!groups.has(key)) groups.set(key, { key, author, items: [] });
+          groups.get(key).items.push(item);
+        });
+        const managed = collections.filter((item) => item.archivePreset === "author");
+        if (mode === "disable") {
+          return {
+            mode, disableMode, rows: managed.map((item) => ({
+              status: "managed", author: item.archiveAuthor || item.name,
+              name: item.name, count: item.autoMemberIds.length, collectionId: item.id,
+            })),
+            missing: missing.length,
+            summary: {
+              collections: managed.length,
+              automatic: managed.reduce((total, item) => total + item.autoMemberIds.length, 0),
+              manual: managed.reduce((total, item) => total + item.manualMemberIds.length, 0),
+              emptyKept: managed.filter((item) => !item.autoMemberIds.length && !item.manualMemberIds.length).length,
+            },
+          };
+        }
+        const rows = [...groups.values()].map((group) => {
+          const marked = managed.find((item) => item.archiveKey === group.key);
+          const sameName = collections.filter((item) => item.kind === "text_novel" && authorKey(item.name) === group.key);
+          if (sameName.length > 1) {
+            return { ...group, status: "conflict", reason: "同名集合已有自定义规则或名称重复" };
+          }
+          if (marked) return { ...group, status: "managed", collectionId: marked.id, collectionName: marked.name };
+          if (sameName.some((item) => item.conditions.length || item.enabled || item.archivePreset)) {
+            return { ...group, status: "conflict", reason: "同名集合已有自定义规则或名称重复" };
+          }
+          if (sameName.length) return { ...group, status: "reuse", collectionId: sameName[0].id, collectionName: sameName[0].name };
+          return { ...group, status: "create", collectionName: group.author };
+        });
+        return {
+          mode, rows, missing: missing.length,
+          summary: {
+            create: rows.filter((row) => row.status === "create").length,
+            reuse: rows.filter((row) => row.status === "reuse").length,
+            managed: rows.filter((row) => row.status === "managed").length,
+            conflict: rows.filter((row) => row.status === "conflict").length,
+          },
+        };
+      }
+
+      function renderAuthorArchive() {
+        const host = $("authorArchivePanel");
+        const status = authorPresetEnabled ? "已启用 · 持续更新" : "未启用";
+        host.innerHTML = `
+          <div class="archive-head">
+            <div><span class="archive-kicker">TEXT NOVEL · ARCHIVE PRESETS</span><h2>自动归档</h2><p>在这里配置跨路径的归档预设。集合页与设置页共用此页面。</p></div>
+            <button type="button" class="ghost-button" data-archive-action="back">${archiveOrigin === "collections" ? "返回小说集合" : "返回集合规则"}</button>
+          </div>
+          <div class="archive-preset">
+            <div><h3>根据作者归档</h3><p>作者字段相同的文本小说归入同名集合。启用后，后续扫描和作者字段更新会继续同步。</p></div>
+            <span class="archive-status ${authorPresetEnabled ? "enabled" : ""}">${status}</span>
+          </div>
+          <div class="archive-notes">
+            <div><strong>归档范围</strong> 仅文本小说；作者为空跳过，多个作者视为当前字段中的一个完整名称。</div>
+            <div><strong>同名处理</strong> 复用无自定义规则的集合；遇到已有自定义规则或重名歧义时跳过并提示。</div>
+            <div><strong>成员与空集合</strong> 手动成员保留。作者改动后，旧集合可留空；关闭预设也不删除集合。</div>
+          </div>
+          <div class="archive-actions">
+            <div><button type="button" class="ghost-button" data-archive-action="scan">模拟新增小说</button><button type="button" class="ghost-button" data-archive-action="change-author">模拟修改作者</button></div>
+            <div><button type="button" class="${authorPresetEnabled ? "ghost-button" : "primary-button"}" data-archive-action="preview">${authorPresetEnabled ? "预览当前归档" : "预览启用"}</button>${authorPresetEnabled ? '<button type="button" class="danger-button" data-archive-action="disable">关闭预设…</button>' : ""}</div>
+          </div>
+          <div class="archive-preview ${authorPreview ? "" : "hidden"}" id="authorPreview"></div>`;
+        host.querySelector('[data-archive-action="back"]').addEventListener("click", () => {
+          if (archiveOrigin === "collections") {
+            const novelFilter = document.querySelector('[data-kind-filter="text_novel"]');
+            qsa("[data-kind-filter]").forEach((node) => {
+              node.classList.toggle("active", node === novelFilter);
+              node.setAttribute("aria-pressed", String(node === novelFilter));
+            });
+            renderCollectionGrid("text_novel");
+            showPage("collections");
+          } else showSettingsSection("collection-rules");
+        });
+        host.querySelector('[data-archive-action="scan"]').addEventListener("click", () => simulateAuthorArchiveChange("scan"));
+        host.querySelector('[data-archive-action="change-author"]').addEventListener("click", () => simulateAuthorArchiveChange("change-author"));
+        host.querySelector('[data-archive-action="preview"]').addEventListener("click", () => {
+          authorPreview = authorArchivePlan("enable");
+          renderAuthorArchive();
+        });
+        host.querySelector('[data-archive-action="disable"]')?.addEventListener("click", () => {
+          qsa('input[name="authorDisableMode"]').forEach((input) => { input.checked = false; });
+          $("confirmAuthorDisableMode").disabled = true;
+          openLayer("authorDisableModal");
+        });
+        if (authorPreview) renderAuthorPreview(authorPreview);
+      }
+
+      function renderAuthorPreview(plan) {
+        const host = $("authorPreview");
+        const disabling = plan.mode === "disable";
+        const summary = disabling
+          ? [["保留集合", plan.summary.collections], ["现有自动成员", plan.summary.automatic], ["手动成员", plan.summary.manual], ["现有空集合", plan.summary.emptyKept]]
+          : [["新建集合", plan.summary.create], ["复用集合", plan.summary.reuse], ["已有自动集合", plan.summary.managed], ["冲突跳过", plan.summary.conflict]];
+        const rows = plan.rows.map((row) => {
+          const label = disabling ? (plan.disableMode === "convert" ? "转为手动" : "撤销自动")
+            : ({ create: "新建", reuse: "复用", managed: "同步", conflict: "跳过" })[row.status];
+          const detail = disabling
+            ? `${row.count} 位自动成员 · 集合保留${row.count ? "" : "（空集合）"}`
+            : row.status === "conflict" ? row.reason
+              : `${row.items.length} 本 · ${row.items.map((item) => item.path).join(" · ")}`;
+          return `<div class="archive-row ${row.status === "conflict" ? "conflict" : ""}"><div><strong>${escapeHtml(row.author)} → ${escapeHtml(row.collectionName || row.name || row.author)}</strong><span>${escapeHtml(detail)}</span></div><em>${label}</em></div>`;
+        }).join("");
+        host.innerHTML = `
+          <div class="archive-preview-head"><div><h3>${disabling ? "关闭预设前的影响预览" : "按作者归档预览"}</h3><p>${disabling ? "关闭后保留集合；手动成员不受影响。" : `无作者跳过 ${plan.missing} 本；冲突作者不会覆盖既有规则。`}</p></div><span class="archive-status">仅演示内存变化</span></div>
+          <div class="archive-summary">${summary.map(([label, value]) => statCard(label, value, label === "冲突跳过" ? "remove" : "")).join("")}</div>
+          <div>${rows || '<div class="empty-state">当前没有可归档的作者。</div>'}</div>
+          <div class="archive-preview-actions"><button type="button" class="ghost-button" data-archive-action="cancel-preview">取消</button><button type="button" class="primary-button" data-archive-action="confirm-preview">${disabling ? "确认关闭预设" : authorPresetEnabled ? "确认同步归档" : "启用并归档"}</button></div>`;
+        host.querySelector('[data-archive-action="cancel-preview"]').addEventListener("click", () => { authorPreview = null; renderAuthorArchive(); });
+        host.querySelector('[data-archive-action="confirm-preview"]').addEventListener("click", applyAuthorArchivePreview);
+      }
+
+      function applyAuthorArchivePreview() {
+        if (!authorPreview) return;
+        if (authorPreview.mode === "disable") {
+          collections.filter((item) => item.archivePreset === "author").forEach((item) => {
+            if (authorPreview.disableMode === "convert") item.manualMemberIds = [...new Set([...item.manualMemberIds, ...item.autoMemberIds])];
+            item.autoMemberIds = [];
+            item.enabled = false;
+          });
+          authorPresetEnabled = false;
+          toast("作者归档已关闭", "作者集合保留；刷新页面可重置演示。");
+        } else {
+          authorPreview.rows.filter((row) => row.status !== "conflict").forEach((row) => {
+            let item = row.collectionId ? collectionById(row.collectionId) : null;
+            if (!item) {
+              item = {
+                id: `author-demo-${++authorSimulationCount}`, kind: "text_novel", name: row.author,
+                enabled: false, matchMode: "all", conditions: [], autoMemberIds: [], manualMemberIds: [],
+                exclusions: [], cover: ["#5c9cdb", "#4767b4"],
+              };
+              collections.push(item);
+            }
+            item.archivePreset = "author";
+            item.archiveKey = row.key;
+            item.archiveAuthor = row.author;
+            item.enabled = true;
+            item.conditions = [{ field: "author", operator: "equals", value: row.author, caseSensitive: false }];
+            item.autoMemberIds = row.items.map((resource) => resource.id).filter((id) => !item.exclusions.includes(id));
+          });
+          const activeKeys = new Set(authorPreview.rows.filter((row) => row.status !== "conflict").map((row) => row.key));
+          collections.filter((item) => item.archivePreset === "author" && !activeKeys.has(item.archiveKey))
+            .forEach((item) => { item.autoMemberIds = []; });
+          authorPresetEnabled = true;
+          toast("作者归档已更新", "演示数据已按作者整理；刷新页面可重置。");
+        }
+        authorPreview = null;
+        renderAuthorArchive();
+        renderCollectionGrid(document.querySelector("[data-kind-filter].active")?.dataset.kindFilter || "text_novel");
+        renderSettingsManager();
+      }
+
+      function simulateAuthorArchiveChange(action) {
+        if (action === "scan") {
+          const id = `n-demo-${++authorSimulationCount}`;
+          CATALOG.push({ id, kind: "text_novel", name: `新导入小说 ${authorSimulationCount}.txt`, author: "刘慈欣", path: `G:/新书库/新导入小说 ${authorSimulationCount}.txt` });
+          toast("模拟扫描完成", "一本文本小说已加入虚构书库，作者为刘慈欣。");
+        } else {
+          const resource = catalogById("n-2");
+          resource.author = resource.author === "韩松" ? "刘慈欣" : "韩松";
+          toast("作者已更新", `“银河边缘”的作者改为 ${resource.author}。`);
+        }
+        authorPreview = null;
+        if (authorPresetEnabled) {
+          authorPreview = authorArchivePlan("enable");
+          applyAuthorArchivePreview();
+        } else renderAuthorArchive();
+      }
+
+      function openAuthorArchive(origin) {
+        archiveOrigin = origin;
+        showPage("settings");
+        showSettingsSection("auto-archive");
+        renderAuthorArchive();
+      }
+
       function showPage(page) {
         qsa(".page").forEach((node) => node.classList.toggle("active", node.dataset.page === page));
         qsa("[data-nav]").forEach((node) => node.classList.toggle("active", node.dataset.nav === page));
@@ -836,18 +1099,20 @@
       function renderCollectionGrid(filter = "all") {
         const grid = $("collectionGrid");
         grid.textContent = "";
+        $("collectionArchiveButton").classList.toggle("hidden", filter !== "text_novel");
+        $("collectionsPage").querySelector("h1").textContent = filter === "text_novel" ? "文本小说 · 集合" : "集合";
         collections.filter((item) => filter === "all" || item.kind === filter).forEach((item) => {
           const card = document.createElement("article");
           card.className = "collection-card";
           card.tabIndex = 0;
           card.dataset.collectionId = item.id;
-          card.setAttribute("aria-label", `${item.name}，${item.enabled ? "规则已启用" : "规则未启用"}`);
+          card.setAttribute("aria-label", `${item.name}，${item.archivePreset === "author" ? "按作者归档" : item.enabled ? "规则已启用" : "规则未启用"}`);
           card.innerHTML = `
             <div class="collection-cover" style="--cover-a:${item.cover[0]};--cover-b:${item.cover[1]}">
-              <span class="rule-card-badge ${item.enabled ? "" : "off"}">${item.enabled ? `规则 · ${item.autoMemberIds.length}` : "规则关闭"}</span>
+              <span class="rule-card-badge ${item.enabled ? "" : "off"}">${item.archivePreset === "author" ? item.enabled ? `作者归档 · ${item.autoMemberIds.length}` : "作者预设关闭" : item.enabled ? `规则 · ${item.autoMemberIds.length}` : "规则关闭"}</span>
               <span aria-hidden="true">${KIND_META[item.kind].icon}</span>
             </div>
-            <button type="button" class="collection-open"><strong>${escapeHtml(item.name)}</strong><span>${item.manualMemberIds.length + item.autoMemberIds.length} 本 · ${KIND_META[item.kind].label}</span></button>`;
+            <button type="button" class="collection-open"><strong>${escapeHtml(item.name)}</strong><span>${new Set([...item.manualMemberIds, ...item.autoMemberIds]).size} 本 · ${KIND_META[item.kind].label}</span></button>`;
           card.querySelector(".collection-open").addEventListener("click", () => toast("打开合集", `原型模拟打开“${item.name}”`));
           card.addEventListener("contextmenu", (event) => openContextMenu(event, item.id, card));
           card.addEventListener("keydown", (event) => {
@@ -866,6 +1131,10 @@
         contextId = id;
         contextTrigger = trigger;
         const menu = $("contextMenu");
+        const managed = collectionById(id)?.archivePreset === "author" && authorPresetEnabled;
+        menu.querySelector('[data-menu-action="edit-rule"]').textContent = managed ? "管理自动归档…" : "编辑集合规则…";
+        menu.querySelector('[data-menu-action="rename"]').classList.toggle("hidden", managed);
+        menu.querySelector('[data-menu-action="delete"]').classList.toggle("hidden", managed);
         menu.classList.remove("hidden");
         const left = Math.min(event.clientX, window.innerWidth - 205);
         const top = Math.min(event.clientY, window.innerHeight - 190);
@@ -919,6 +1188,11 @@
 
       function renderRuleEditor(host) {
         if (!draft) return;
+        if (draft.archivePreset === "author" && authorPresetEnabled) {
+          host.innerHTML = `<div class="editor-head"><div><span class="editor-kicker">TEXT NOVEL · AUTHOR PRESET</span><h2>${escapeHtml(draft.name)}</h2><p>此集合由“根据作者归档”预设管理；手动成员仍保留。</p></div></div><div class="editor-section"><p>归档作者：<strong>${escapeHtml(draft.archiveAuthor)}</strong></p><p>若作者字段改变，自动成员会同步，空集合继续保留。</p><button type="button" class="primary-button" data-open-author-preset>配置自动归档</button></div>`;
+          host.querySelector("[data-open-author-preset]").addEventListener("click", () => openAuthorArchive("settings"));
+          return;
+        }
         const meta = KIND_META[draft.kind];
         const valid = isValidDraft();
         const changed = isDraftChanged();
@@ -1070,8 +1344,14 @@
 
       function savePendingPreview() {
         if (!pendingPreview) return;
+        authorPreview = null;
         const index = collections.findIndex((item) => item.id === pendingPreview.rule.id);
         const next = clone(pendingPreview.rule);
+        if (next.archivePreset === "author" && !authorPresetEnabled) {
+          delete next.archivePreset;
+          delete next.archiveKey;
+          delete next.archiveAuthor;
+        }
         if (next.enabled) {
           next.autoMemberIds = pendingPreview.effective.map((item) => item.id);
         } else {
@@ -1147,16 +1427,25 @@
       function showSettingsSection(section) {
         qsa("[data-settings-section]").forEach((button) => button.classList.toggle("active", button.dataset.settingsSection === section));
         const manager = $("ruleManager");
+        const archive = $("authorArchivePanel");
         const placeholder = $("settingsPlaceholder");
         if (section === "collection-rules") {
           manager.classList.remove("hidden");
+          archive.classList.add("hidden");
           placeholder.classList.add("hidden");
           return;
         }
         manager.classList.add("hidden");
+        if (section === "auto-archive") {
+          archive.classList.remove("hidden");
+          placeholder.classList.add("hidden");
+          renderAuthorArchive();
+          return;
+        }
+        archive.classList.add("hidden");
         placeholder.classList.remove("hidden");
         const label = document.querySelector(`[data-settings-section="${section}"]`)?.textContent || "设置";
-        placeholder.innerHTML = `<h2>${escapeHtml(label)}</h2><p>此区域仅作为设置导航的视觉上下文。本次原型只实现“集合规则”的完整交互。</p><button type="button" class="primary-button" data-open-rules>前往集合规则</button>`;
+        placeholder.innerHTML = `<h2>${escapeHtml(label)}</h2><p>此区域仅作为设置导航的视觉上下文。本次原型可体验“集合规则”和“自动归档”。</p><button type="button" class="primary-button" data-open-rules>前往集合规则</button>`;
         placeholder.querySelector("[data-open-rules]").addEventListener("click", () => { showSettingsSection("collection-rules"); renderSettingsManager(); });
       }
 
@@ -1165,6 +1454,7 @@
         else toast("原型范围", "本次仅实现合集总览与设置中的集合规则。 ");
       }));
       qsa("[data-settings-section]").forEach((button) => button.addEventListener("click", () => {
+        if (button.dataset.settingsSection === "auto-archive") archiveOrigin = "settings";
         showSettingsSection(button.dataset.settingsSection);
         if (button.dataset.settingsSection === "collection-rules") renderSettingsManager();
       }));
@@ -1191,12 +1481,17 @@
         });
       }));
       $("collectionSearch").addEventListener("input", renderCollectionRuleList);
+      $("collectionArchiveButton").addEventListener("click", () => openAuthorArchive("collections"));
+      $("newCollectionButton").addEventListener("click", () => toast("新建列表", "原型保留入口；本轮重点演示自动归档预设。"));
       $("contextMenu").addEventListener("click", (event) => {
         const action = event.target.dataset.menuAction;
         if (!action || !contextId) return;
         const item = collectionById(contextId);
         closeContextMenu();
-        if (action === "edit-rule") openRuleModal(item.id);
+        if (action === "edit-rule") {
+          if (item.archivePreset === "author" && authorPresetEnabled) openAuthorArchive("collections");
+          else openRuleModal(item.id);
+        }
         else if (action === "open") toast("打开合集", `原型模拟打开“${item.name}”`);
         else if (action === "rename") toast("重命名", "正式功能沿用现有重命名流程，本原型不写入名称。 ");
         else if (action === "delete") toast("删除已阻止", "原型不会删除演示合集。 ");
@@ -1207,6 +1502,16 @@
         $("confirmDisableMode").disabled = false;
       }));
       $("confirmDisableMode").addEventListener("click", () => { if (pendingDisableMode) openPreview(pendingDisableMode); });
+      qsa('input[name="authorDisableMode"]').forEach((input) => input.addEventListener("change", () => {
+        $("confirmAuthorDisableMode").disabled = false;
+      }));
+      $("confirmAuthorDisableMode").addEventListener("click", () => {
+        const mode = document.querySelector('input[name="authorDisableMode"]:checked')?.value;
+        if (!mode) return;
+        authorPreview = authorArchivePlan("disable", mode);
+        closeLayer("authorDisableModal");
+        renderAuthorArchive();
+      });
       $("confirmSaveRule").addEventListener("click", savePendingPreview);
       document.addEventListener("pointerdown", (event) => {
         if (!$("contextMenu").classList.contains("hidden") && !$("contextMenu").contains(event.target)) closeContextMenu();
@@ -1232,7 +1537,7 @@
       }));
 
       startDraft(currentId, "settings");
-      renderCollectionGrid();
+      renderCollectionGrid("text_novel");
       renderSettingsManager();
     })();
   </script>

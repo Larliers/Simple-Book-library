@@ -72,6 +72,7 @@ scan_roots / comic_roots / text_roots
 - Text 同名封面损坏时继续入库 TXT，在 `warnings` 写入 `text_cover_generation_failed` 并返回无封面状态。
 - 漫画同 `comic_root` 同标题冲突按 `comic_title_conflict_policy` 分支，并写入 `name_conflicts` / 错误日志（跨根目录允许同名）。
 - 集合规则在资源扫描完成、扫描报告写入前执行；成功统计写入 `collection_rules` 摘要。规则重算失败不撤销已完成扫描，但该轮规则成员变更整体回滚，并追加 `collection_rules_failed` warning 与错误日志。
+- 文本小说按作者自动归档预设 `text_novel_author` 仅在 `text|all` 扫描的同一规则事务内批量重算；`library|comic` 不触发。扫描中的逐本元数据刷新延迟到该批次处理；单独修改作者字段则在其事务内立即同步。作者以 `trim + casefold` 分组，空作者跳过；旧集合即使没有自动成员也保留。预设重算失败同样整体回滚本轮规则成员变更。
 - 手动或批量添加/移除标签时，同一 SQLite 事务内重算受影响资源的同类型已启用集合规则；失败时标签与成员变更一起回滚。
 
 ## Error Shape (implementation)

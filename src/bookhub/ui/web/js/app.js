@@ -26,6 +26,7 @@ const State = {
   recommendationRequestId: 0,
   recommendationSelection: null,
   tagCatalog: null,
+  tagCatalogScrollTop: 0,
   tagDetail: null,
   tagLoading: false,
   tagRequestId: 0,
@@ -44,6 +45,7 @@ const State = {
   _scanRunning: false,
   _taskKind: "scan",
   collectionRules: { summaries: [], selectedId: 0, query: "", loading: false, loaded: false },
+  archivePreset: { loaded: false, loading: false, enabled: false, draftEnabled: true, disableMode: "remove", preview: null, token: "", page: 1, origin: "settings" },
   contextMenuTrigger: null,
   modalReturnFocus: null,
 };
@@ -386,6 +388,7 @@ function reopenRecentTag() {
 function openTagFromCatalog(tag) {
   const normalized = String(tag || "").trim();
   if (!normalized) return;
+  if (State.currentPage === TAG_MANAGER_PAGE && !State.tagDetail) savePageScroll(TAG_MANAGER_PAGE);
   rememberRecentTag(normalized);
   if (State.bridge && State.bridge.openTag) State.bridge.openTag(normalized);
   State.tagRequestId += 1;
@@ -683,6 +686,10 @@ function savePageScroll(page) {
   if (!page || page === "settings") return;
   const area = $("contentArea");
   if (!area) return;
+  if (page === TAG_MANAGER_PAGE && !State.tagDetail) {
+    State.tagCatalogScrollTop = area.scrollTop;
+    return;
+  }
   State.scrollPos[page] = area.scrollTop;
   if (COMIC_PAGES.has(page) && State._comicPage) {
     State.comicPageNum[page] = State._comicPage;
@@ -886,6 +893,11 @@ function renderPageTools(page, data) {
     if (data.mode !== "comic" && !isNovelCollectionDetail(page, data) && !isLibraryCollectionDetail(page, data)) return;
   }
   if (data.mode === "collections") {
+    if (page === "novel_collections") {
+      const archive = elem("button", "ghost-btn", t("archive.open", "Auto Archive"));
+      archive.addEventListener("click", openArchivePresetSettings);
+      tools.appendChild(archive);
+    }
     const add = elem("button", "primary-btn", t("common.new_list", "New List"));
     add.addEventListener("click", openNewCollectionModal);
     tools.appendChild(add);
@@ -1005,6 +1017,7 @@ function invalidateTagManager(preserveDetailTag) {
   State.tagRequestId += 1;
   State.tagLoading = false;
   State.tagCatalog = null;
+  State.tagCatalogScrollTop = 0;
   State.tagDetail = activeTag ? { mode: "tag_detail", tag: activeTag, items: [] } : null;
   State.tagSelection = null;
   if (selectedBecameStale) showShortcutNotice("shortcut.selection_stale");
@@ -1091,6 +1104,7 @@ function renderTagCatalog(area, data) {
   const groups = Array.isArray(data.groups) ? data.groups : [];
   if (!groups.length) {
     area.appendChild(buildEmpty(t("tags.empty", "No tags in the selected resource types.")));
+    State.tagCatalogScrollTop = 0;
     return;
   }
   const root = elem("div", "tag-catalog");
@@ -1115,6 +1129,8 @@ function renderTagCatalog(area, data) {
     root.appendChild(section);
   });
   area.appendChild(root);
+  area.scrollTop = Math.max(0, Number(State.tagCatalogScrollTop) || 0);
+  State.tagCatalogScrollTop = area.scrollTop;
 }
 
 function tagSourceLabel(sourcePage) {
@@ -1517,6 +1533,9 @@ function renderCollections(area, items) {
         t("collection_rules.card_badge", "Auto {count}"),
         { count: Number(item.ruleAutoMemberCount || 0) }
       )));
+    }
+    if (item.archivePreset === "text_novel_author") {
+      card.appendChild(elem("span", "archive-card-badge", t("archive.author_badge", "By Author")));
     }
     const openCol = () => {
       openCollectionWithHistory(page, item.collectionId, false);
@@ -2269,10 +2288,14 @@ function openCollectionCardMenu(event, item, openCol) {
   clear(menu);
   menu.setAttribute("role", "menu");
   menuAction(t("menu.collection_open", "Open"), openCol);
-  menuAction(t("menu.collection_rule_edit", "Edit collection rule…"), () => openCollectionRuleModal(item.collectionId));
-  menu.appendChild(elem("hr"));
-  menuAction(t("menu.collection_rename", "Rename"), () => openRenameCollectionModal(item));
-  menuAction(t("menu.collection_delete", "Delete"), () => openDeleteCollectionModal(item), true);
+  if (item.archiveManaged) {
+    menuAction(t("archive.manage", "Manage Auto Archive"), openArchivePresetSettings);
+  } else {
+    menuAction(t("menu.collection_rule_edit", "Edit collection rule…"), () => openCollectionRuleModal(item.collectionId));
+    menu.appendChild(elem("hr"));
+    menuAction(t("menu.collection_rename", "Rename"), () => openRenameCollectionModal(item));
+    menuAction(t("menu.collection_delete", "Delete"), () => openDeleteCollectionModal(item), true);
+  }
   positionContextMenu(event);
   const first = menu.querySelector('button[role="menuitem"]');
   if (first) first.focus();
@@ -3141,6 +3164,7 @@ const SETTINGS_SECTIONS = [
   ["paths", "settings.nav.paths"],
   ["errors", "settings.nav.errors"],
   ["collection_rules", "settings.nav.collection_rules"],
+  ["auto_archive", "settings.nav.auto_archive"],
 ];
 
 function renderSettings() {
@@ -3164,6 +3188,7 @@ function renderSettings() {
     const btn = elem("button", State._settingsSection === id ? "active" : null, t(key));
     btn.addEventListener("click", () => {
       if (id !== "shortcuts") State.shortcutCaptureAction = "";
+      if (id === "auto_archive") State.archivePreset.origin = "settings";
       State._settingsSection = id;
       renderSettings();
     });
@@ -3182,6 +3207,7 @@ function renderSettings() {
     renderSettingsTasks(panel);
   }
   else if (section === "collection_rules") renderSettingsCollectionRules(panel);
+  else if (section === "auto_archive") renderSettingsAutoArchive(panel);
   else renderSettingsErrors(panel);
 }
 
@@ -3540,6 +3566,7 @@ function openCollectionRuleModal(collectionId) {
   State.bridge.getCollectionRule(Number(collectionId), (json) => {
     const detail = safeParse(json);
     if (!detail || detail.ok === false) { showToast(t("common.error", "Error"), collectionRuleError(detail && detail.error), "error"); return; }
+    if (detail.archiveManaged) { openArchivePresetSettings(); return; }
     openModal((modal, close) => {
       modal.classList.add("collection-rule-modal");
       modalHeader(modal, t("collection_rules.edit_title", "Edit collection rule"), close);
@@ -3606,11 +3633,198 @@ function renderSettingsCollectionRulesEditor(panel, collectionId) {
     if (Number(State.collectionRules.selectedId) !== Number(collectionId)) return;
     const detail = safeParse(json); clear(panel);
     if (!detail || detail.ok === false) { panel.appendChild(elem("p", "small-note", collectionRuleError(detail && detail.error))); return; }
+    if (detail.archiveManaged) {
+      panel.appendChild(elem("p", "small-note", t("archive.managed_hint", "This collection is managed by Auto Archive.")));
+      const manage = elem("button", "primary-btn", t("archive.manage", "Manage Auto Archive"));
+      manage.addEventListener("click", openArchivePresetSettings);
+      panel.appendChild(manage);
+      return;
+    }
     buildCollectionRuleEditor(panel, detail, {
       onChanged: () => { State.collectionRules.summaries = []; State.collectionRules.loaded = false; },
       onSaved: () => { State.collectionRules.summaries = []; State.collectionRules.loaded = false; renderSettings(); },
     });
   });
+}
+
+function openArchivePresetSettings() {
+  State.archivePreset.origin = State.currentPage === "novel_collections" ? "novel_collections" : "settings";
+  State._settingsSection = "auto_archive";
+  selectPage("settings");
+}
+
+function loadArchivePreset() {
+  const state = State.archivePreset;
+  if (state.loading) return;
+  state.loading = true;
+  State.bridge.getArchivePresets((json) => {
+    const result = safeParse(json);
+    state.loading = false;
+    state.loaded = true;
+    if (result && Array.isArray(result.presets)) {
+      const preset = result.presets.find((item) => item.id === "text_novel_author");
+      state.enabled = Boolean(preset && preset.enabled);
+      state.draftEnabled = state.enabled;
+    } else showToast(t("archive.error_title", "Auto Archive"), archiveError("storage_error"), "error");
+    if (State.currentPage === "settings" && State._settingsSection === "auto_archive") renderSettings();
+  });
+}
+
+function archiveRequestPayload() {
+  const state = State.archivePreset;
+  return { id: "text_novel_author", enabled: state.draftEnabled,
+    disableMode: state.draftEnabled ? "" : state.disableMode, page: state.page, pageSize: 20 };
+}
+
+function previewArchivePreset(page) {
+  const state = State.archivePreset;
+  state.page = page;
+  state.token = "";
+  state.preview = null;
+  state.loading = true;
+  renderSettings();
+  State.bridge.previewArchivePreset(JSON.stringify(archiveRequestPayload()), (json) => {
+    const result = safeParse(json);
+    state.loading = false;
+    if (result && result.ok) {
+      state.token = result.previewToken;
+      state.preview = result.preview;
+    } else {
+      showToast(t("archive.error_title", "Auto Archive"), archiveError(result && result.error), "error");
+    }
+    if (State.currentPage === "settings" && State._settingsSection === "auto_archive") renderSettings();
+  });
+}
+
+function archiveError(error) {
+  const value = String(error || "unknown");
+  return t(`archive.error.${value}`, value);
+}
+
+function saveArchivePreset() {
+  const state = State.archivePreset;
+  if (!state.token) return;
+  const payload = { ...archiveRequestPayload(), previewToken: state.token };
+  state.loading = true;
+  renderSettings();
+  State.bridge.saveArchivePreset(JSON.stringify(payload), (json) => {
+    const result = safeParse(json);
+    state.loading = false;
+    if (result && result.ok) {
+      state.enabled = Boolean(result.preset.enabled);
+      state.draftEnabled = state.enabled;
+      state.token = "";
+      state.preview = null;
+      state.page = 1;
+      State.collectionRules.loaded = false;
+      applyCollectionRuleResult(result);
+      showToast(t("archive.saved_title", "Auto Archive updated"),
+        state.enabled ? t("archive.enabled_message", "Novel authors are now archived automatically.") : t("archive.disabled_message", "Auto Archive is off."), "success");
+    } else {
+      state.token = "";
+      state.preview = null;
+      showToast(t("archive.error_title", "Auto Archive"), archiveError(result && result.error), "error");
+    }
+    if (State.currentPage === "settings" && State._settingsSection === "auto_archive") renderSettings();
+  });
+}
+
+function renderSettingsAutoArchive(panel) {
+  const state = State.archivePreset;
+  const card = settingCard(t("settings.nav.auto_archive", "Auto Archive"));
+  card.classList.add("archive-settings-card");
+  panel.appendChild(card);
+  if (state.origin === "novel_collections") {
+    const back = elem("button", "ghost-btn", t("archive.back", "Back to Novel Collections"));
+    back.addEventListener("click", () => selectPage("novel_collections"));
+    card.appendChild(back);
+  }
+  if (!state.loaded) {
+    card.appendChild(elem("p", "small-note", t("common.loading", "Loading…")));
+    loadArchivePreset();
+    return;
+  }
+  const intro = elem("p", "small-note", t("archive.help", "Create one novel collection per nonempty author, across all paths. Multiple names in the author field stay together. Existing manual members remain."));
+  card.appendChild(intro);
+  card.appendChild(elem("p", "small-note", t("archive.boundary", "Custom-rule or duplicate-name conflicts are skipped. Empty collections and exclusions remain when the preset is turned off.")));
+  const status = elem("div", "archive-status");
+  status.appendChild(elem("strong", null, t("archive.author_title", "Archive by Author")));
+  status.appendChild(elem("span", state.enabled ? "status-on" : "status-off", state.enabled ? t("collection_rules.on", "On") : t("collection_rules.off", "Off")));
+  card.appendChild(status);
+  const controls = elem("div", "archive-controls");
+  const label = elem("label", "archive-toggle");
+  const toggle = elem("input"); toggle.type = "checkbox"; toggle.checked = state.draftEnabled; toggle.disabled = state.loading;
+  toggle.addEventListener("change", () => { state.draftEnabled = toggle.checked; state.token = ""; state.preview = null; state.page = 1; renderSettings(); });
+  label.appendChild(toggle);
+  label.appendChild(elem("span", null, t("archive.enable", "Enable this preset")));
+  controls.appendChild(label);
+  if (!state.draftEnabled && state.enabled) {
+    const modeLabel = elem("label", "archive-mode");
+    modeLabel.appendChild(elem("span", null, t("archive.disable_mode", "When turning off")));
+    const select = elem("select");
+    [["remove", "archive.remove", "Remove automatic members"], ["convert", "archive.convert", "Convert automatic members to manual"]].forEach(([value, key, fallback]) => {
+      const option = elem("option", null, t(key, fallback)); option.value = value; option.selected = state.disableMode === value; select.appendChild(option);
+    });
+    select.addEventListener("change", () => { state.disableMode = select.value; state.token = ""; state.preview = null; renderSettings(); });
+    modeLabel.appendChild(select); controls.appendChild(modeLabel);
+  }
+  const previewButton = elem("button", "ghost-btn", t("archive.preview", "Preview changes"));
+  previewButton.disabled = state.loading || (!state.enabled && !state.draftEnabled);
+  previewButton.addEventListener("click", () => previewArchivePreset(1));
+  controls.appendChild(previewButton);
+  card.appendChild(controls);
+  if (state.loading) { card.appendChild(elem("p", "small-note", t("common.loading", "Loading…"))); return; }
+  if (!state.preview) return;
+  const summary = state.preview.summary || {};
+  const preview = elem("section", "archive-preview");
+  preview.appendChild(elem("h3", null, t("archive.preview_title", "Preview")));
+  if (state.draftEnabled) {
+    preview.appendChild(elem("p", "small-note", fmt(t("archive.summary", "{authors} authors · {create} new · {reuse} reused · {conflict} conflicts · {missing} without author"), {
+      authors: summary.authorCount || 0, create: summary.create || 0, reuse: summary.reuse || 0,
+      conflict: summary.conflict || 0, missing: summary.missingAuthorCount || 0,
+    })));
+  } else {
+    preview.appendChild(elem("p", "small-note", fmt(t("archive.disable_summary", "Keep {collections} collections; {count} automatic members affected. Exclusions remain."), {
+      collections: summary.managedCount || 0, count: summary.affectedMembers || 0,
+    })));
+  }
+  const rows = state.preview.rows || { items: [], total: 0, page: 1, pageSize: 20 };
+  const list = elem("div", "archive-preview-list");
+  rows.items.forEach((row) => {
+    const line = elem("div", `archive-preview-row${row.action === "conflict" ? " conflict" : ""}`);
+    const name = elem("div", "archive-preview-name");
+    name.appendChild(elem("strong", null, row.author));
+    if (row.examples && row.examples[0]) name.appendChild(elem("small", null, row.examples[0]));
+    line.appendChild(name);
+    line.appendChild(elem("span", null, fmt(t("archive.row_count", "{count} novels"), { count: row.count || 0 })));
+    line.appendChild(elem("span", "archive-action", archiveActionLabel(row)));
+    list.appendChild(line);
+  });
+  if (!rows.items.length) list.appendChild(elem("p", "small-note", t("archive.no_changes", "No collections to change.")));
+  preview.appendChild(list);
+  if (rows.total > rows.pageSize) {
+    const paging = elem("div", "archive-pagination");
+    const previous = elem("button", "ghost-btn", t("comic.pagination.prev", "Prev")); previous.disabled = rows.page <= 1;
+    previous.addEventListener("click", () => previewArchivePreset(rows.page - 1));
+    const next = elem("button", "ghost-btn", t("comic.pagination.next", "Next")); next.disabled = rows.page * rows.pageSize >= rows.total;
+    next.addEventListener("click", () => previewArchivePreset(rows.page + 1));
+    paging.appendChild(previous);
+    paging.appendChild(elem("span", "small-note", fmt(t("archive.page", "Page {page} of {pages}"), { page: rows.page, pages: Math.ceil(rows.total / rows.pageSize) })));
+    paging.appendChild(next); preview.appendChild(paging);
+  }
+  const confirm = elem("button", "primary-btn", state.draftEnabled ? t("archive.confirm_enable", "Enable and archive") : t("archive.confirm_disable", "Confirm turn off"));
+  confirm.addEventListener("click", saveArchivePreset);
+  preview.appendChild(confirm);
+  card.appendChild(preview);
+}
+
+function archiveActionLabel(row) {
+  if (row.action === "conflict") return t(`archive.conflict.${row.reason}`, row.reason);
+  const labels = { create: ["archive.action.create", "Create"], reuse: ["archive.action.reuse", "Reuse"],
+    existing: ["archive.action.existing", "Update"], remove: ["archive.action.remove", "Remove auto"],
+    convert: ["archive.action.convert", "Convert"] };
+  const label = labels[row.action] || ["archive.action.unknown", row.action];
+  return t(label[0], label[1]);
 }
 
 function selectField(labelKey, key, options, current) {

@@ -19,6 +19,8 @@ from bookhub.version import APP_VERSION
 from bookhub.library.collection_rules import normalize_collection_rule
 from bookhub.library.models import IMAGE_FOLDER_BOOK_EXTENSION
 from bookhub.library.repository import (
+    ARCHIVE_PRESET_TEXT_NOVEL_AUTHOR,
+    AUTHOR_ARCHIVE_ENABLED_SETTING,
     COLLECTION_KIND_BOOK,
     COLLECTION_KIND_COMIC,
     COLLECTION_KIND_TEXT_NOVEL,
@@ -227,6 +229,43 @@ def _web_strings() -> dict[str, str]:
         ("settings.nav.tasks", "Scan & Tasks"),
         ("settings.nav.errors", "Error logs"),
         ("settings.nav.collection_rules", "Collection Rules"),
+        ("settings.nav.auto_archive", "Auto Archive"),
+        ("archive.open", "Auto Archive"),
+        ("archive.manage", "Manage Auto Archive"),
+        ("archive.back", "Back to Novel Collections"),
+        ("archive.author_badge", "By Author"),
+        ("archive.author_title", "Archive by Author"),
+        ("archive.help", "Create one novel collection per nonempty author, across all paths. Multiple names in the author field stay together. Existing manual members remain."),
+        ("archive.boundary", "Custom-rule or duplicate-name conflicts are skipped. Empty collections and exclusions remain when the preset is turned off."),
+        ("archive.managed_hint", "This collection is managed by Auto Archive."),
+        ("archive.enable", "Enable this preset"),
+        ("archive.disable_mode", "When turning off"),
+        ("archive.remove", "Remove automatic members"),
+        ("archive.convert", "Convert automatic members to manual"),
+        ("archive.preview", "Preview changes"),
+        ("archive.preview_title", "Preview"),
+        ("archive.summary", "{authors} authors · {create} new · {reuse} reused · {conflict} conflicts · {missing} without author"),
+        ("archive.disable_summary", "Keep {collections} collections; {count} automatic members affected. Exclusions remain."),
+        ("archive.row_count", "{count} novels"),
+        ("archive.no_changes", "No collections to change."),
+        ("archive.page", "Page {page} of {pages}"),
+        ("archive.confirm_enable", "Enable and archive"),
+        ("archive.confirm_disable", "Confirm turn off"),
+        ("archive.action.create", "Create"),
+        ("archive.action.reuse", "Reuse"),
+        ("archive.action.existing", "Update"),
+        ("archive.action.remove", "Remove auto"),
+        ("archive.action.convert", "Convert"),
+        ("archive.conflict.duplicate_name", "Duplicate name; skipped"),
+        ("archive.conflict.custom_rule", "Custom rule; skipped"),
+        ("archive.saved_title", "Auto Archive updated"),
+        ("archive.enabled_message", "Novel authors are now archived automatically."),
+        ("archive.disabled_message", "Auto Archive is off."),
+        ("archive.error_title", "Auto Archive"),
+        ("archive.error.stale_preview", "Library changed. Preview again."),
+        ("archive.error.preview_required", "Preview before confirming."),
+        ("archive.error.storage_error", "Could not save. No archive changes were applied."),
+        ("collection_rules.error.archive_preset_managed", "This collection is managed by Auto Archive. Open the Auto Archive settings."),
         ("collection_rules.edit_title", "Edit collection rule"),
         ("collection_rules.enabled", "Enable rule"),
         ("collection_rules.on", "On"),
@@ -526,6 +565,7 @@ class UiBridge(QObject):
             PAGE_COMIC_COLLECTIONS: None,
         }
         self._collection_rule_previews: dict[int, dict[str, str]] = {}
+        self._archive_preview: dict[str, str] | None = None
         self.reload_data()
 
     def set_host(self, host) -> None:
@@ -802,6 +842,7 @@ class UiBridge(QObject):
                     payload["sort"] = self._repo.get_library_sort_order_fav()
                 return payload
         collections = self._repo.get_all_collections(kind)
+        card_stats = self._repo.get_collection_card_stats(kind)
         count_key, count_fb = {
             COLLECTION_KIND_TEXT_NOVEL: ("collections.novel_count", "{count} novels"),
             COLLECTION_KIND_COMIC: ("collections.comic_count", "{count} comics"),
@@ -811,19 +852,12 @@ class UiBridge(QObject):
             item_cid = int(collection.get("id"))
             rule_summary = rule_summaries.get(item_cid, {})
             cover = None
-            member_count = self._repo.get_collection_item_count(item_cid)
-            if kind == COLLECTION_KIND_COMIC:
-                members = self._repo.get_comics_in_collection(item_cid)
-                for comic in members:
-                    cover = self._cover_url(comic.get("thumbnail_path"), comic.get("cover_image_path"))
-                    if cover:
-                        break
-            else:
-                members = self._repo.get_books_in_collection(item_cid)
-                for book in members:
-                    cover = self._cover_url(book.get("thumbnail_path"))
-                    if cover:
-                        break
+            stats = card_stats.get(item_cid, {"count": 0, "covers": []})
+            member_count = int(stats["count"])
+            for candidate in stats["covers"]:
+                cover = self._cover_url(*candidate)
+                if cover:
+                    break
             items.append({
                 "id": str(item_cid),
                 "collectionId": item_cid,
@@ -835,6 +869,8 @@ class UiBridge(QObject):
                 "ruleEnabled": bool(rule_summary.get("enabled", False)),
                 "ruleAutoMemberCount": int(rule_summary.get("autoMemberCount", 0)),
                 "ruleExcludedCount": int(rule_summary.get("excludedCount", 0)),
+                "archivePreset": str(rule_summary.get("archivePreset") or ""),
+                "archiveManaged": bool(rule_summary.get("archiveManaged", False)),
                 "tags": [],
                 "path": "",
             })
@@ -1324,6 +1360,55 @@ class UiBridge(QObject):
     def getCollectionRules(self) -> str:
         return json.dumps(self._repo.get_collection_rule_summaries(), ensure_ascii=False)
 
+    @Slot(result=str)
+    def getArchivePresets(self) -> str:
+        return json.dumps({"presets": [{"id": ARCHIVE_PRESET_TEXT_NOVEL_AUTHOR,
+            "enabled": bool(self._repo.get_setting(AUTHOR_ARCHIVE_ENABLED_SETTING, False)),
+            "kind": COLLECTION_KIND_TEXT_NOVEL}]}, ensure_ascii=False)
+
+    @Slot(str, result=str)
+    def previewArchivePreset(self, payload_json: str) -> str:
+        try:
+            payload = json.loads(payload_json or "{}")
+            if not isinstance(payload, dict) or payload.get("id") != ARCHIVE_PRESET_TEXT_NOVEL_AUTHOR or not isinstance(payload.get("enabled"), bool):
+                raise ValueError("invalid_payload")
+            mode = str(payload.get("disableMode") or "")
+            preview = self._repo.preview_archive_preset(
+                enabled=payload["enabled"], disable_mode=mode,
+                page=max(1, int(payload.get("page", 1))), page_size=max(1, min(100, int(payload.get("pageSize", 20)))))
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            return json.dumps({"ok": False, "error": str(exc) if isinstance(exc, ValueError) else "invalid_payload"}, ensure_ascii=False)
+        except sqlite3.Error:
+            return json.dumps({"ok": False, "error": "storage_error"}, ensure_ascii=False)
+        token = uuid4().hex
+        self._archive_preview = {"token": token, "fingerprint": preview["fingerprint"],
+                                 "enabled": str(payload["enabled"]), "disableMode": mode}
+        preview.pop("fingerprint", None)
+        return json.dumps({"ok": True, "previewToken": token, "preview": preview}, ensure_ascii=False)
+
+    @Slot(str, result=str)
+    def saveArchivePreset(self, payload_json: str) -> str:
+        try:
+            payload = json.loads(payload_json or "{}")
+            state = self._archive_preview
+            if not isinstance(payload, dict) or payload.get("id") != ARCHIVE_PRESET_TEXT_NOVEL_AUTHOR or not isinstance(payload.get("enabled"), bool):
+                raise ValueError("invalid_payload")
+            if not state or not payload.get("previewToken"):
+                raise ValueError("preview_required")
+            mode = str(payload.get("disableMode") or "")
+            if (payload["previewToken"] != state["token"] or str(payload["enabled"]) != state["enabled"]
+                    or mode != state["disableMode"]):
+                raise ValueError("stale_preview")
+            result = self._repo.save_archive_preset(enabled=payload["enabled"], disable_mode=mode,
+                                                    fingerprint=state["fingerprint"])
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            return json.dumps({"ok": False, "error": str(exc) if isinstance(exc, ValueError) else "invalid_payload"}, ensure_ascii=False)
+        except sqlite3.Error:
+            return json.dumps({"ok": False, "error": "storage_error"}, ensure_ascii=False)
+        self._archive_preview = None
+        return json.dumps({"ok": True, "preset": result, "collectionPage": PAGE_NOVEL_COLLECTIONS,
+                           "collectionPageData": self._page_resources(PAGE_NOVEL_COLLECTIONS)}, ensure_ascii=False)
+
     @Slot(int, result=str)
     def getCollectionRule(self, collection_id: int) -> str:
         try:
@@ -1650,13 +1735,19 @@ class UiBridge(QObject):
     def renameCollection(self, collection_id: int, name: str) -> bool:
         if not name.strip():
             return False
-        self._repo.rename_collection(int(collection_id), name.strip())
+        try:
+            self._repo.rename_collection(int(collection_id), name.strip())
+        except ValueError:
+            return False
         self.push_resources()
         return True
 
     @Slot(int, result=bool)
     def deleteCollection(self, collection_id: int) -> bool:
-        self._repo.delete_collection(int(collection_id))
+        try:
+            self._repo.delete_collection(int(collection_id))
+        except ValueError:
+            return False
         for page, open_id in list(self._open_collection_by_page.items()):
             if open_id == int(collection_id):
                 self._open_collection_by_page[page] = None

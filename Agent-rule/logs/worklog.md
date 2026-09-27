@@ -1,6 +1,10 @@
 ﻿# Worklog
 
 ## 最新记录
+
+```json
+{"log_id":"worklog-20260927-001","timestamp":"2026-09-27T11:19:59+08:00","actor":"ui-agent","task":"修复标签管理目录返回后丢失滚动位置","changes":["标签目录单独保存会话滚动位置，打开详情或切页前记录并在目录渲染后恢复","排序、资源范围及目录失效后复位，详情虚拟网格滚动保持独立","新增 Node 回归和临时书库 Qt WebEngine 双皮肤验收"],"affected_files":["src/bookhub/ui/web/js/app.js","src/tests/js/test_tag_management.js","src/tests/qa_tag_scroll_webengine.py","bugissue.md","src_construction.md","Agent-rule/logs/history/2026-09-27.md","Agent-rule/logs/worklog.md"],"outputs":["修复前 Node 断言失败：undefined !== 600；修复后标签、快捷键、Quick Add 三组 Node 测试通过","Glass/Vaporwave Qt WebEngine 标签滚动验收通过"],"risks":[],"next_actions":[]}
+```
 ```json
 {"log_id":"worklog-20260926-001","timestamp":"2026-09-26T11:07:27+08:00","actor":"parser-agent + indexer-agent + ui-agent + maintenance-agent","task":"集合规则扩展为按元数据字段自动归档","changes":["集合规则 v2 每条件增加 field，v1 规则保持来源原名语义，按合集 kind 校验字段与空值/逐项标签匹配","books 增加系列与文本小说导入/手动保留/手动排除标签来源列，旧标签迁移为保留基线；扫描独立保存系列","单项和批量标签变更同事务定向重算已启用合集，失败回滚；Text Novel 主列表显示可排序系列，详情保留路径","右键弹窗与设置页共用字段选择器，字段变更使预览失效；同步双语文案、参考 HTML、合同、角色、注册表、README 和结构说明"],"affected_files":["src/bookhub/library/collection_rules.py","src/bookhub/library/repository.py","src/bookhub/library/scanner.py","src/bookhub/ui/models/resource.py","src/bookhub/ui/web_bridge.py","src/bookhub/ui/web/js/app.js","src/bookhub/ui/web/css/base.css","src/bookhub/i18n/locales/zh-cn.json","src/tests/test_collection_rules.py","src/tests/test_text_scan_incremental.py","src/tests/test_text_novel_sort.py","src/tests/test_web_bridge_smoke.py","src/tests/js/test_collection_rules.js","src/tests/js/test_random_recommendations.js","README.md","README.en.md","Agent-rule/agents","Agent-rule/contracts","Agent-rule/registry/module-registry.md","Agent-rule/project-context.md","src_construction.md"],"outputs":["Python 全量 340 tests 通过","七组 Node 行为测试与两份生产 JS 语法检查通过","Glass/Vaporwave 在 1200/740/600px 真实 Qt WebEngine 中无横向溢出或脚本错误，系列列显示成功","新增双语键值校验通过"],"risks":["旧标签来源不可逆推，迁移后全部保留；过时导入标签需用户手动清理","旧小说系列等下次文本扫描才会补齐","v2.5.0 发行包不包含本次 main 新能力"],"next_actions":[]}
 ```
@@ -827,3 +831,18 @@
 - 实施中完整 Python/Node 门禁：329 tests passed。
 - 真实 Qt WebEngine、多宽度双皮肤门禁和最终审查结果见当日 history/evidence。
 - Standards/Spec 双轴审查发现并修复：空合集重复加载、空白草稿条件前后端不一致、右键模态焦点返回隐藏菜单项，以及零自动成员规则绕过关闭方式；均补入回归测试。
+
+---
+
+## 2026-09-26 - 文本小说按作者自动归档预设
+
+### 任务
+将已审核的 HTML 示例实现为文本小说专用归档预设，含双入口、预览确认、扫描持续更新、冲突跳过和关闭方式。
+
+### 实现内容
+- 增量迁移预设归属列与作者键索引；批量分组及成员重算与现有扫描规则共用事务，手动成员、排除记录和空集合保留。
+- Bridge 使用预览令牌和数据库快照防止过期保存；集合页与设置页共用配置组件，受管集合的危险操作被 UI 与 Repository 双重阻止。
+- 集合规则摘要、卡片成员数及封面候选批量读取；同步中英文文案、HTML 示例、合同、角色、模块登记和结构说明。
+
+### 验证结果
+- 临时 SQLite 回归、完整 Python 349 tests、七组 Node 行为测试和真实 Qt WebEngine 双皮肤 1100/740/600px 双入口/键盘/启停/溢出检查通过；未打开真实用户书库。

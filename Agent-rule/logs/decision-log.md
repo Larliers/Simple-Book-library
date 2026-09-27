@@ -46,6 +46,30 @@
 }
 ```
 
+## 2026-09-26 - 文本小说作者归档预设归属与回退
+
+```json
+{
+  "decision_id": "decision-20260926-002",
+  "timestamp": "2026-09-26T21:30:00+08:00",
+  "owner": "indexer-agent + ui-agent",
+  "title": "文本小说作者归档预设归属与回退",
+  "context": "单集合规则无法批量覆盖跨路径的全部作者，且必须保留手动成员、排除和旧空集合",
+  "options": ["让用户逐作者新建规则", "以全局预设批量分组并标记归属", "在扫描时直接覆盖所有同名集合"],
+  "decision": "text_novel_author 作为默认关闭的全局预设；集合用 archive_preset/archive_key 标识归属；启用和扫描重算均使用同一 SQLite 事务",
+  "rationale": [
+    "trim + casefold 分组可跨路径复用普通同名集合，独立归属标记可锁定受管操作",
+    "预览令牌加数据库快照避免用户确认时应用已变更的归档计划",
+    "保留空集合、手动成员和排除记录，关闭后允许解除预设归属"
+  ],
+  "impact": [
+    "Repository/Bridge/SPA 增加预设流程并优化集合卡片批量读取",
+    "升级前备份数据库；回退旧版时恢复匹配的升级前备份"
+  ],
+  "followups": []
+}
+```
+
 ```json
 {"decision_id":"decision-20260920-002","timestamp":"2026-09-20T15:20:05+08:00","owner":"maintenance-agent + ui-agent","title":"README 采用稳定版/main 双口径与匿名真实运行截图","context":"稳定版下载能力、main 源码进展和公开截图隐私需要同时准确表达","options":["仅改 README","新增 documentation agent/contract","在 shared-rules 增加最小文档规则"],"decision":"选择最小规则补丁；README 分开稳定版与 main，主图使用真实 Qt WebEngine 和隔离匿名数据","rationale":["避免向下载用户承诺未发布能力","保留 main 进展透明度","真实匿名截图兼顾可信度、隐私和版权边界"],"impact":["规则版本升至 v0.1.1","双语 README 保持事实与版本标记同步","业务接口和 registry 不变"],"followups":["下一次 Release 后同步版本口径和截图"]}
 ```
