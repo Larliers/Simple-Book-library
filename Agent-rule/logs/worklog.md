@@ -3,6 +3,22 @@
 ## 最新记录
 
 ```json
+{"log_id":"worklog-20261004-001","timestamp":"2026-10-04","actor":"maintenance-agent","task":"按本地开发记录提交并推送标签高亮与搜索快捷键","changes":["安全快进同步远端 f821d35 的 v2.6.0 版本与 README","核对并合并交付 2026-09-27 标签高亮、2026-09-28 搜索导航快捷键及配套原型和文档","补充开发交付记录与结构说明，排除既有 Python 字节码缓存"],"affected_files":["src/bookhub/library/repository.py","src/bookhub/ui/web_bridge.py","src/bookhub/ui/web/js/app.js","src/bookhub/ui/web/css/base.css","src/bookhub/i18n/locales/zh-cn.json","src/tests","collection-rules-prototype.html","Agent-rule/contracts/ui-contract.md","Agent-rule/registry/module-registry.md","Agent-rule/logs/history/2026-09-27.md","Agent-rule/logs/history/2026-09-28.md","Agent-rule/logs/history/2026-10-04.md","Agent-rule/logs/worklog.md","src_construction.md"],"outputs":["Python 全量 353 passed, 70 subtests passed","七组 Node 行为测试及两份生产 JS 语法检查通过","标签高亮与搜索快捷键 Glass/Vaporwave Qt WebEngine 临时书库验收通过"],"risks":["既有 resource.cpython-310.pyc 缓存改动保持未提交；本次不触发 Release"],"next_actions":["以 Git 输出核验最终提交与 origin/main 同步结果"]}
+```
+
+```json
+{"log_id":"worklog-20260928-001","timestamp":"2026-09-28T20:16:19+08:00","actor":"ui-agent","task":"当前页搜索与高频快捷键","changes":["新增聚焦搜索、清空搜索和三类资源主页导航五项可配置动作及默认键位","旧绑定优先、明确清除持久化，搜索框自身允许两项搜索动作","清空和切页取消待执行搜索，并拒绝过期搜索及建议回包","补充中英文文案、UI 合同、模块登记与结构说明"],"affected_files":["src/bookhub/library/repository.py","src/bookhub/ui/web/js/app.js","src/bookhub/ui/web_bridge.py","src/bookhub/i18n/locales/zh-cn.json","src/tests/test_cover_grid_settings.py","src/tests/test_web_bridge_smoke.py","src/tests/js/test_shortcuts.js","src/tests/qa_search_shortcuts_webengine.py","Agent-rule/contracts/ui-contract.md","Agent-rule/registry/module-registry.md","Agent-rule/logs/history/2026-09-28.md","src_construction.md"],"outputs":["Python 全套 353 tests 通过","七组 Node 行为测试通过","临时书库 Qt WebEngine Glass/Vaporwave 真实按键验收通过"],"risks":["快捷键只在应用聚焦时生效；不可搜索页的搜索动作静默无效果"],"next_actions":[]}
+```
+
+```json
+{"log_id":"worklog-20260927-003","timestamp":"2026-09-27T18:25:10+08:00","actor":"ui-agent","task":"移除标签高亮卡片边缘描边","changes":["移除名称高亮卡片的 1px inset box-shadow，保留圆角底色与原文字颜色","Qt WebEngine 验收加入无 border/box-shadow 的计算样式检查","插入更新 src_construction 说明"],"affected_files":["src/bookhub/ui/web/css/base.css","src/tests/qa_tag_highlight_webengine.py","src_construction.md","Agent-rule/logs/history/2026-09-27.md","Agent-rule/logs/worklog.md"],"outputs":["Glass/Vaporwave 1100/740/600px Qt WebEngine 验收通过","git diff --check 通过"],"risks":[],"next_actions":[]}
+```
+
+```json
+{"log_id":"worklog-20260927-002","timestamp":"2026-09-27T18:20:13+08:00","actor":"ui-agent","task":"将标签文字高亮接入正式标签目录","changes":["app_settings 保存精确标签名颜色映射和当前书库去重自定义色块，四种更新操作单事务执行","Bridge 增 updateTagHighlight 并在成功后推送最新配置；中英文文案同步","目录名称卡片高亮复用右键菜单，支持取色预览、确认留菜单、删除色块、Shift+F10 和失败回滚","修复删除色块后旧 DOM 按钮脱离导致外部点击误关菜单，并允许菜单内部滚动","同步 UI contract、模块注册表和 src_construction"],"affected_files":["src/bookhub/library/repository.py","src/bookhub/ui/web_bridge.py","src/bookhub/ui/web/js/app.js","src/bookhub/ui/web/css/base.css","src/bookhub/i18n/locales/zh-cn.json","src/tests/test_tag_management.py","src/tests/test_web_bridge_smoke.py","src/tests/js/test_tag_management.js","src/tests/qa_tag_highlight_webengine.py","Agent-rule/contracts/ui-contract.md","Agent-rule/registry/module-registry.md","Agent-rule/logs/history/2026-09-27.md","Agent-rule/logs/worklog.md","src_construction.md"],"outputs":["Python 352 tests 通过","标签、快捷键、合集规则 Node 行为测试与 JS 语法检查通过","临时书库 Qt WebEngine 双皮肤 1100/740/600px 高亮验收通过，既有标签滚动验收通过"],"risks":["原生系统取色弹窗本身未自动化点击；Qt 中通过真实页面的 input/change 事件验证预览和确认路径"],"next_actions":[]}
+```
+
+```json
 {"log_id":"worklog-20260927-001","timestamp":"2026-09-27T11:19:59+08:00","actor":"ui-agent","task":"修复标签管理目录返回后丢失滚动位置","changes":["标签目录单独保存会话滚动位置，打开详情或切页前记录并在目录渲染后恢复","排序、资源范围及目录失效后复位，详情虚拟网格滚动保持独立","新增 Node 回归和临时书库 Qt WebEngine 双皮肤验收"],"affected_files":["src/bookhub/ui/web/js/app.js","src/tests/js/test_tag_management.js","src/tests/qa_tag_scroll_webengine.py","bugissue.md","src_construction.md","Agent-rule/logs/history/2026-09-27.md","Agent-rule/logs/worklog.md"],"outputs":["修复前 Node 断言失败：undefined !== 600；修复后标签、快捷键、Quick Add 三组 Node 测试通过","Glass/Vaporwave Qt WebEngine 标签滚动验收通过"],"risks":[],"next_actions":[]}
 ```
 ```json

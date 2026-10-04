@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sqlite3
 import shutil
 import subprocess
 import sys
@@ -89,6 +90,11 @@ class WebBridgeSmokeTests(unittest.TestCase):
                 "edit_cover": "",
                 "remove_from_collection": "",
                 "remove_from_library": "",
+                "focus_search": "Ctrl+KeyF",
+                "clear_search": "Ctrl+Shift+KeyF",
+                "go_library": "Alt+Digit1",
+                "go_text_novel": "Alt+Digit2",
+                "go_comic": "Alt+Digit3",
             },
         )
         page_keys = {page for page, _, _ in NAV_ITEMS}
@@ -161,6 +167,28 @@ class WebBridgeSmokeTests(unittest.TestCase):
         self.assertEqual(events[0]["resource_id"], "白色")
         parsed = datetime.fromisoformat(str(events[0]["timestamp"]))
         self.assertIsNotNone(parsed.tzinfo)
+
+    def test_tag_highlight_bridge_saves_and_reports_failure(self) -> None:
+        bridge = self._make_bridge()
+        self.assertEqual(json.loads(bridge.getBootstrap())["settings"]["tagHighlights"], {
+            "byTag": {}, "customColors": [],
+        })
+        pushed: list[dict[str, object]] = []
+        bridge.settingsChanged.connect(lambda raw: pushed.append(json.loads(raw)))
+        saved = json.loads(bridge.updateTagHighlight(json.dumps({
+            "action": "create_color", "tag": "LOL", "color": "#38ad65",
+        })))
+        self.assertTrue(saved["ok"])
+        self.assertEqual(saved["config"]["byTag"], {"LOL": "#38ad65"})
+        self.assertEqual(pushed[-1]["tagHighlights"], saved["config"])
+        rejected = json.loads(bridge.updateTagHighlight("not json"))
+        self.assertEqual(rejected["error"], "invalid_action")
+        with patch.object(bridge._repo, "update_tag_highlight", side_effect=sqlite3.OperationalError("locked")):
+            failed = json.loads(bridge.updateTagHighlight(json.dumps({
+                "action": "clear", "tag": "LOL",
+            })))
+        self.assertEqual(failed, {"ok": False, "error": "save_failed"})
+        self.assertEqual(len(pushed), 1)
 
     def test_comic_tags_use_page_aware_bridge_and_invalidate_catalog(self) -> None:
         bridge = self._make_bridge()

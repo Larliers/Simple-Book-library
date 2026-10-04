@@ -56,6 +56,9 @@ COLLECTION_KIND_TEXT_NOVEL = "text_novel"
 COLLECTION_KIND_COMIC = "comic"
 ARCHIVE_PRESET_TEXT_NOVEL_AUTHOR = "text_novel_author"
 AUTHOR_ARCHIVE_ENABLED_SETTING = "text_novel_author_archive_enabled"
+TAG_HIGHLIGHTS_SETTING = "tag_highlights"
+TAG_HIGHLIGHT_COLOR_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}$")
+TAG_HIGHLIGHT_PRESET_COLORS = frozenset({"#ffe58a", "#bfeacf", "#f7c7d8", "#c8e2fa", "#dacdf7"})
 BOOK_FIELD_SORT_ORDERS = frozenset(
     {
         "file_mtime_asc",
@@ -88,7 +91,19 @@ SHORTCUT_ACTION_IDS = (
     "edit_cover",
     "remove_from_collection",
     "remove_from_library",
+    "focus_search",
+    "clear_search",
+    "go_library",
+    "go_text_novel",
+    "go_comic",
 )
+DEFAULT_SHORTCUT_BINDINGS = {
+    "focus_search": "Ctrl+KeyF",
+    "clear_search": "Ctrl+Shift+KeyF",
+    "go_library": "Alt+Digit1",
+    "go_text_novel": "Alt+Digit2",
+    "go_comic": "Alt+Digit3",
+}
 SHORTCUT_MOUSE_TOKENS = frozenset({"MouseBack", "MouseForward"})
 SHORTCUT_MODIFIERS = ("Ctrl", "Alt", "Shift", "Meta")
 SHORTCUT_KEY_CODES = frozenset(
@@ -1096,6 +1111,72 @@ class LibraryRepository:
         scopes = {key: bool(raw.get(key, True)) for key in TAG_MANAGER_SCOPE_KEYS}
         return scopes if any(scopes.values()) else dict(DEFAULT_TAG_MANAGER_SCOPES)
 
+    @staticmethod
+    def _normalize_tag_highlights(raw: Any) -> dict[str, Any]:
+        if not isinstance(raw, dict):
+            return {"byTag": {}, "customColors": []}
+        by_tag = raw.get("byTag")
+        colors = raw.get("customColors")
+        normalized_tags = {
+            tag: color.lower()
+            for tag, color in (by_tag.items() if isinstance(by_tag, dict) else ())
+            if isinstance(tag, str) and tag.strip()
+            and isinstance(color, str) and TAG_HIGHLIGHT_COLOR_PATTERN.fullmatch(color)
+        }
+        normalized_colors: list[str] = []
+        if isinstance(colors, list):
+            for color in colors:
+                if isinstance(color, str) and TAG_HIGHLIGHT_COLOR_PATTERN.fullmatch(color):
+                    normalized = color.lower()
+                    if normalized not in normalized_colors and normalized not in TAG_HIGHLIGHT_PRESET_COLORS:
+                        normalized_colors.append(normalized)
+        return {"byTag": normalized_tags, "customColors": normalized_colors}
+
+    def get_tag_highlights(self) -> dict[str, Any]:
+        return self._normalize_tag_highlights(self.get_setting(TAG_HIGHLIGHTS_SETTING))
+
+    def update_tag_highlight(self, payload: Any) -> dict[str, Any]:
+        with self._connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT value FROM app_settings WHERE key = ?", (TAG_HIGHLIGHTS_SETTING,)
+            ).fetchone()
+            try:
+                raw = json.loads(row["value"]) if row else None
+            except (TypeError, ValueError):
+                raw = None
+            config = self._normalize_tag_highlights(raw)
+            if not isinstance(payload, dict):
+                return {"ok": False, "error": "invalid_action", "config": config}
+            action = payload.get("action")
+            tag = payload.get("tag")
+            color = payload.get("color")
+            if action in {"set", "clear", "create_color"}:
+                if not isinstance(tag, str) or not tag.strip():
+                    return {"ok": False, "error": "invalid_tag", "config": config}
+            if action in {"set", "create_color", "delete_color"}:
+                if not isinstance(color, str) or not TAG_HIGHLIGHT_COLOR_PATTERN.fullmatch(color):
+                    return {"ok": False, "error": "invalid_color", "config": config}
+                color = color.lower()
+            if action == "set":
+                config["byTag"][tag] = color
+            elif action == "clear":
+                config["byTag"].pop(tag, None)
+            elif action == "create_color":
+                if color not in config["customColors"] and color not in TAG_HIGHLIGHT_PRESET_COLORS:
+                    config["customColors"].append(color)
+                config["byTag"][tag] = color
+            elif action == "delete_color":
+                config["customColors"] = [item for item in config["customColors"] if item != color]
+            else:
+                return {"ok": False, "error": "invalid_action", "config": config}
+            conn.execute(
+                "INSERT INTO app_settings(key, value, updated_at) VALUES(?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                (TAG_HIGHLIGHTS_SETTING, json.dumps(config, ensure_ascii=False), now_utc_iso()),
+            )
+            return {"ok": True, "error": "", "config": config}
+
     def set_tag_manager_scopes(self, scopes: dict[str, Any]) -> dict[str, Any]:
         current = self.get_tag_manager_scopes()
         if not isinstance(scopes, dict) or set(scopes) != set(TAG_MANAGER_SCOPE_KEYS):
@@ -1133,7 +1214,7 @@ class LibraryRepository:
         bindings: dict[str, str] = {}
         used_tokens: set[str] = set()
         for action_id in SHORTCUT_ACTION_IDS:
-            token = str(stored.get(action_id) or "")
+            token = str(stored.get(action_id, DEFAULT_SHORTCUT_BINDINGS.get(action_id, "")) or "")
             if not is_valid_shortcut_input_token(token) or token in used_tokens:
                 token = ""
             bindings[action_id] = token

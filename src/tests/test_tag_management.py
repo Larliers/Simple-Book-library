@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 import sqlite3
@@ -18,6 +19,57 @@ class TagManagementRepositoryTests(unittest.TestCase):
     def _repo(self) -> LibraryRepository:
         tmp = tempfile.mkdtemp(prefix="bookhub_tags_")
         return LibraryRepository(db_path=str(Path(tmp) / "library.db"))
+
+    def test_tag_highlights_persist_by_exact_name_and_keep_missing_tags(self) -> None:
+        repo = self._repo()
+        self.assertEqual(repo.get_tag_highlights(), {"byTag": {}, "customColors": []})
+        saved = repo.update_tag_highlight({
+            "action": "create_color", "tag": "LOL", "color": "#38AD65",
+        })
+        self.assertTrue(saved["ok"])
+        self.assertEqual(saved["config"], {
+            "byTag": {"LOL": "#38ad65"}, "customColors": ["#38ad65"],
+        })
+        self.assertTrue(repo.update_tag_highlight({
+            "action": "create_color", "tag": "lol", "color": "#38ad65",
+        })["ok"])
+        self.assertEqual(repo.get_tag_highlights()["customColors"], ["#38ad65"])
+        reopened = LibraryRepository(db_path=str(repo.db_path))
+        self.assertEqual(reopened.get_tag_highlights()["byTag"], {
+            "LOL": "#38ad65", "lol": "#38ad65",
+        })
+        self.assertEqual(reopened.get_tag_catalog()["groups"], [])
+        reopened.upsert_book({
+            "path": "C:/demo/lol.epub", "file_name": "lol.epub", "extension": ".epub",
+            "title": "LOL", "resource_type": "book", "tags_json": json.dumps(["LOL"]),
+        })
+        self.assertEqual(reopened.get_tag_catalog()["groups"][0]["items"][0]["name"], "LOL")
+        self.assertEqual(reopened.get_tag_highlights()["byTag"]["LOL"], "#38ad65")
+        self.assertTrue(reopened.update_tag_highlight({
+            "action": "delete_color", "color": "#38ad65",
+        })["ok"])
+        self.assertEqual(reopened.get_tag_highlights(), {
+            "byTag": {"LOL": "#38ad65", "lol": "#38ad65"}, "customColors": [],
+        })
+        self.assertTrue(reopened.update_tag_highlight({"action": "clear", "tag": "LOL"})["ok"])
+        self.assertEqual(reopened.get_tag_highlights()["byTag"], {"lol": "#38ad65"})
+        reopened.update_tag_highlight({"action": "create_color", "tag": "LOL", "color": "#FFE58A"})
+        self.assertEqual(reopened.get_tag_highlights()["customColors"], [])
+
+    def test_tag_highlight_invalid_mutations_leave_saved_state_unchanged(self) -> None:
+        repo = self._repo()
+        repo.update_tag_highlight({"action": "set", "tag": "LOL", "color": "#ffe58a"})
+        original = repo.get_tag_highlights()
+        for payload, error in (
+            ({"action": "set", "tag": "LOL", "color": "red"}, "invalid_color"),
+            ({"action": "set", "tag": " ", "color": "#ffffff"}, "invalid_tag"),
+            ({"action": "unknown"}, "invalid_action"),
+            (None, "invalid_action"),
+        ):
+            result = repo.update_tag_highlight(payload)
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["error"], error)
+            self.assertEqual(repo.get_tag_highlights(), original)
 
     def test_tag_manager_scopes_default_to_all_and_cannot_all_be_disabled(self) -> None:
         repo = self._repo()

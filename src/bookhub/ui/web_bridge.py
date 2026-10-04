@@ -98,6 +98,20 @@ def _web_strings() -> dict[str, str]:
         ("tags.sort.desc", "Z-A"),
         ("tags.loading", "Loading tags..."),
         ("tags.empty", "No tags in the selected resource types."),
+        ("tags.highlight.action", "Highlight"),
+        ("tags.highlight.active", "Highlighted"),
+        ("tags.highlight.presets", "Preset colors"),
+        ("tags.highlight.custom", "Custom colors"),
+        ("tags.highlight.create", "Create a color…"),
+        ("tags.highlight.remove", "Remove highlight"),
+        ("tags.highlight.delete_color", "Delete custom color"),
+        ("tags.highlight.preview", "Color being created"),
+        ("tags.highlight.save_failed", "Could not save the highlight. Please try again."),
+        ("tags.highlight.color_yellow", "Yellow"),
+        ("tags.highlight.color_green", "Green"),
+        ("tags.highlight.color_pink", "Pink"),
+        ("tags.highlight.color_blue", "Blue"),
+        ("tags.highlight.color_purple", "Purple"),
         ("tags.count", "{count} tags"),
         ("tags.scope.title", "Tag Manager Sources"),
         ("tags.scope.library", "Books"),
@@ -326,8 +340,14 @@ def _web_strings() -> dict[str, str]:
         ("collection_rules.error.storage_error", "The rule could not be saved. Try again."),
         ("collection_rules.error.invalid_field", "This field is not available for this collection type."),
         ("settings.collection_rules.scan_summary", "\nCollection Rules - status:{status} collections:{collections} matched:{matched} added:{added} removed:{removed} excluded:{excluded}"),
+        ("shortcut.section.search", "Search"),
         ("shortcut.section.navigation", "Navigation"),
         ("shortcut.section.resource", "Current selected resource"),
+        ("shortcut.action.focus_search", "Focus current-page search"),
+        ("shortcut.action.clear_search", "Clear current-page search"),
+        ("shortcut.action.go_library", "Go to Library"),
+        ("shortcut.action.go_text_novel", "Go to Text Novel"),
+        ("shortcut.action.go_comic", "Go to Comic"),
         ("shortcut.action.exit_collection", "Exit current series or tag"),
         ("shortcut.action.reopen_recent_collection", "Reopen recent series or tag"),
         ("shortcut.action.open_resource", "Open resource"),
@@ -910,6 +930,7 @@ class UiBridge(QObject):
             "recommendationItemsPerCategory": repo.get_recommendation_items_per_category(),
             "recommendationColumnsPerCategory": repo.get_recommendation_columns_per_category(),
             "tagManagerScopes": repo.get_tag_manager_scopes(),
+            "tagHighlights": repo.get_tag_highlights(),
             "shortcutBindings": repo.get_shortcut_bindings(),
             "comicPlaceholderCopy": repo.get_comic_placeholder_copy_enabled(),
             "autoGenerateComicThumbs": repo.get_auto_generate_comic_thumbnails_after_scan(),
@@ -1235,6 +1256,20 @@ class UiBridge(QObject):
     @Slot(str, result=str)
     def getTagCatalog(self, order: str) -> str:
         return json.dumps(self._repo.get_tag_catalog(order), ensure_ascii=False)
+
+    @Slot(str, result=str)
+    def updateTagHighlight(self, payload_json: str) -> str:
+        try:
+            payload = json.loads(payload_json)
+        except (TypeError, ValueError):
+            payload = None
+        try:
+            result = self._repo.update_tag_highlight(payload)
+        except sqlite3.Error:
+            result = {"ok": False, "error": "save_failed"}
+        if result.get("ok"):
+            self.push_settings()
+        return json.dumps(result, ensure_ascii=False)
 
     @Slot(str, result=str)
     def getTagResources(self, tag: str) -> str:

@@ -42,11 +42,15 @@ const State = {
   recentTag: null,
   recentCollections: { collections: null, novel_collections: null, comic_collections: null },
   shortcutCaptureAction: "",
+  searchRequestId: 0,
+  suggestionRequestId: 0,
   _scanRunning: false,
   _taskKind: "scan",
   collectionRules: { summaries: [], selectedId: 0, query: "", loading: false, loaded: false },
   archivePreset: { loaded: false, loading: false, enabled: false, draftEnabled: true, disableMode: "remove", preview: null, token: "", page: 1, origin: "settings" },
   contextMenuTrigger: null,
+  tagHighlightMenu: null,
+  tagHighlightSaving: false,
   modalReturnFocus: null,
 };
 
@@ -55,7 +59,12 @@ const COMIC_PAGES = new Set(["comic", "comic_collections"]);
 const SEARCH_PAGES = new Set(["library", "text_novel", "comic", "comic_collections"]);
 const RANDOM_RECOMMENDATIONS_PAGE = "random_recommendations";
 const TAG_MANAGER_PAGE = "tag_manager";
+const TAG_HIGHLIGHT_PRESETS = [
+  ["yellow", "#ffe58a"], ["green", "#bfeacf"], ["pink", "#f7c7d8"],
+  ["blue", "#c8e2fa"], ["purple", "#dacdf7"],
+];
 const SHORTCUT_MOUSE_TOKENS = new Set(["MouseBack", "MouseForward"]);
+const SEARCH_SHORTCUT_ACTIONS = new Set(["focus_search", "clear_search"]);
 const SHORTCUT_MODIFIERS = ["Ctrl", "Alt", "Shift", "Meta"];
 const SHORTCUT_SPECIAL_KEY_CODES = new Set([
   "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
@@ -471,6 +480,7 @@ function saveSearchQueryForPage(page, query) {
   if (!isSearchablePage(page)) return;
   State.searchQueries[page] = query;
   State.searchQuery = query;
+  State.searchRequestId += 1;
 }
 
 const SKIN_STYLESHEETS = {
@@ -590,6 +600,7 @@ async function handleSettingsChanged(json) {
   const previousItemCount = getRecommendationItemsPerCategory(previousSettings);
   const previousColumnCount = getRecommendationColumnsPerCategory(previousSettings);
   const previousTagScopes = JSON.stringify(previousSettings.tagManagerScopes || {});
+  const previousTagHighlights = JSON.stringify(previousSettings.tagHighlights || {});
   const previousWithoutSkin = Object.assign({}, previousSettings);
   const nextWithoutSkin = Object.assign({}, d);
   delete previousWithoutSkin.uiSkin;
@@ -610,6 +621,10 @@ async function handleSettingsChanged(json) {
   if (previousTagScopes !== JSON.stringify(d.tagManagerScopes || {})) {
     invalidateTagManager(true);
     if (State.currentPage === TAG_MANAGER_PAGE) loadCurrentTagPage();
+  }
+  if (previousTagHighlights !== JSON.stringify(d.tagHighlights || {})) {
+    refreshTagHighlightRows();
+    if (State.tagHighlightMenu) renderTagColorSwatches();
   }
   if (d.theme) applyThemeConfig(d.theme);
   if (skinChanged) {
@@ -703,6 +718,9 @@ function clearPageScroll(page) {
 function selectPage(page) {
   // Same-page nav click: avoid wiping/rebuilding hundreds of cards.
   if (page === State.currentPage && page !== "settings") return;
+  cancelPendingSearch();
+  closeSuggestions();
+  State.searchRequestId += 1;
   savePageScroll(State.currentPage);
   resetResourceSelectionScope();
   if (page !== "settings") State.shortcutCaptureAction = "";
@@ -1118,11 +1136,22 @@ function renderTagCatalog(area, data) {
     (group.items || []).forEach((item) => {
       const button = elem("button", "tag-link");
       button.type = "button";
-      button.setAttribute("aria-label", `${item.name} (${Number(item.resourceCount || 0)})`);
+      button.dataset.tagName = item.name || "";
+      button.dataset.tagCount = String(Number(item.resourceCount || 0));
       button.appendChild(elem("span", "tag-bullet", "•"));
       button.appendChild(elem("span", "tag-name", item.name || ""));
       button.appendChild(elem("span", "tag-resource-count", `(${Number(item.resourceCount || 0)})`));
+      updateTagHighlightRow(button);
       button.addEventListener("click", () => openTagFromCatalog(item.name));
+      button.addEventListener("contextmenu", (event) => openTagHighlightMenu(event, item.name, button));
+      button.addEventListener("keydown", (event) => {
+        if ((event.key === "F10" && event.shiftKey) || event.key === "ContextMenu") {
+          event.preventDefault();
+          event.stopPropagation();
+          const rect = button.getBoundingClientRect();
+          openTagHighlightMenu({ preventDefault() {}, clientX: rect.left + 24, clientY: rect.bottom }, item.name, button);
+        }
+      });
       grid.appendChild(button);
     });
     section.appendChild(grid);
@@ -1926,6 +1955,36 @@ function tagSourcePage(page) {
 }
 
 const SHORTCUT_ACTIONS = {
+  focus_search: {
+    labelKey: "shortcut.action.focus_search",
+    needsResource: false,
+    available: () => isSearchablePage(State.currentPage),
+    run: () => focusCurrentSearch(),
+  },
+  clear_search: {
+    labelKey: "shortcut.action.clear_search",
+    needsResource: false,
+    available: () => isSearchablePage(State.currentPage),
+    run: () => clearCurrentSearch(),
+  },
+  go_library: {
+    labelKey: "shortcut.action.go_library",
+    needsResource: false,
+    available: () => true,
+    run: () => selectPage("library"),
+  },
+  go_text_novel: {
+    labelKey: "shortcut.action.go_text_novel",
+    needsResource: false,
+    available: () => true,
+    run: () => selectPage("text_novel"),
+  },
+  go_comic: {
+    labelKey: "shortcut.action.go_comic",
+    needsResource: false,
+    available: () => true,
+    run: () => selectPage("comic"),
+  },
   exit_collection: {
     labelKey: "shortcut.action.exit_collection",
     needsResource: false,
@@ -2100,6 +2159,7 @@ function shortcutActionForInput(inputToken) {
 function dispatchShortcutInput(inputToken) {
   const actionId = shortcutActionForInput(inputToken);
   if (!actionId) return false;
+  if (SEARCH_SHORTCUT_ACTIONS.has(actionId) && !isSearchablePage(State.currentPage)) return true;
   const action = SHORTCUT_ACTIONS[actionId];
   const context = action.needsResource ? selectedResourceActionContext() : null;
   return executeAction(actionId, context);
@@ -2117,9 +2177,11 @@ function isEditableShortcutTarget(target) {
   return Boolean(target.closest && target.closest("[contenteditable='true']"));
 }
 
-function shortcutInteractionBlocked(event) {
+function shortcutInteractionBlocked(event, actionId = "") {
   const target = event && event.target ? event.target : document.activeElement;
-  return isEditableShortcutTarget(target)
+  const searchInput = $("searchInput");
+  const allowedSearchInput = event && target === searchInput && SEARCH_SHORTCUT_ACTIONS.has(actionId);
+  return (isEditableShortcutTarget(target) && !allowedSearchInput)
     || isVisibleOverlay("overlay")
     || isVisibleOverlay("textRulesOverlay");
 }
@@ -2201,7 +2263,9 @@ function handleShortcutKeydown(event) {
     if (shortcutInteractionBlocked(event)) return false;
     return dispatchShortcutInput(browserToken);
   }
-  if (shortcutInteractionBlocked(event)) return false;
+  const inputToken = shortcutTokenFromKeyboardEvent(event);
+  const actionId = shortcutActionForInput(inputToken);
+  if (shortcutInteractionBlocked(event, actionId)) return false;
   if (
     event.ctrlKey
     && !event.altKey
@@ -2217,8 +2281,7 @@ function handleShortcutKeydown(event) {
     renderResourceSelectionDetail();
     return true;
   }
-  const inputToken = shortcutTokenFromKeyboardEvent(event);
-  if (!inputToken || !shortcutActionForInput(inputToken)) return false;
+  if (!inputToken || !actionId) return false;
   event.preventDefault();
   event.stopPropagation();
   dispatchShortcutInput(inputToken);
@@ -2258,13 +2321,188 @@ function handleNativeShortcutInput(inputToken) {
 }
 
 /* ---------- context menu ---------- */
+function tagHighlightColor(tag) {
+  const byTag = State.settings.tagHighlights?.byTag;
+  const color = byTag && Object.prototype.hasOwnProperty.call(byTag, tag) ? byTag[tag] : "";
+  return typeof color === "string" && /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : "";
+}
+
+function tagHighlightConfig() {
+  const raw = State.settings.tagHighlights || {};
+  return {
+    byTag: Object.assign(Object.create(null), raw.byTag && typeof raw.byTag === "object" ? raw.byTag : {}),
+    customColors: Array.isArray(raw.customColors) ? [...raw.customColors] : [],
+  };
+}
+
+function updateTagHighlightRow(button) {
+  if (!button) return;
+  const color = tagHighlightColor(button.dataset.tagName);
+  const label = button.querySelector(".tag-name");
+  if (label) {
+    label.classList.toggle("tag-highlighted", !!color);
+    if (color) label.style.setProperty("--tag-highlight", color);
+    else label.style.removeProperty("--tag-highlight");
+  }
+  button.setAttribute("aria-label", `${button.dataset.tagName} (${button.dataset.tagCount})${color ? `, ${t("tags.highlight.active", "Highlighted")}` : ""}`);
+}
+
+function refreshTagHighlightRows(tag) {
+  document.querySelectorAll(".tag-link").forEach((button) => {
+    if (!tag || button.dataset.tagName === tag) updateTagHighlightRow(button);
+  });
+}
+
+function renderTagColorSwatches() {
+  const state = State.tagHighlightMenu;
+  if (!state) return;
+  const config = tagHighlightConfig();
+  const addSwatch = (host, color, name, custom, draft) => {
+    const wrap = custom ? elem("span", "tag-custom-item") : null;
+    const swatch = elem("button", "tag-color-swatch");
+    swatch.type = "button";
+    swatch.setAttribute("role", "menuitem");
+    swatch.setAttribute("aria-label", name);
+    swatch.title = `${name} ${color}`;
+    swatch.dataset.color = color;
+    swatch.style.setProperty("--swatch-color", color);
+    swatch.addEventListener("click", () => saveTagHighlight({ action: "set", tag: state.tag, color }, false));
+    (wrap || host).appendChild(swatch);
+    if (custom && !draft) {
+      const remove = elem("button", "tag-color-delete", "×");
+      remove.type = "button";
+      remove.setAttribute("role", "menuitem");
+      remove.setAttribute("aria-label", `${t("tags.highlight.delete_color", "Delete custom color")} ${color}`);
+      remove.title = t("tags.highlight.delete_color", "Delete custom color");
+      remove.addEventListener("click", () => {
+        saveTagHighlight({ action: "delete_color", color }, true);
+        state.createButton.focus({ preventScroll: true });
+      });
+      wrap.appendChild(remove);
+    }
+    if (wrap) host.appendChild(wrap);
+  };
+  clear(state.presetGrid);
+  clear(state.customGrid);
+  TAG_HIGHLIGHT_PRESETS.forEach(([name, color]) => {
+    addSwatch(state.presetGrid, color, t(`tags.highlight.color_${name}`, name), false, false);
+  });
+  config.customColors.forEach((color, index) => {
+    addSwatch(state.customGrid, color, `${t("tags.highlight.custom", "Custom colors")} ${index + 1} ${color}`, true, false);
+  });
+  if (state.draftColor && !config.customColors.includes(state.draftColor)
+      && !TAG_HIGHLIGHT_PRESETS.some(([, color]) => color === state.draftColor)) {
+    addSwatch(state.customGrid, state.draftColor, t("tags.highlight.preview", "Color being created"), true, true);
+  }
+  state.removeButton.classList.toggle("hidden", !tagHighlightColor(state.tag));
+  state.menu.querySelectorAll("button").forEach((button) => { button.disabled = State.tagHighlightSaving; });
+}
+
+function saveTagHighlight(payload, keepMenuOpen) {
+  if (State.tagHighlightSaving || !State.bridge?.updateTagHighlight) return;
+  const previous = tagHighlightConfig();
+  const next = tagHighlightConfig();
+  const { action, tag, color } = payload;
+  if (action === "set" || action === "create_color") next.byTag[tag] = color;
+  if (action === "clear") delete next.byTag[tag];
+  if (action === "create_color" && !next.customColors.includes(color)
+      && !TAG_HIGHLIGHT_PRESETS.some(([, preset]) => preset === color)) next.customColors.push(color);
+  if (action === "delete_color") next.customColors = next.customColors.filter((item) => item !== color);
+  State.settings.tagHighlights = next;
+  refreshTagHighlightRows(tag);
+  State.tagHighlightSaving = true;
+  if (keepMenuOpen) renderTagColorSwatches();
+  else hideContextMenu(true);
+  State.bridge.updateTagHighlight(JSON.stringify(payload), (json) => {
+    const result = safeParse(json);
+    State.tagHighlightSaving = false;
+    State.settings.tagHighlights = result?.ok && result.config ? result.config : previous;
+    refreshTagHighlightRows(tag);
+    if (State.tagHighlightMenu) {
+      renderTagColorSwatches();
+      positionContextMenu(State.tagHighlightMenu.anchor);
+    }
+    if (!result?.ok) showToast(
+      t("tags.highlight.action", "Highlight"),
+      t("tags.highlight.save_failed", "Could not save the highlight. Please try again."),
+      "warning"
+    );
+  });
+}
+
+function openTagHighlightMenu(event, tag, trigger) {
+  event.preventDefault();
+  hideContextMenu(false);
+  const menu = $("contextMenu");
+  clear(menu);
+  menu.classList.add("tag-highlight-menu");
+  menu.setAttribute("role", "menu");
+  State.contextMenuTrigger = trigger;
+  const state = {
+    tag, menu, trigger, anchor: { clientX: event.clientX, clientY: event.clientY },
+    draftColor: null, presetGrid: null, customGrid: null, removeButton: null, createButton: null,
+  };
+  State.tagHighlightMenu = state;
+  const highlight = elem("button", null, t("tags.highlight.action", "Highlight"));
+  highlight.type = "button";
+  highlight.setAttribute("role", "menuitem");
+  highlight.setAttribute("aria-expanded", "false");
+  const palette = elem("div", "tag-highlight-palette hidden");
+  palette.appendChild(elem("span", "tag-palette-label", t("tags.highlight.presets", "Preset colors")));
+  state.presetGrid = elem("div", "tag-color-grid");
+  palette.appendChild(state.presetGrid);
+  palette.appendChild(elem("span", "tag-palette-label", t("tags.highlight.custom", "Custom colors")));
+  state.customGrid = elem("div", "tag-color-grid tag-custom-colors");
+  palette.appendChild(state.customGrid);
+  state.createButton = elem("button", null, t("tags.highlight.create", "Create a color…"));
+  state.createButton.type = "button";
+  state.createButton.setAttribute("role", "menuitem");
+  const colorInput = elem("input", "tag-color-input");
+  colorInput.type = "color";
+  colorInput.tabIndex = -1;
+  colorInput.setAttribute("aria-label", t("tags.highlight.create", "Create a color…"));
+  state.createButton.addEventListener("click", () => {
+    state.draftColor = null;
+    renderTagColorSwatches();
+    colorInput.click();
+  });
+  colorInput.addEventListener("input", () => {
+    state.draftColor = colorInput.value.toLowerCase();
+    renderTagColorSwatches();
+    positionContextMenu(state.anchor);
+  });
+  colorInput.addEventListener("change", () => {
+    const color = colorInput.value.toLowerCase();
+    state.draftColor = null;
+    saveTagHighlight({ action: "create_color", tag, color }, true);
+    const selected = [...state.customGrid.querySelectorAll(".tag-color-swatch")]
+      .find((button) => button.dataset.color === color);
+    (selected || state.createButton).focus({ preventScroll: true });
+    positionContextMenu(state.anchor);
+  });
+  palette.append(state.createButton, colorInput);
+  highlight.addEventListener("click", () => {
+    const expanded = !palette.classList.toggle("hidden");
+    highlight.setAttribute("aria-expanded", String(expanded));
+    positionContextMenu(state.anchor);
+    if (expanded) state.presetGrid.querySelector("button")?.focus({ preventScroll: true });
+  });
+  state.removeButton = elem("button", null, t("tags.highlight.remove", "Remove highlight"));
+  state.removeButton.type = "button";
+  state.removeButton.setAttribute("role", "menuitem");
+  state.removeButton.addEventListener("click", () => saveTagHighlight({ action: "clear", tag }, false));
+  menu.append(highlight, palette, state.removeButton);
+  renderTagColorSwatches();
+  positionContextMenu(state.anchor);
+  highlight.focus();
+}
+
 function positionContextMenu(event) {
   const menu = $("contextMenu");
   menu.classList.remove("hidden");
   const mw = menu.offsetWidth, mh = menu.offsetHeight;
-  let x = event.clientX, y = event.clientY;
-  if (x + mw > window.innerWidth) x = window.innerWidth - mw - 8;
-  if (y + mh > window.innerHeight) y = window.innerHeight - mh - 8;
+  let x = Math.max(8, Math.min(event.clientX, window.innerWidth - mw - 8));
+  let y = Math.max(8, Math.min(event.clientY, window.innerHeight - mh - 8));
   menu.style.left = x + "px";
   menu.style.top = y + "px";
 }
@@ -2383,6 +2621,8 @@ function hideContextMenu(restoreFocus) {
   const menu = $("contextMenu");
   const wasOpen = !menu.classList.contains("hidden");
   menu.classList.add("hidden");
+  menu.classList.remove("tag-highlight-menu");
+  State.tagHighlightMenu = null;
   if (restoreFocus && wasOpen && State.contextMenuTrigger && State.contextMenuTrigger.isConnected) {
     State.contextMenuTrigger.focus();
   }
@@ -2390,7 +2630,8 @@ function hideContextMenu(restoreFocus) {
 }
 const contextMenuNode = $("contextMenu");
 if (contextMenuNode && typeof contextMenuNode.addEventListener === "function") contextMenuNode.addEventListener("keydown", (event) => {
-  const items = [...$("contextMenu").querySelectorAll('button[role="menuitem"]:not(:disabled)')];
+  const items = [...$("contextMenu").querySelectorAll('button[role="menuitem"]:not(:disabled)')]
+    .filter((item) => !item.getClientRects || item.getClientRects().length);
   if (!items.length) return;
   const index = Math.max(0, items.indexOf(document.activeElement));
   if (event.key === "Escape") { event.preventDefault(); hideContextMenu(true); return; }
@@ -2401,12 +2642,17 @@ if (contextMenuNode && typeof contextMenuNode.addEventListener === "function") c
     items[next].focus();
   }
 });
-document.addEventListener("click", (e) => { if (!$("contextMenu").contains(e.target)) hideContextMenu(); });
-document.addEventListener("scroll", hideContextMenu, true);
+document.addEventListener("click", (e) => {
+  const menu = $("contextMenu");
+  if (!menu.contains(e.target) && !(e.composedPath?.() || []).includes(menu)) hideContextMenu();
+});
+document.addEventListener("scroll", (event) => {
+  if (!$("contextMenu").contains(event.target)) hideContextMenu();
+}, true);
 // Block Chromium default menu globally; card handlers still call preventDefault + custom menu.
 document.addEventListener("contextmenu", (e) => {
   if ($("contextMenu").contains(e.target)) return;
-  if (e.target.closest && e.target.closest(".book-card, .table tbody tr, .context-menu")) return;
+  if (e.target.closest && e.target.closest(".book-card, .table tbody tr, .context-menu, .tag-link")) return;
   e.preventDefault();
   hideContextMenu();
 }, true);
@@ -4005,7 +4251,14 @@ function renderSettingsShortcuts(panel) {
     "Choose a binding field, then press a key combination or a mouse side button. Press Escape to cancel."
   )));
   panel.appendChild(intro);
+  panel.appendChild(buildShortcutGroup("shortcut.section.search", [
+    "focus_search",
+    "clear_search",
+  ]));
   panel.appendChild(buildShortcutGroup("shortcut.section.navigation", [
+    "go_library",
+    "go_text_novel",
+    "go_comic",
     "reopen_recent_collection",
     "exit_collection",
   ]));
@@ -4755,14 +5008,42 @@ function startThemeEngine() {
 }
 
 /* ---------- top bar interactions ---------- */
+let searchDebounce = null;
+
+function cancelPendingSearch() {
+  if (searchDebounce) clearTimeout(searchDebounce);
+  searchDebounce = null;
+}
+
+function focusCurrentSearch() {
+  const input = $("searchInput");
+  if (!isSearchablePage(State.currentPage) || !input || input.disabled) return false;
+  input.focus();
+  input.select();
+  return true;
+}
+
+function clearCurrentSearch() {
+  const input = $("searchInput");
+  if (!isSearchablePage(State.currentPage) || !input || input.disabled) return false;
+  cancelPendingSearch();
+  input.value = "";
+  saveSearchQueryForPage(State.currentPage, "");
+  closeSuggestions();
+  commitSearch();
+  return true;
+}
+
 function initTopbar() {
   const input = $("searchInput");
-  let debounce = null;
   input.addEventListener("input", () => {
     if (State.currentPage === "settings") return;
     saveSearchQueryForPage(State.currentPage, input.value);
-    if (debounce) clearTimeout(debounce);
-    debounce = setTimeout(commitSearch, 160);
+    cancelPendingSearch();
+    searchDebounce = setTimeout(() => {
+      searchDebounce = null;
+      commitSearch();
+    }, 160);
     updateSuggestions();
   });
   input.addEventListener("focus", updateSuggestions);
@@ -4793,7 +5074,11 @@ function searchContext() {
 function commitSearch() {
   const ctx = searchContext();
   if (!isSearchablePage(State.currentPage)) return;
-  State.bridge.search(ctx, State.searchQuery, (json) => {
+  const query = State.searchQueries[ctx] || "";
+  const requestId = ++State.searchRequestId;
+  State.bridge.search(ctx, query, (json) => {
+    if (requestId !== State.searchRequestId || State.currentPage !== ctx
+        || (State.searchQueries[ctx] || "") !== query) return;
     const data = safeParse(json);
     if (!data) return;
     resetResourceSelectionScope();
@@ -4807,7 +5092,11 @@ function updateSuggestions() {
   const query = $("searchInput").value;
   if (State.currentPage === "settings" || (COLLECTION_PAGES.has(State.currentPage) && !isComicCollectionDetail())) { closeSuggestions(); return; }
   if (!isSearchablePage(State.currentPage)) { closeSuggestions(); return; }
+  const page = State.currentPage;
+  const requestId = ++State.suggestionRequestId;
   State.bridge.getSuggestions(searchContext(), query, (json) => {
+    if (requestId !== State.suggestionRequestId || State.currentPage !== page
+        || $("searchInput").value !== query) return;
     const items = safeParse(json) || [];
     const box = $("suggestions");
     clear(box);
@@ -4828,7 +5117,10 @@ function updateSuggestions() {
   });
 }
 
-function closeSuggestions() { $("suggestions").classList.remove("open"); }
+function closeSuggestions() {
+  State.suggestionRequestId += 1;
+  $("suggestions").classList.remove("open");
+}
 
 /* ---------- boot ---------- */
 document.addEventListener("pointerdown", handleShortcutSideButton, true);

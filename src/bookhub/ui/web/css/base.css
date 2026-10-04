@@ -48,8 +48,27 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 6px;
   border-radius: 6px; text-align: left;
 }
-.tag-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag-name { min-width: 0; max-width: 100%; justify-self: start; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag-name.tag-highlighted {
+  margin-left: -6px; padding: 3px 6px; border-radius: 7px;
+  background: color-mix(in srgb, var(--tag-highlight) 38%, var(--bg-0));
+}
 .tag-bullet { color: var(--muted); }
+.context-menu.tag-highlight-menu { width: 250px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow-y: auto; }
+.tag-highlight-palette { padding: 8px 4px 3px; border-top: 1px solid var(--line); }
+.tag-palette-label { display: block; margin: 0 5px 8px; color: var(--muted); font-size: 11px; }
+.tag-color-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; margin-bottom: 7px; }
+.tag-custom-colors { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.tag-custom-colors:empty { display: none; }
+.tag-custom-item { display: flex; align-items: center; justify-content: center; gap: 2px; min-width: 0; }
+.context-menu .tag-color-swatch {
+  display: block; width: 33px; height: 33px; min-height: 0; justify-self: center; padding: 0;
+  border: 2px solid var(--control-bg); border-radius: 50%; background: var(--swatch-color);
+  box-shadow: 0 0 0 1px var(--line-dark);
+}
+.context-menu .tag-color-swatch:hover, .context-menu .tag-color-swatch:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.context-menu .tag-color-delete { width: 20px; min-height: 22px; padding: 0; text-align: center; font-size: 16px; }
+.tag-color-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .tag-card-meta { min-width: 0; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .tag-card-meta .card-title { min-width: 0; flex: 1; }
 .tag-source-badge {

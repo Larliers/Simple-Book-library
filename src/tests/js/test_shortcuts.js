@@ -43,6 +43,7 @@ class FakeNode {
   querySelector() { return null; }
   contains(target) { return target === this || this.children.some((child) => child.contains(target)); }
   focus() { document.activeElement = this; }
+  select() { this.selectionStart = 0; this.selectionEnd = this.value.length; }
 }
 
 const nodes = {
@@ -376,6 +377,81 @@ assert.strictEqual(handleShortcutSideButton({
   stopPropagation() {},
 }), true);
 assert.deepStrictEqual(savedBindings.at(-1), ["open_folder", "MouseBack"]);
+
+nodes.searchInput = new FakeNode("input");
+nodes.suggestions = new FakeNode();
+nodes.suggestions.classList.add("open");
+State.settings.shortcutBindings = {
+  focus_search: "Ctrl+KeyF",
+  clear_search: "Ctrl+Shift+KeyF",
+  go_library: "Alt+Digit1",
+  go_text_novel: "Alt+Digit2",
+  go_comic: "Alt+Digit3",
+};
+State.currentPage = "library";
+State.searchQueries.library = "older";
+State.searchQuery = "older";
+nodes.searchInput.value = "older";
+nodes.searchInput.disabled = false;
+let searchCalls = [];
+State.bridge.search = (page, query, callback) => searchCalls.push({ page, query, callback });
+let suggestionCalls = [];
+State.bridge.getSuggestions = (page, query, callback) => suggestionCalls.push({ page, query, callback });
+resetResourceSelectionScope = () => {};
+const focusKey = (target = new FakeNode()) => keyEvent(target, { code: "KeyF", ctrlKey: true });
+const clearKey = (target = new FakeNode()) => keyEvent(target, { code: "KeyF", ctrlKey: true, shiftKey: true });
+assert.strictEqual(handleShortcutKeydown(focusKey()), true);
+assert.strictEqual(document.activeElement, nodes.searchInput);
+assert.deepStrictEqual([nodes.searchInput.selectionStart, nodes.searchInput.selectionEnd], [0, 5]);
+assert.strictEqual(handleShortcutKeydown(focusKey(nodes.searchInput)), true);
+assert.strictEqual(handleShortcutKeydown(focusKey(new FakeNode("textarea"))), false);
+
+updateSuggestions();
+assert.strictEqual(suggestionCalls[0].query, "older");
+commitSearch();
+assert.deepStrictEqual(searchCalls[0].page, "library");
+assert.deepStrictEqual(searchCalls[0].query, "older");
+let cancelledTimer = null;
+clearTimeout = (id) => { cancelledTimer = id; };
+searchDebounce = 73;
+assert.strictEqual(handleShortcutKeydown(clearKey(nodes.searchInput)), true);
+assert.strictEqual(cancelledTimer, 73);
+assert.strictEqual(searchDebounce, null);
+assert.strictEqual(State.searchQueries.library, "");
+assert.strictEqual(nodes.searchInput.value, "");
+assert.strictEqual(nodes.suggestions.classList.contains("open"), false);
+suggestionCalls[0].callback(JSON.stringify([{ group: "Title", label: "Older", query_value: "older" }]));
+assert.strictEqual(nodes.suggestions.classList.contains("open"), false);
+assert.strictEqual(searchCalls[1].query, "");
+searchCalls[0].callback(JSON.stringify({ mode: "stale", items: [] }));
+assert.notStrictEqual(State.pages.library.mode, "stale");
+searchCalls[1].callback(JSON.stringify({ mode: "cleared", items: [] }));
+assert.strictEqual(State.pages.library.mode, "cleared");
+
+const noticesBefore = calls.notices.length;
+for (const page of ["settings", TAG_MANAGER_PAGE, RANDOM_RECOMMENDATIONS_PAGE]) {
+  State.currentPage = page;
+  nodes.searchInput.disabled = true;
+  const callsBefore = searchCalls.length;
+  assert.strictEqual(handleShortcutKeydown(focusKey()), true);
+  assert.strictEqual(handleShortcutKeydown(clearKey()), true);
+  assert.strictEqual(searchCalls.length, callsBefore);
+  assert.strictEqual(calls.notices.length, noticesBefore);
+}
+State.currentPage = "library";
+nodes.searchInput.disabled = false;
+nodes.overlay.classList.remove("hidden");
+assert.strictEqual(handleShortcutKeydown(focusKey(nodes.searchInput)), false);
+nodes.overlay.classList.add("hidden");
+nodes.textRulesOverlay = new FakeNode();
+assert.strictEqual(handleShortcutKeydown(clearKey(nodes.searchInput)), false);
+nodes.textRulesOverlay.classList.add("hidden");
+
+for (const [digit, page] of [["Digit1", "library"], ["Digit2", "text_novel"], ["Digit3", "comic"]]) {
+  assert.strictEqual(handleShortcutKeydown(keyEvent(new FakeNode(), { code: digit, altKey: true })), true);
+  assert.strictEqual(State.currentPage, page);
+}
+assert.deepStrictEqual(collectionCalls.pages.slice(-3), ["library", "text_novel", "comic"]);
 `;
 
 vm.runInContext(fs.readFileSync(appPath, "utf8") + "\n" + assertions, context, { filename: appPath });

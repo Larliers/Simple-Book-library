@@ -26,7 +26,7 @@ class FakeNode {
     this.parentElement = null;
     this.listeners = {};
     this.classList = new FakeClassList();
-    this.style = {};
+    this.style = { setProperty(name, value) { this[name] = value; }, removeProperty(name) { delete this[name]; } };
     this.dataset = {};
     this.attributes = {};
     this.textContent = "";
@@ -36,6 +36,8 @@ class FakeNode {
     this.clientHeight = 600;
     this.scrollTop = 0;
   }
+  set className(value) { this.classList.values = new Set(String(value).split(/\s+/).filter(Boolean)); }
+  get className() { return [...this.classList.values].join(" "); }
   get firstChild() { return this.children[0] || null; }
   appendChild(child) { child.parentElement = this; this.children.push(child); return child; }
   removeChild(child) { this.children.splice(this.children.indexOf(child), 1); child.parentElement = null; }
@@ -45,11 +47,12 @@ class FakeNode {
   dispatch(name, event = {}) {
     if (this.listeners[name]) this.listeners[name](Object.assign({ preventDefault() {} }, event));
   }
-    querySelectorAll(selector) {
+  querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
+  querySelectorAll(selector) {
     const result = [];
     const visit = (node) => {
       if (!node || !Array.isArray(node.children)) return;
-      if (selector === ".selected" && node.classList && node.classList.contains("selected")) result.push(node);
+      if (selector.startsWith(".") && node.classList?.contains(selector.slice(1))) result.push(node);
       node.children.forEach(visit);
     };
     this.children.forEach(visit);

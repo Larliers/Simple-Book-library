@@ -6,7 +6,7 @@
   <link rel="icon" href="data:,">
   <meta name="prototype-status" content="collection-rules-approved; author-archive-implemented-2026-09-26">
   <!-- 独立演示数据；正式功能已接入 src，真实书库以应用内预览和事务保存为准。 -->
-  <title>自动归档与集合规则交互原型 · Simple Book Library</title>
+  <title>集合规则与标签高亮交互原型 · Simple Book Library</title>
   <style>
     :root {
       color-scheme: light;
@@ -235,6 +235,26 @@
     .collection-open strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .collection-open span { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
     .collection-hint { margin: 18px 0 0; color: var(--muted); font-size: 12px; }
+    .tag-catalog { display: grid; gap: 18px; min-width: 0; }
+    .tag-group { min-width: 0; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+    .tag-group:last-child { border-bottom: 0; padding-bottom: 0; }
+    .tag-group-title { display: flex; align-items: baseline; gap: 7px; margin: 0 0 10px; font-size: 18px; }
+    .tag-group-count, .tag-resource-count { color: var(--muted); font-size: 12px; font-weight: 600; }
+    .tag-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 16px; min-width: 0; }
+    .tag-link {
+      min-width: 0; width: 100%; min-height: 34px; padding: 4px 6px; border: 0; border-radius: 6px;
+      display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 6px;
+      background: transparent; text-align: left; color: var(--text);
+    }
+    .tag-link:hover { background: var(--surface); }
+    .tag-bullet { color: var(--muted); }
+    .tag-name { min-width: 0; max-width: 100%; justify-self: start; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tag-name.highlighted {
+      margin-left: -6px; padding: 3px 6px; border-radius: 7px;
+      background: color-mix(in srgb, var(--tag-highlight) 38%, var(--surface-strong));
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tag-highlight) 55%, transparent);
+    }
+    .tag-help { margin: 18px 0 0; color: var(--muted); font-size: 12px; }
     .archive-panel { padding: 24px; }
     .archive-panel h2 { margin: 0; font-size: 22px; }
     .archive-panel p { color: var(--muted); line-height: 1.65; }
@@ -378,6 +398,19 @@
     .context-menu button:hover { background: var(--accent-soft); }
     .context-menu button.danger { color: var(--danger); }
     .context-menu hr { border: 0; border-top: 1px solid var(--line); margin: 5px 0; }
+    .tag-context-menu { width: 236px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow-y: auto; }
+    .tag-highlight-palette { padding: 8px 4px 3px; border-top: 1px solid var(--line); }
+    .tag-palette-label { display: block; margin: 0 5px 8px; color: var(--muted); font-size: 11px; }
+    .tag-color-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin-bottom: 7px; }
+    .context-menu button.tag-color-swatch {
+      width: 33px; height: 33px; min-height: 0; justify-self: center; padding: 0;
+      border: 2px solid var(--surface-strong); border-radius: 50%; background: var(--swatch-color);
+      box-shadow: 0 0 0 1px var(--line-strong);
+    }
+    .context-menu button.tag-color-swatch:hover,
+    .context-menu button.tag-color-swatch:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+    .tag-custom-colors:empty { display: none; }
+    .tag-color-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 
     .modal-layer {
       position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 18px;
@@ -497,6 +530,7 @@
     .preview-stage[data-viewport="600"] .archive-head, .preview-stage[data-viewport="600"] .archive-actions, .preview-stage[data-viewport="600"] .archive-preview-head { flex-direction: column; }
     .preview-stage[data-viewport="600"] .archive-summary { grid-template-columns: repeat(2, minmax(0,1fr)); }
     .preview-stage[data-viewport="600"] .collection-toolbar { align-items: flex-start; flex-direction: column; }
+    .preview-stage[data-viewport="600"] .tag-list { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
 
     @media (max-width: 760px) {
       .prototype-toolbar { align-items: flex-start; }
@@ -527,7 +561,7 @@
 <body data-skin="glass" data-preview-viewport="desktop">
   <header class="prototype-toolbar" aria-label="原型检查工具栏">
     <div class="prototype-label">
-      <strong>自动归档 · 交互原型</strong>
+       <strong>集合规则与标签高亮 · 交互原型</strong>
       <span>仅使用虚构数据，刷新页面即可重置</span>
     </div>
     <div class="prototype-controls">
@@ -553,8 +587,9 @@
           </div>
           <nav class="nav-stack" aria-label="主导航">
             <button type="button" class="nav-button" data-nav="library"><span class="nav-icon">▤</span><span class="nav-label">总书库</span></button>
-            <button type="button" class="nav-button active" data-nav="collections"><span class="nav-icon">▦</span><span class="nav-label">集合</span></button>
-            <button type="button" class="nav-button" data-nav="novels"><span class="nav-icon">T</span><span class="nav-label">文本小说</span></button>
+             <button type="button" class="nav-button active" data-nav="collections"><span class="nav-icon">▦</span><span class="nav-label">集合</span></button>
+             <button type="button" class="nav-button" data-nav="tags" aria-label="标签管理"><span class="nav-icon">#</span><span class="nav-label">标签管理</span></button>
+             <button type="button" class="nav-button" data-nav="novels"><span class="nav-icon">T</span><span class="nav-label">文本小说</span></button>
             <button type="button" class="nav-button" data-nav="comics"><span class="nav-icon">▧</span><span class="nav-label">漫画</span></button>
             <button type="button" class="nav-button" data-nav="settings"><span class="nav-icon">⚙</span><span class="nav-label">设置</span></button>
           </nav>
@@ -582,6 +617,15 @@
             </div>
             <div class="collection-grid" id="collectionGrid"></div>
             <p class="collection-hint">提示：鼠标右键或键盘 Shift + F10 可打开合集菜单。</p>
+          </section>
+
+          <section class="page" data-page="tags" id="tagsPage">
+            <header class="page-header">
+              <div class="page-heading"><h1>标签管理</h1><p>给常访问的标签加上文字卡片高亮，快速找到想看的书。</p></div>
+              <div class="header-badge">虚构演示数据</div>
+            </header>
+            <div class="tag-catalog" id="tagCatalog"></div>
+            <p class="tag-help">提示：右键标签或按 Shift + F10 选择高亮颜色；普通点击模拟打开标签。</p>
           </section>
 
           <section class="page" data-page="settings" id="settingsPage">
@@ -628,6 +672,19 @@
     <hr>
     <button type="button" role="menuitem" data-menu-action="rename">重命名</button>
     <button type="button" role="menuitem" class="danger" data-menu-action="delete">删除</button>
+  </div>
+
+  <div class="context-menu tag-context-menu hidden" id="tagContextMenu" role="menu" aria-label="标签菜单">
+    <button type="button" role="menuitem" id="tagHighlightAction" aria-expanded="false" aria-controls="tagHighlightPalette">进行高亮</button>
+    <div class="tag-highlight-palette hidden" id="tagHighlightPalette">
+      <span class="tag-palette-label">预设颜色</span>
+      <div class="tag-color-grid" id="tagPresetColors"></div>
+      <span class="tag-palette-label">自定义颜色</span>
+      <div class="tag-color-grid tag-custom-colors" id="tagCustomColors"></div>
+      <button type="button" role="menuitem" id="tagCreateColor">＋ 创建喜欢的颜色…</button>
+      <input class="tag-color-input" type="color" id="tagColorInput" tabindex="-1" aria-label="选择自定义高亮颜色">
+    </div>
+    <button type="button" role="menuitem" id="tagRemoveHighlight" class="hidden">取消高亮</button>
   </div>
 
   <div class="modal-layer" id="ruleModal" aria-hidden="true">
@@ -728,6 +785,20 @@
         { id: "c-4", kind: "comic", name: "[试阅]-机械纪元.cbz" },
         { id: "c-5", kind: "comic", name: "科幻短篇-月面来客.cbz" },
       ];
+      const DEMO_TAG_GROUPS = [
+        { letter: "A", items: [{ name: "Art", count: 8 }, { name: "Architecture", count: 3 }] },
+        { letter: "K", items: [{ name: "科幻", count: 14 }] },
+        { letter: "L", items: [{ name: "LOL", count: 1 }, { name: "Literature", count: 6 }, { name: "Long Name For a Favorite Genre That Keeps Growing", count: 2 }] },
+        { letter: "P", items: [{ name: "Python", count: 7 }, { name: "Photography", count: 4 }] },
+        { letter: "S", items: [{ name: "设计", count: 11 }, { name: "随笔", count: 5 }] },
+      ];
+      const TAG_PRESET_COLORS = [
+        { name: "黄色", color: "#ffe58a" },
+        { name: "绿色", color: "#bfeacf" },
+        { name: "粉色", color: "#f7c7d8" },
+        { name: "蓝色", color: "#c8e2fa" },
+        { name: "紫色", color: "#dacdf7" },
+      ];
       const DEMO_COLLECTIONS = [
         {
           id: "book-art", kind: "book", name: "人体绘画", enabled: true, matchMode: "any",
@@ -799,6 +870,12 @@
       let authorPreview = null;
       let authorSimulationCount = 0;
       let archiveOrigin = "settings";
+      const tagHighlights = new Map();
+      const customTagColors = [];
+      let tagDraftColor = null;
+      let tagContextName = null;
+      let tagContextTrigger = null;
+      let tagContextAnchor = null;
 
       const $ = (id) => document.getElementById(id);
       const qsa = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -1088,12 +1165,141 @@
       }
 
       function showPage(page) {
+        closeTagContextMenu(false);
         qsa(".page").forEach((node) => node.classList.toggle("active", node.dataset.page === page));
         qsa("[data-nav]").forEach((node) => node.classList.toggle("active", node.dataset.nav === page));
         if (page === "settings") {
           showSettingsSection("collection-rules");
           renderSettingsManager();
         }
+      }
+
+      function renderTagCatalog() {
+        const catalog = $("tagCatalog");
+        catalog.textContent = "";
+        DEMO_TAG_GROUPS.forEach((group) => {
+          const section = document.createElement("section");
+          section.className = "tag-group";
+          const heading = document.createElement("h2");
+          heading.className = "tag-group-title";
+          heading.appendChild(document.createTextNode(group.letter));
+          const groupCount = document.createElement("span");
+          groupCount.className = "tag-group-count";
+          groupCount.textContent = `(${group.items.length})`;
+          heading.appendChild(groupCount);
+          section.appendChild(heading);
+          const list = document.createElement("div");
+          list.className = "tag-list";
+          group.items.forEach((item) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "tag-link";
+            button.dataset.tagName = item.name;
+            button.setAttribute("aria-label", `${item.name} (${item.count})${tagHighlights.has(item.name) ? "，已高亮" : ""}`);
+            button.title = item.name;
+            const bullet = document.createElement("span");
+            bullet.className = "tag-bullet";
+            bullet.textContent = "•";
+            const name = document.createElement("span");
+            name.className = "tag-name";
+            name.textContent = item.name;
+            if (tagHighlights.has(item.name)) {
+              name.classList.add("highlighted");
+              name.style.setProperty("--tag-highlight", tagHighlights.get(item.name));
+            }
+            const count = document.createElement("span");
+            count.className = "tag-resource-count";
+            count.textContent = `(${item.count})`;
+            button.append(bullet, name, count);
+            button.addEventListener("click", () => toast("打开标签", `原型模拟打开“${item.name}”`));
+            button.addEventListener("contextmenu", (event) => openTagContextMenu(event, item.name, button));
+            button.addEventListener("keydown", (event) => {
+              if ((event.key === "F10" && event.shiftKey) || event.key === "ContextMenu") {
+                event.preventDefault();
+                const rect = button.getBoundingClientRect();
+                openTagContextMenu({ preventDefault() {}, clientX: rect.left + 24, clientY: rect.bottom }, item.name, button);
+              }
+            });
+            list.appendChild(button);
+          });
+          section.appendChild(list);
+          catalog.appendChild(section);
+        });
+      }
+
+      function positionTagContextMenu() {
+        const menu = $("tagContextMenu");
+        const anchor = tagContextAnchor || { x: 8, y: 8 };
+        menu.style.left = `${Math.max(8, Math.min(anchor.x, window.innerWidth - menu.offsetWidth - 8))}px`;
+        menu.style.top = `${Math.max(8, Math.min(anchor.y, window.innerHeight - menu.offsetHeight - 8))}px`;
+      }
+
+      function renderTagColorSwatches() {
+        const fill = (host, colors) => {
+          host.textContent = "";
+          colors.forEach(({ name, color }) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "tag-color-swatch";
+            button.setAttribute("role", "menuitem");
+            button.setAttribute("aria-label", `${name}高亮`);
+            button.title = `${name} ${color}`;
+            button.dataset.color = color;
+            button.style.setProperty("--swatch-color", color);
+            button.addEventListener("click", () => applyTagHighlight(color));
+            host.appendChild(button);
+          });
+        };
+        fill($("tagPresetColors"), TAG_PRESET_COLORS);
+        const custom = customTagColors.map((color, index) => ({ name: `自定义颜色 ${index + 1}`, color }));
+        if (tagDraftColor && !customTagColors.includes(tagDraftColor) && !TAG_PRESET_COLORS.some((preset) => preset.color === tagDraftColor)) {
+          custom.push({ name: "正在创建的颜色", color: tagDraftColor });
+        }
+        fill($("tagCustomColors"), custom);
+      }
+
+      function openTagContextMenu(event, name, trigger) {
+        event.preventDefault();
+        closeContextMenu(false);
+        tagContextName = name;
+        tagContextTrigger = trigger;
+        tagContextAnchor = { x: event.clientX, y: event.clientY };
+        tagDraftColor = null;
+        $("tagHighlightPalette").classList.add("hidden");
+        $("tagHighlightAction").setAttribute("aria-expanded", "false");
+        $("tagRemoveHighlight").classList.toggle("hidden", !tagHighlights.has(name));
+        renderTagColorSwatches();
+        $("tagContextMenu").classList.remove("hidden");
+        positionTagContextMenu();
+        $("tagHighlightAction").focus();
+      }
+
+      function closeTagContextMenu(restoreFocus = true) {
+        $("tagContextMenu").classList.add("hidden");
+        tagDraftColor = null;
+        tagContextName = null;
+        tagContextAnchor = null;
+        if (restoreFocus && tagContextTrigger?.isConnected) tagContextTrigger.focus();
+        tagContextTrigger = null;
+      }
+
+      function applyTagHighlight(color, keepMenuOpen = false) {
+        if (!tagContextName) return;
+        const name = tagContextName;
+        if (color) tagHighlights.set(name, color);
+        else tagHighlights.delete(name);
+        const row = qsa(".tag-link").find((button) => button.dataset.tagName === name);
+        const label = row?.querySelector(".tag-name");
+        label?.classList.toggle("highlighted", !!color);
+        if (color) label?.style.setProperty("--tag-highlight", color);
+        else label?.style.removeProperty("--tag-highlight");
+        if (row) row.setAttribute("aria-label", `${name} ${row.querySelector(".tag-resource-count").textContent}${color ? "，已高亮" : ""}`);
+        if (keepMenuOpen) {
+          $("tagRemoveHighlight").classList.toggle("hidden", !color);
+          return;
+        }
+        closeTagContextMenu(false);
+        row?.focus();
       }
 
       function renderCollectionGrid(filter = "all") {
@@ -1128,6 +1334,7 @@
 
       function openContextMenu(event, id, trigger) {
         event.preventDefault();
+        closeTagContextMenu(false);
         contextId = id;
         contextTrigger = trigger;
         const menu = $("contextMenu");
@@ -1450,8 +1657,8 @@
       }
 
       qsa("[data-nav]").forEach((button) => button.addEventListener("click", () => {
-        if (["collections", "settings"].includes(button.dataset.nav)) showPage(button.dataset.nav);
-        else toast("原型范围", "本次仅实现合集总览与设置中的集合规则。 ");
+        if (["collections", "tags", "settings"].includes(button.dataset.nav)) showPage(button.dataset.nav);
+        else toast("原型范围", "本次可体验合集、标签管理与设置中的集合规则。 ");
       }));
       qsa("[data-settings-section]").forEach((button) => button.addEventListener("click", () => {
         if (button.dataset.settingsSection === "auto-archive") archiveOrigin = "settings";
@@ -1479,6 +1686,7 @@
           node.classList.toggle("active", node === button);
           node.setAttribute("aria-pressed", String(node === button));
         });
+        if (!$("tagContextMenu").classList.contains("hidden")) positionTagContextMenu();
       }));
       $("collectionSearch").addEventListener("input", renderCollectionRuleList);
       $("collectionArchiveButton").addEventListener("click", () => openAuthorArchive("collections"));
@@ -1495,6 +1703,42 @@
         else if (action === "open") toast("打开合集", `原型模拟打开“${item.name}”`);
         else if (action === "rename") toast("重命名", "正式功能沿用现有重命名流程，本原型不写入名称。 ");
         else if (action === "delete") toast("删除已阻止", "原型不会删除演示合集。 ");
+      });
+      $("tagHighlightAction").addEventListener("click", () => {
+        const palette = $("tagHighlightPalette");
+        const expanded = palette.classList.toggle("hidden") === false;
+        $("tagHighlightAction").setAttribute("aria-expanded", String(expanded));
+        positionTagContextMenu();
+        if (expanded) palette.querySelector('[role="menuitem"]')?.focus();
+      });
+      $("tagRemoveHighlight").addEventListener("click", () => applyTagHighlight(null));
+      $("tagCreateColor").addEventListener("click", () => {
+        tagDraftColor = null;
+        renderTagColorSwatches();
+        $("tagColorInput").click();
+      });
+      $("tagColorInput").addEventListener("input", (event) => {
+        tagDraftColor = event.target.value.toLowerCase();
+        renderTagColorSwatches();
+        positionTagContextMenu();
+      });
+      $("tagColorInput").addEventListener("change", (event) => {
+        const color = event.target.value.toLowerCase();
+        if (!TAG_PRESET_COLORS.some((preset) => preset.color === color) && !customTagColors.includes(color)) customTagColors.push(color);
+        tagDraftColor = null;
+        renderTagColorSwatches();
+        applyTagHighlight(color, true);
+        positionTagContextMenu();
+        qsa(".tag-color-swatch", $("tagContextMenu")).find((button) => button.dataset.color === color)?.focus();
+      });
+      $("tagContextMenu").addEventListener("keydown", (event) => {
+        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+        const items = qsa('[role="menuitem"]', $("tagContextMenu")).filter((item) => item.getClientRects().length);
+        const current = items.indexOf(document.activeElement);
+        event.preventDefault();
+        if (event.key === "Home") items[0]?.focus();
+        else if (event.key === "End") items.at(-1)?.focus();
+        else items[(current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
       });
       qsa("[data-close-layer]").forEach((button) => button.addEventListener("click", () => closeLayer(button.dataset.closeLayer)));
       qsa('input[name="disableMode"]').forEach((input) => input.addEventListener("change", () => {
@@ -1515,11 +1759,13 @@
       $("confirmSaveRule").addEventListener("click", savePendingPreview);
       document.addEventListener("pointerdown", (event) => {
         if (!$("contextMenu").classList.contains("hidden") && !$("contextMenu").contains(event.target)) closeContextMenu();
+        if (!$("tagContextMenu").classList.contains("hidden") && !$("tagContextMenu").contains(event.target)) closeTagContextMenu();
       });
       document.addEventListener("keydown", (event) => {
         trapModalFocus(event);
         if (event.key === "Escape") {
-          if (!$("contextMenu").classList.contains("hidden")) closeContextMenu();
+          if (!$("tagContextMenu").classList.contains("hidden")) closeTagContextMenu();
+          else if (!$("contextMenu").classList.contains("hidden")) closeContextMenu();
           else if (activeLayer) closeLayer(activeLayer);
         }
       });
@@ -1537,6 +1783,7 @@
       }));
 
       startDraft(currentId, "settings");
+      renderTagCatalog();
       renderCollectionGrid("text_novel");
       renderSettingsManager();
     })();

@@ -77,6 +77,11 @@ class CoverGridSettingsTests(unittest.TestCase):
                     "edit_cover": "",
                     "remove_from_collection": "",
                     "remove_from_library": "",
+                    "focus_search": "Ctrl+KeyF",
+                    "clear_search": "Ctrl+Shift+KeyF",
+                    "go_library": "Alt+Digit1",
+                    "go_text_novel": "Alt+Digit2",
+                    "go_comic": "Alt+Digit3",
                 },
             )
 
@@ -89,6 +94,25 @@ class CoverGridSettingsTests(unittest.TestCase):
                 scan_report_path=root / "scan_report.json",
             )
             self.assertEqual(repo_reload.get_shortcut_bindings()["open_resource"], "Ctrl+Shift+KeyO")
+
+    def test_new_shortcut_defaults_keep_existing_bindings_and_explicit_clears(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = LibraryRepository(root / "library.db", root / "scan_report.json")
+            repo.set_setting("shortcut_bindings", {"open_resource": "Ctrl+KeyF"})
+            bindings = repo.get_shortcut_bindings()
+            self.assertEqual(bindings["open_resource"], "Ctrl+KeyF")
+            self.assertEqual(bindings["focus_search"], "")
+            self.assertEqual(bindings["clear_search"], "Ctrl+Shift+KeyF")
+            self.assertEqual(
+                repo.set_shortcut_binding("focus_search", "Ctrl+KeyF")["conflictAction"],
+                "open_resource",
+            )
+
+            self.assertTrue(repo.set_shortcut_binding("go_comic", "")["ok"])
+            reopened = LibraryRepository(root / "library.db", root / "scan_report.json")
+            self.assertEqual(reopened.get_shortcut_bindings()["go_comic"], "")
+            self.assertEqual(reopened.get_shortcut_bindings()["go_library"], "Alt+Digit1")
 
     def test_repository_shortcut_binding_rejects_invalid_and_duplicate_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

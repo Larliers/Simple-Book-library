@@ -241,11 +241,11 @@
   "owner_agent": "ui-agent",
   "status": "active",
   "purpose": "按中文拼音与英文字母分组展示标签目录，并在标签详情中以统一网格展示三类关联资源",
-  "input": ["library_tags", "text_novel_tags", "comic_tags", "tag_manager_scopes", "tag_order", "tag_request_id"],
-  "output": ["tag_index", "tag_detail", "mixed_resources_with_source_page", "interaction_events"],
+  "input": ["library_tags", "text_novel_tags", "comic_tags", "tag_manager_scopes", "tag_order", "tag_request_id", "tag_highlights"],
+  "output": ["tag_index", "tag_detail", "mixed_resources_with_source_page", "interaction_events", "tag_highlight_updates"],
   "upstream": ["LibraryRepository", "UiBridge", "filename_parser", "comic_folder_scanner"],
   "downstream": ["resource_detail_binding", "external_open_action", "shortcut_action_dispatcher"],
-  "notes": "侧边栏位于随机推荐之后；A→Z/Z→A 仅会话保存，# 始终置尾；只统计所选范围内未缺失资源；请求以 request id 丢弃旧响应；Glass/Vaporwave 共用结构并支持键盘与窄屏"
+  "notes": "侧边栏位于随机推荐之后；A→Z/Z→A 仅会话保存，# 始终置尾；只统计所选范围内未缺失资源；请求以 request id 丢弃旧响应；名称高亮按原名精确保存到 app_settings，预设/自定义色盘复用右键菜单，删除色块不清除已应用高亮；Glass/Vaporwave 共用结构并支持键盘与窄屏"
 }
 ```
 
@@ -270,11 +270,11 @@
   "module_name": "shortcut_action_dispatcher",
   "owner_agent": "ui-agent",
   "status": "active",
-  "purpose": "把右键菜单、键盘快捷键、页面侧键与原生/Windows 侧键消息统一路由到带真实资源上下文的动作入口",
+  "purpose": "把右键菜单、键盘快捷键、页面侧键与原生/Windows 侧键消息统一路由到资源、搜索和页面导航动作入口",
   "input": ["shortcut_bindings", "keyboard_event_code", "page_mouse_side_input", "native_mouse_side_input", "win_xbutton_appcommand", "selected_resource_context", "recent_collections_by_page"],
-  "output": ["action_execution", "binding_result", "shortcut_notice", "collection_navigation", "interaction_events"],
+  "output": ["action_execution", "binding_result", "shortcut_notice", "collection_navigation", "search_focus_or_clear", "page_navigation", "interaction_events"],
   "upstream": ["resource_list_view", "random_recommendations_view", "UiBridge", "ShortcutWebView"],
   "downstream": ["resource_detail_binding", "external_open_action", "collection_membership", "library_removal"],
-  "notes": "八个固定动作；绑定经 app_settings 持久化且默认留空；退出/进入最近系列分属两个动作，三类合集页会话内独立记忆；侧键经 JS/Qt 子控件/Windows XButton 与 APPCOMMAND 归一为 MouseBack/MouseForward；系统保留键、编辑控件、模态框与 Text Rules 受保护"
+  "notes": "十三个固定动作；原八项默认留空，新增聚焦/清空搜索与三类主页导航提供默认键位，旧绑定优先且明确清除会持久化；退出/进入最近系列分属两个动作，三类合集页会话内独立记忆；侧键经 JS/Qt 子控件/Windows XButton 与 APPCOMMAND 归一为 MouseBack/MouseForward；系统保留键、编辑控件、模态框与 Text Rules 受保护，只有搜索框自身允许搜索动作"
 }
 ```

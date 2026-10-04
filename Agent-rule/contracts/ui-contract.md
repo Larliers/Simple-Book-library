@@ -131,9 +131,16 @@ settings payload 必须提供三个互斥来源开关，默认全选且至少一
 - 目录与快捷添加候选必须截掉早期元数据字段标签：`author:` / `publisher:` / `language:` / `series:`（允许空格与全角冒号）。作者、出版社、语言继续走独立列，不再写入 `tags_json`。
 - `exit_collection` / `reopen_recent_collection` 在标签管理页同样表示后退/前进：详情态退出并记住本次会话最近标签，目录态重开；不新增动作 ID。
 
+### 标签目录文字高亮
+
+- settings payload 必须包含 `tagHighlights: {byTag: {"标签原名": "#rrggbb"}, customColors: ["#rrggbb"]}`；旧库无配置时返回空映射与空列表。键按标签原名精确匹配，不受目录范围或排序影响；暂不可见标签的配置不删除。
+- `updateTagHighlight(payloadJson)` 接受 `set(tag,color)`、`clear(tag)`、`create_color(tag,color)`、`delete_color(color)` 四种 `action`，返回 `{ok,error,config}`。颜色仅接受六位十六进制 RGB，保存为小写；自定义色去重，删除色块仅修改 `customColors`，已应用的 `byTag` 保留。写入使用当前书库的 `app_settings.tag_highlights`，无需表结构迁移。
+- 标签行保留圆点、原名、数量及排序；仅名称使用圆角底色卡片，文字颜色保持原样。右键和 Shift+F10 共用 `#contextMenu`；取色输入期间显示未保存的预览色块，确认后写库并保持菜单打开，色块的 `×` 按钮可用键盘操作。Esc/外部点击关闭菜单并恢复标签焦点。
+- 页面可在保存前预览高亮，但失败时必须回滚到返回前的配置并提示；成功时仅原位更新标签行与色盘，不重新加载标签目录。两套皮肤共用布局，底色跟随当前皮肤变量。
+
 ## Shortcut Bindings Extension
 
-settings payload 必须提供完整的 `shortcutBindings`，八个固定动作即使未绑定也必须返回空字符串：
+settings payload 必须提供完整的 `shortcutBindings`，十三个固定动作都必须返回；未绑定的动作使用空字符串：
 
 ```json
 {
@@ -145,7 +152,12 @@ settings payload 必须提供完整的 `shortcutBindings`，八个固定动作�
     "quick_add": "",
     "edit_cover": "",
     "remove_from_collection": "",
-    "remove_from_library": ""
+    "remove_from_library": "",
+    "focus_search": "Ctrl+KeyF",
+    "clear_search": "Ctrl+Shift+KeyF",
+    "go_library": "Alt+Digit1",
+    "go_text_novel": "Alt+Digit2",
+    "go_comic": "Alt+Digit3"
   }
 }
 ```
@@ -163,10 +175,12 @@ settings payload 必须提供完整的 `shortcutBindings`，八个固定动作�
 
 - `inputToken` 使用 `KeyboardEvent.code` 与固定修饰键顺序 `Ctrl+Alt+Shift+Meta+Code`，或 `MouseBack` / `MouseForward`；空字符串表示清除。
 - 一个动作仅允许一个输入，一个输入仅允许一个动作；冲突返回 `error=duplicate` 与占用动作，不覆盖原绑定。
+- 新增五项仅在旧配置缺少对应键时使用上述默认值；明确清除后的空字符串必须保持。旧动作的已存键位优先于新默认值，冲突的新动作返回空绑定。
 - `nativeShortcutInput(inputToken)` 与键盘事件进入同一分发器；原生视图必须在自身及 Chromium 子控件上过滤并吞掉鼠标侧键的按下和释放事件，避免网页历史前进/后退。
 - 侧键录入与触发还必须接受页面 `button=3/4`、`which=4/5`、`buttons` 的 X1/X2 位、系统 `BrowserBack`/`BrowserForward`/`keyCode` 166/167，以及 Windows `WM_XBUTTONDOWN` / `WM_APPCOMMAND`，并规范化为 `MouseBack`/`MouseForward`。
 - 同一侧键在 `mousedown` / `mouseup` / `auxclick` / `pointerdown` 上只消费一次，避免重复录入。
-- 快捷键仅在应用聚焦时生效；输入/下拉/可编辑区域、普通模态框及 Text Rules 面板开启时暂停，录入状态除外。
+- 快捷键仅在应用聚焦时生效；输入/下拉/可编辑区域、普通模态框及 Text Rules 面板开启时暂停，录入状态除外。搜索框自身允许 `focus_search` 与 `clear_search`，其余输入仍暂停。
+- `focus_search` 只在现有可搜索页聚焦顶部栏并全选当前关键词；`clear_search` 仅清空当前页关键词、取消待执行搜索并刷新结果，旧搜索与建议回包不得覆盖新状态。不可搜索页两动作静默无效果；`go_library` / `go_text_novel` / `go_comic` 复用页面导航并保留各页独立查询。
 - 统一动作上下文必须包含当前选中资源的真实页面来源、资源、合集详情标记与合集 ID；无选择或不可用动作必须提示，危险动作继续确认。
 - `open_resource` 必须经 Bridge 在成功解析到可打开目标后发出 `open_external` 交互事件（`event`、`resource_id`、`timestamp`）；资源或文件不存在时不得发出成功事件。
 - 合集导航拆成 `exit_collection`（退出当前系列）与 `reopen_recent_collection`（进入最近系列），语义对应后退/前进；在合集页按三类合集独立记忆，在标签管理页改为退出/重开最近标签。
